@@ -34,6 +34,7 @@ our ($help);
 #our $format   = 1;
 our $outfile  = '-';
 
+our $min_freq = 1;
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -43,9 +44,10 @@ GetOptions(##-- General
 	   'verbose|v=i' => \$verbose,
 	   'quiet|q' => sub { $verbose=0; },
 
-	   ##-- I/O
+	   ##-- misc
 	   #'input-encoding|ie=s'             => \$inputEncoding,
 	   #'output-encoding|oe=s'            => \$outputEncoding,
+	   'min-frequency|min-freq|minf|mf|m=f' => \$min_freq,
 	   'output|o=s'=>\$outfile,
 	  );
 
@@ -61,6 +63,7 @@ pod2usage({-exitval=>0, -verbose=>0, -msg=>'No input directory specified!'}) if 
 ## $groups_byname = { $g_name => \%g_data, ... }
 ##  + where %g_data = ( tf=>{$term=>$freq,...} )
 our $groups_byname = {};
+our $tf_global = {}; ## $term=>$freq
 
 ## undef = profile_csv_file($f)
 sub profile_csv_file {
@@ -86,6 +89,7 @@ sub profile_csv_file {
     next if ($line =~ /^\s/);
     ($term,$freq,$rest) = split(/\t/,$line,3);
     $tf->{$term} += $freq;
+    $tf_global->{$term} += $freq;
   }
   $fh->close() if (!ref($file));
 }
@@ -100,6 +104,7 @@ push(@ARGV,'-') if (!@ARGV);
 
 my ($d,$f);
 foreach $d (@ARGV) {
+  $d =~ s/\/$//;
   die ("$prog: no such directory: '$d'") if (!(-d $d || -l $d));
   foreach $f (glob("$d/*.csv")) {
     profile_csv_file($f);
@@ -109,35 +114,40 @@ foreach $d (@ARGV) {
 ##-- expand all terms to a MUDL::Enum
 print STDERR "$0: enums\n" if ($verbose);
 my $tenum = MUDL::Enum->new;
-$tenum->addSymbol($_) foreach (map {keys(%{$_->{tf}})} values(%$groups_byname));
+$tenum->addIndexedSymbol('__UNKNOWN__',0);
+$tenum->addSymbol($_)
+  foreach (sort {$tf_global->{$b} <=> $tf_global->{$a}} grep {$tf_global->{$_}>=$min_freq} keys(%$tf_global));
 my $NT = $tenum->size;
 
-##-- expand all groups to a MUDL::Enum
+#-- expand all groups to a MUDL::Enum
 my $genum = MUDL::Enum->new;
 $genum->addSymbol($_) foreach (keys(%$groups_byname));
 $groups_byname->{$_}{id} = $genum->{sym2id}{$_} foreach (keys(%$groups_byname));
 my $NG = $genum->size;
 
-##-- get a large frequency matrix: $gtf : [$gid,$tid] => f($gid,$tid)
-my ($gtf_w,$gtf_nz) = (null,null);
-my ($g_id,$gf_w,$gf_nz);
+##-- get a large frequency matrix: $tgf : [$tid,$gid] => f($tid,$gid)
+my ($tgf_w,$tgf_nz) = (null,null);
+my ($g_id,$gf_wt,$gf_w,$gf_nz);
 print STDERR "$0: matrix\n" if ($verbose);
 foreach $g_data (values %$groups_byname) {
   next if (!defined($g_data->{tf}));
   $g_id = $g_data->{id};
-  $gf_w = (zeroes(long,1,1)+$g_id)->glue(0, pdl(long, @{$tenum->{sym2id}}{keys(%{$g_data->{tf}})})->slice("*1,"));
-  $gf_nz= pdl(double, values(%{$g_data->{tf}}));
 
-  $gtf_w = $gtf_w->glue(1,$gf_w);
-  $gtf_nz = $gtf_nz->append($gf_nz);
+  $gf_wt = pdl(long, grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$g_data->{tf}})});
+  $gf_w  = $gf_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$g_id);
+  $gf_nz = pdl(double, @{$g_data->{tf}}{@{$tenum->{id2sym}}[$gf_wt->list]});
+
+  $tgf_w  = $tgf_w->glue(1,$gf_w);
+  $tgf_nz = $tgf_nz->append($gf_nz);
 
   delete($g_data->{tf}); ##-- frequency data all used up
 }
-my $gtf = PDL::CCS::Nd->newFromWhich($gtf_w,$gtf_nz,dims=>pdl(long,[$NG,$NT]),missing=>0);
+my $tgf = PDL::CCS::Nd->newFromWhich($tgf_w,$tgf_nz,dims=>pdl(long,[$NT,$NG]),missing=>0);
 
-##-- $groups: { genum=>$genum, tenum=>$tenum, gtf=>$gtf_ccs, byname=>\%groups_byname, byid=>\@groups_byid }
+
+##-- $groups: { genum=>$genum, tenum=>$tenum, tgf=>$tgf_ccs, byname=>\%groups_byname, byid=>\@groups_byid }
 ## + each $g_data in values(%groups_byname) has 'tfp' key: PDL::CCS::Nd frequency-pdl
-our $groups = { genum=>$genum, tenum=>$tenum, gtf=>$gtf, byname=>$groups_byname, byid=>[] };
+our $groups = { genum=>$genum, tenum=>$tenum, tgf=>$tgf, byname=>$groups_byname, byid=>[] };
 $groups->{byid}[$_->{id}] = $_ foreach (values(%$groups_byname));
 
 ##-- output
@@ -165,7 +175,8 @@ profile-dir.perl - recursive profile all files in a directory
   -verbose LEVEL         # set verbosity level (default=1)
   -quiet                 # alias for -verbose=0
 
- I/O Options:
+ Other Options:
+  -min-freq FREQ         # minimum global frequency to index (default=1)
   -output FILE           # specify output file (default='-' (STDOUT))
 
 =cut
