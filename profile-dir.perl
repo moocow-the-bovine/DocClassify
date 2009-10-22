@@ -25,7 +25,7 @@ use Pod::Usage;
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 1;
+our $verbose = 2;
 our ($help);
 
 
@@ -34,7 +34,11 @@ our ($help);
 #our $format   = 1;
 our $outfile  = '-';
 
-our $min_freq = 1;
+our $min_freq = 0;
+our $unk_term = '__UNKNOWN__';
+
+our $term_sort = 'none'; ##-- one of; 'string', 'freq', or 'none' (default)
+our $catCsvFile = undef;
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -47,6 +51,9 @@ GetOptions(##-- General
 	   ##-- misc
 	   #'input-encoding|ie=s'             => \$inputEncoding,
 	   #'output-encoding|oe=s'            => \$outputEncoding,
+
+	   'category-csv|class-csv|cat-csv|cc=s' => \$catCsvFile,
+	   'term-sort|sort|ts=s' => \$term_sort,
 	   'min-frequency|min-freq|minf|mf|m=f' => \$min_freq,
 	   'output|o=s'=>\$outfile,
 	  );
@@ -60,27 +67,26 @@ pod2usage({-exitval=>0, -verbose=>0, -msg=>'No input directory specified!'}) if 
 ## Subs
 ##------------------------------------------------------------------------------
 
-## $groups_byname = { $g_name => \%g_data, ... }
+## $cats_byname = { $c_name => \%g_data, ... }
 ##  + where %g_data = ( tf=>{$term=>$freq,...} )
-our $groups_byname = {};
+our $cats_byname = {};
 our $tf_global = {}; ## $term=>$freq
 
 ## undef = profile_csv_file($f)
 sub profile_csv_file {
   my $file = shift;
-  print STDERR "$0: file=$file\n" if ($verbose);
 
   my $fh = ref($file) ? $file : IO::File->new("<$file");
   die("$prog: open failed for file '$file': $!") if (!defined($fh));
   $fh->binmode(':utf8');
 
-  my $g_name = <$fh>;
-  chomp($g_name);
+  my $c_name = <$fh>;
+  chomp($c_name);
 
-  my $g_data = $groups_byname->{$g_name};
-  $g_data = $groups_byname->{$g_name} = {name=>$g_name} if (!defined($g_data));
+  my $c_data = $cats_byname->{$c_name};
+  $c_data = $cats_byname->{$c_name} = {name=>$c_name} if (!defined($c_data));
 
-  my $tf = defined($g_data->{tf}) ? $g_data->{tf} : ($g_data->{tf}={});
+  my $tf = defined($c_data->{tf}) ? $c_data->{tf} : ($c_data->{tf}={});
 
   ##-- parse file data (TAB-separated: TERM FREQ ...)
   my ($line,$term,$freq,$rest);
@@ -94,6 +100,25 @@ sub profile_csv_file {
   $fh->close() if (!ref($file));
 }
 
+## $cenum = loadCatCsv($cenum,$catCsvFile)
+sub loadCatCsv {
+  my ($cenum,$cfile) = @_;
+  my $fh = ref($cfile) ? $cfile : IO::File->new("<$cfile");
+  die("$0: open failed for category enum file '$cfile': $!") if (!$fh);
+  $fh->binmode(':utf8');
+  my ($id,$name);
+  while (<$fh>) {
+    chomp;
+    next if (/^\s*$/ || /^\s*\#/);
+    ($id,$name) = split(/\t/,$_,2);
+    $name =~ s/^\s+//;
+    $name =~ s/\s+$//;
+    $cenum->addIndexedSymbol($name,$id);
+  }
+  $fh->close() if (!ref($cfile));
+  return $cenum;
+}
+
 ##------------------------------------------------------------------------------
 ## MAIN
 ##------------------------------------------------------------------------------
@@ -104,60 +129,78 @@ push(@ARGV,'-') if (!@ARGV);
 
 my ($d,$f);
 foreach $d (@ARGV) {
+  print STDERR "$0: directory: $d\n" if ($verbose);
   $d =~ s/\/$//;
   die ("$prog: no such directory: '$d'") if (!(-d $d || -l $d));
   foreach $f (glob("$d/*.csv")) {
+    print STDERR "$0: file: $f\n" if ($verbose>=2);
     profile_csv_file($f);
   }
 }
 
+##-- trim global frequency matrix
+print STDERR "$0: trim(min_freq=>$min_freq)\n" if ($verbose);
+delete(@$tf_global{grep {$tf_global->{$_}<$min_freq} keys(%$tf_global)}) if ($min_freq>0);
+
 ##-- expand all terms to a MUDL::Enum
-print STDERR "$0: enums\n" if ($verbose);
+print STDERR "$0: enums(term_sort=>'$term_sort')\n" if ($verbose);
 my $tenum = MUDL::Enum->new;
-$tenum->addIndexedSymbol('__UNKNOWN__',0);
-$tenum->addSymbol($_)
-  foreach (sort {$tf_global->{$b} <=> $tf_global->{$a}} grep {$tf_global->{$_}>=$min_freq} keys(%$tf_global));
+if ($term_sort =~ /^f/) {
+  @{$tenum->{id2sym}} = ($unk_term, sort {$tf_global->{$b} <=> $tf_global->{$a}} keys(%$tf_global)); ##-- freq-sorted
+} elsif ($term_sort =~ /^s/) {
+  @{$tenum->{id2sym}} = ($unk_term, sort keys(%$tf_global)); ##-- string-sorted
+} else {
+  @{$tenum->{id2sym}} = ($unk_term, keys(%$tf_global)); ##-- unsorted
+}
+@{$tenum->{sym2id}}{@{$tenum->{id2sym}}} = (0..$#{$tenum->{id2sym}});
 my $NT = $tenum->size;
 
 #-- expand all groups to a MUDL::Enum
-my $genum = MUDL::Enum->new;
-$genum->addSymbol($_) foreach (keys(%$groups_byname));
-$groups_byname->{$_}{id} = $genum->{sym2id}{$_} foreach (keys(%$groups_byname));
-my $NG = $genum->size;
-
-##-- get a large frequency matrix: $tgf : [$tid,$gid] => f($tid,$gid)
-my ($tgf_w,$tgf_nz) = (null,null);
-my ($g_id,$gf_wt,$gf_w,$gf_nz);
-print STDERR "$0: matrix\n" if ($verbose);
-foreach $g_data (values %$groups_byname) {
-  next if (!defined($g_data->{tf}));
-  $g_id = $g_data->{id};
-
-  $gf_wt = pdl(long, grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$g_data->{tf}})});
-  $gf_w  = $gf_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$g_id);
-  $gf_nz = pdl(double, @{$g_data->{tf}}{@{$tenum->{id2sym}}[$gf_wt->list]});
-
-  $tgf_w  = $tgf_w->glue(1,$gf_w);
-  $tgf_nz = $tgf_nz->append($gf_nz);
-
-  delete($g_data->{tf}); ##-- frequency data all used up
+my $cenum = MUDL::Enum->new;
+if ($catCsvFile) {
+  print STDERR "$0: loadCatCsv($catCsvFile)\n" if ($verbose);
+  loadCatCsv($cenum,$catCsvFile);
 }
-my $tgf = PDL::CCS::Nd->newFromWhich($tgf_w,$tgf_nz,dims=>pdl(long,[$NT,$NG]),missing=>0);
+$cenum->addSymbol($_) foreach (keys(%$cats_byname));
+$cats_byname->{$_}{id} = $cenum->{sym2id}{$_} foreach (keys(%$cats_byname));
+my $NG = $cenum->size;
+
+##-- get a large frequency matrix: $tcf : [$tid,$cid] => f($tid,$cid)
+print STDERR "$0: matrix(NT=$NT x NG=$NG)\n" if ($verbose);
+my ($tcf_w,$tcf_nz) = (null,null);
+my ($c_id,$cf_wt,$cf_w,$cf_nz);
+foreach $c_data (values %$cats_byname) {
+  next if (!defined($c_data->{tf}));
+  $c_id = $c_data->{id};
+
+  $cf_wt = pdl(long, grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$c_data->{tf}})});
+  $cf_w  = $cf_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$c_id);
+  $cf_nz = pdl(double, @{$c_data->{tf}}{@{$tenum->{id2sym}}[$cf_wt->list]});
+
+  $tcf_w  = $tcf_w->glue(1,$cf_w);
+  $tcf_nz = $tcf_nz->append($cf_nz);
+
+  delete($c_data->{tf}); ##-- frequency data all used up
+}
+my $tcf = PDL::CCS::Nd->newFromWhich($tcf_w,$tcf_nz,dims=>pdl(long,[$NT,$NG]),missing=>0);
 
 
-##-- $groups: { genum=>$genum, tenum=>$tenum, tgf=>$tgf_ccs, byname=>\%groups_byname, byid=>\@groups_byid }
-## + each $g_data in values(%groups_byname) has 'tfp' key: PDL::CCS::Nd frequency-pdl
-our $groups = { genum=>$genum, tenum=>$tenum, tgf=>$tgf, byname=>$groups_byname, byid=>[] };
-$groups->{byid}[$_->{id}] = $_ foreach (values(%$groups_byname));
+##-- $cats: { cenum=>$cenum, tenum=>$tenum, tcf=>$tcf_ccs, byname=>\%groups_byname, byid=>\@groups_byid }
+## + each $c_data in values(%groups_byname) has 'tfp' key: PDL::CCS::Nd frequency-pdl
+our $cats = { cenum=>$cenum, tenum=>$tenum, tcf=>$tcf, byname=>$cats_byname, byid=>[] };
+$cats->{byid}[$_->{id}] = $_ foreach (values(%$cats_byname));
 
 ##-- output
+print STDERR "$0: save($outfile)\n" if ($verbose);
 if ($outfile eq '-') {
-  Storable::store_fd($groups,\*STDOUT)
+  Storable::store_fd($cats,\*STDOUT)
       or die("$prog: Storable::store_fd() failed to STDOUT: $!");
 } else {
-  Storable::store($groups,$outfile)
+  Storable::store($cats,$outfile)
       or die("$prog: Storable::store() failed for '$outfile': $!");
 }
+
+print STDERR "$0: done.\n" if ($verbose);
 
 __END__
 =pod
@@ -177,6 +220,7 @@ profile-dir.perl - recursive profile all files in a directory
 
  Other Options:
   -min-freq FREQ         # minimum global frequency to index (default=1)
+  -group-csv CSVFILE     # load group ids from CSVFILE
   -output FILE           # specify output file (default='-' (STDOUT))
 
 =cut
