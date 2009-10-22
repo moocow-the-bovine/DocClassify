@@ -270,7 +270,9 @@ sub test_vzdata {
 
   ##-- base data
   #my $cbfile = 'wikidata.mf5.bin';
-  my $cbfile = 'wikidata.mf1.bin';
+  #my $cbfile = 'wikidata.mf1.bin';
+  #my $cbfile = 'vzdata-nn.mf5.bin';
+  my $cbfile = 'vzdata-nn.mf1.bin';
   print STDERR "$0: cbLoadCsv($cbfile)\n" if ($verbose);
   my $cb = cbLoadBin($cbfile) or die("$0: cbLoadBin() failed for '$cbfile': $!");
   my $cenum = $cb->{cenum};
