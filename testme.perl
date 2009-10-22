@@ -231,35 +231,33 @@ sub docLoadCsv {
   return $doc;
 }
 
-## $docCcsRaw = cbDocCcsRaw($cb,$doc)
-##  + $docCcs is a PDL::CCS::Nd: (1,$NT): [0,$tid]=>f($tid,$doc)
-#sub cbDocCcsRaw {
-#  my ($cb,$doc) = @_;
-#  my $sym2id = $cb->{tenum}{sym2id};
-#  my $dtf_wt = pdl(long,   grep{defined($_)} @$sym2id{keys(%{$doc->{tf}})});
-#  my $dtf_nz = pdl(double, @{$doc->{tf}}{$dtf_wt->list});
-#  my $dtf_w  = $dtf_wt->slice("*1,")->glue(0,zeroes(long,1,1));
-#  return PDL::CCS::Nd->newFromWhich($dtf_w,$dtf_nz,dims=>pdl(long,[1,$cb->{tenum}->size]),missing=>0);
-#}
-
-## $docPdlRaw = cbDocPdlRaw($cb,$doc)
-##  + $docPdlRaw is dense pdl($NT): [$tid]=>f($tid,$doc)
+## $docPdlRaw = cbDocPdlRaw($cb,$doc, $want_ccs=0)
+##  + $docPdlRaw is dense or CCS pdl($NT): [$tid]=>f($tid,$doc)
 sub cbDocPdlRaw {
-  my ($cb,$doc) = @_;
+  my ($cb,$doc, $as_ccs) = @_;
   my $tenum = $cb->{tenum};
   my $dtf_wt = pdl(long,   grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$doc->{tf}})});
   my $dtf_nz = pdl(double, @{$doc->{tf}}{@{$tenum->{id2sym}}[$dtf_wt->list]});
-  my $dtf = zeroes(double,$tenum->size);
-  $dtf->index($dtf_wt) .= $dtf_nz;
-  return $dtf;
+  if ($as_ccs) {
+    return PDL::CCS::Nd->newFromWhich($dtf_wt->slice("*1,"),$dtf_nz,dims=>pdl(long,[$cb->{tenum}->size]),missing=>0);
+  } else {
+    ##-- dense mode
+    my $dtf = zeroes(double,$tenum->size);
+    $dtf->index($dtf_wt) .= $dtf_nz;
+    return $dtf;
+  }
 }
 
 
 ##======================================================================
 ## test: classification: top-level
 sub test_vzdata {
-  #my $test_dir = 'vzdata-nn';
-  my $test_dir = 'test-nn';
+  my ($cbfile,$test_dir) = @ARGV;
+
+  if (!defined($test_dir)) {
+    #$test_dir = 'vzdata-nn';
+    $test_dir = 'test-nn';
+  }
   my $test_ext = '.csv';
   my $out_ext  = '.svdcat';
 
@@ -269,22 +267,38 @@ sub test_vzdata {
   my $ignore_null_docs = 1;
 
   ##-- base data
-  #my $cbfile = 'wikidata.mf5.bin';
-  #my $cbfile = 'wikidata.mf1.bin';
-  #my $cbfile = 'vzdata-nn.mf5.bin';
-  my $cbfile = 'vzdata-nn.mf1.bin';
+  if (!defined($cbfile)) {
+    #$cbfile = 'wikidata.mf5.bin';
+    #$cbfile = 'wikidata.mf1.bin';
+    #$cbfile = 'vzdata-nn.mf5.bin';
+    #$cbfile = 'vzdata-nn.mf1.bin';
+    $cbfile = 'test-nn.mf1.bin';
+  }
   print STDERR "$0: cbLoadCsv($cbfile)\n" if ($verbose);
   my $cb = cbLoadBin($cbfile) or die("$0: cbLoadBin() failed for '$cbfile': $!");
   my $cenum = $cb->{cenum};
 
   ##-- svd
-  my $svdlog=1;
-  my $svdr  =128;
-  print STDERR "$0: cbSvdCompute(svdlog=>$svdlog, svdr=>$svdr)\n" if ($verbose);
-  cbSvdCompute($cb, svdr=>$svdr, svdlog=>$svdlog);
+  #my $dosvd =1;
+  my $dosvd =0;
+  my $dolog =1;
+  my $svdr  =64;
+  if ($dosvd) {
+    print STDERR "$0: cbSvdCompute(svdlog=>$dolog, svdr=>$svdr)\n" if ($verbose);
+    cbSvdCompute($cb, svdr=>$svdr, svdlog=>$dolog);
+  } elsif ($dolog) {
+    print STDERR "$0: NO SVD, computing log-frequencies\n" if ($verbose);
+    $cb->{xcf}=($cb->{tcf}+1)->log->decode;
+  } else {
+    print STDERR "$0: NO SVD, using raw frequencies\n" if ($verbose);
+    $cb->{xcf}=$cb->{tcf}->decode;
+  }
 
-  ##-- cluster distance measure
-  my $cd = $cb->{cdf} = MUDL::Cluster::Distance->new(class=>'c',link=>'avg');
+  ##-- cluster distance measure, centroid data
+  #my $cdclass = ($dosvd ? 'c' : 'Pearson');
+  my $cdclass = 'c';
+  my $cd = $cb->{cdf} = MUDL::Cluster::Distance->new(class=>$cdclass,link=>'avg');
+  my $cdata = $cb->{xcf};
 
   ##-- smoothing hack: global frequencies
   my $do_smooth = 0;
@@ -302,17 +316,18 @@ sub test_vzdata {
   my ($outfh);
   my ($ntp_docs,$n_docs, $ntp_toks,$n_toks) = (0,0,0,0);
   foreach $docfile (glob("$test_dir/*$test_ext")) {
-    print STDERR "$0: TEST_FILE: $docfile\n" if ($verbose);
+    print STDERR "$0: TEST_FILE: $docfile" if ($verbose);
     $doc = docLoadCsv($docfile) or die("$0: load failed for '$docfile': $!");
     if (!defined($cid_wanted=$cenum->{sym2id}{$doc->{catName}})) {
-      print STDERR "> SKIPPED (cat=$doc->{catName})\n" if ($verbose);
+      print STDERR " > SKIPPED (cat=$doc->{catName})\n" if ($verbose);
       next;
     }
-    $dtf = cbDocPdlRaw($cb,$doc);
+    #$dtf = cbDocPdlRaw($cb,$doc, ($dosvd ? 0 : 1));
+    $dtf = cbDocPdlRaw($cb,$doc, 0);
     $dtN = $dtf->sum;
     warn("$0: null vector for test document '$docfile'") if ($warn_on_null_doc && $dtN==0); ##-- warning danger
     if ($ignore_null_docs && $dtN==0) {
-      print STDERR "> SKIPPED (null vector)\n" if ($verbose);
+      print STDERR " > SKIPPED (null vector)\n" if ($verbose);
       next;
     }
 
@@ -320,10 +335,10 @@ sub test_vzdata {
     $dtf += $smooth_tf if ($do_smooth);
 
     ##-- SVD
-    $dtx = cbSvdApply($cb,$dtf);
+    $dtx = $dosvd ? cbSvdApply($cb,$dtf) : ($dolog ? ($dtf+1)->log : $dtf)->dummy(1,1);
 
     ##-- compute document-cluster distasnce
-    $cdmat = $cd->clusterDistanceMatrix(data=>$dtx,cdata=>$cb->{xcf});
+    $cdmat = $cd->clusterDistanceMatrix(data=>$dtx,cdata=>$cdata);
     $cid_got = $cdmat->flat->minimum_ind->sclr;
 
     ##-- output data
@@ -348,8 +363,16 @@ sub test_vzdata {
     $n_toks += $doc->{N};
     $n_docs++;
     if ($cid_wanted==$cid_got) {
+      print STDERR " +\n";
       $ntp_toks += $doc->{N};
       $ntp_docs++;
+    } else {
+      print STDERR "\n";
+    }
+
+    ##-- incremental report
+    if ($verbose && ($n_docs % 10) == 0) {
+      print STDERR sprintf("\n---- n_docs=$n_docs, ntp_docs=$ntp_docs, acc=%6.2f %% ----\n\n", 100*$ntp_docs/$n_docs);
     }
   }
 
@@ -361,7 +384,7 @@ sub test_vzdata {
     ("$0 Summary\n",
      sprintf(" + %${llen}s = %${ilen}d (%${flen}f %%)\n", "Docs (Total)", $n_docs, 100*$n_docs/$n_docs),
      sprintf(" + %${llen}s = %${ilen}d (%${flen}f %%)\n", "Docs (Good)",  $ntp_docs, 100*$ntp_docs/$n_docs),
-     sprintf(" + %${llen}s = %${ilen}d (%${flen}f %%)\n", "Tokens (Total)",  $ntp_docs, 100*$ntp_docs/$n_toks),
+     sprintf(" + %${llen}s = %${ilen}d (%${flen}f %%)\n", "Tokens (Total)",  $n_toks, 100*$n_toks/$n_toks),
      sprintf(" + %${llen}s = %${ilen}d (%${flen}f %%)\n", "Tokens (Good)",  $ntp_toks, 100*$ntp_toks/$n_toks),
     );
 

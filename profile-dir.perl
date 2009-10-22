@@ -52,7 +52,7 @@ GetOptions(##-- General
 	   #'input-encoding|ie=s'             => \$inputEncoding,
 	   #'output-encoding|oe=s'            => \$outputEncoding,
 
-	   'category-csv|class-csv|cat-csv|cc=s' => \$catCsvFile,
+	   'category-csv|class-csv|cat-csv|gc|cc=s' => \$catCsvFile,
 	   'term-sort|sort|ts=s' => \$term_sort,
 	   'min-frequency|min-freq|minf|mf|m=f' => \$min_freq,
 	   'output|o=s'=>\$outfile,
@@ -82,6 +82,12 @@ sub profile_csv_file {
 
   my $c_name = <$fh>;
   chomp($c_name);
+
+  ##-- check if we're ignoring this file's group
+  if ($NC && !defined($cenum->{sym2id}{$c_name})) {
+    print STDERR "> SKIP (ignoring unknown category '$c_name')\n";
+    return;
+  }
 
   my $c_data = $cats_byname->{$c_name};
   $c_data = $cats_byname->{$c_name} = {name=>$c_name} if (!defined($c_data));
@@ -127,6 +133,14 @@ sub loadCatCsv {
 push(@ARGV,'-') if (!@ARGV);
 #open(OUT,">$outfile") or die("$0: open failed for '$outfile': $!");
 
+##-- maybe pre-load category enum
+our $cenum = MUDL::Enum->new;
+if ($catCsvFile) {
+  print STDERR "$0: loadCatCsv($catCsvFile)\n" if ($verbose);
+  loadCatCsv($cenum,$catCsvFile);
+}
+our $NC = $cenum->size;
+
 my ($d,$f);
 foreach $d (@ARGV) {
   print STDERR "$0: directory: $d\n" if ($verbose);
@@ -155,18 +169,15 @@ if ($term_sort =~ /^f/) {
 @{$tenum->{sym2id}}{@{$tenum->{id2sym}}} = (0..$#{$tenum->{id2sym}});
 my $NT = $tenum->size;
 
-#-- expand all groups to a MUDL::Enum
-my $cenum = MUDL::Enum->new;
-if ($catCsvFile) {
-  print STDERR "$0: loadCatCsv($catCsvFile)\n" if ($verbose);
-  loadCatCsv($cenum,$catCsvFile);
+#-- maybe add all groups to a new category MUDL::Enum
+if (!$catCsvFile) {
+  $cenum->addSymbol($_) foreach (keys(%$cats_byname));
 }
-$cenum->addSymbol($_) foreach (keys(%$cats_byname));
+$NC = $cenum->size;
 $cats_byname->{$_}{id} = $cenum->{sym2id}{$_} foreach (keys(%$cats_byname));
-my $NG = $cenum->size;
 
 ##-- get a large frequency matrix: $tcf : [$tid,$cid] => f($tid,$cid)
-print STDERR "$0: matrix(NT=$NT x NG=$NG)\n" if ($verbose);
+print STDERR "$0: matrix(NT=$NT x NC=$NC)\n" if ($verbose);
 my ($tcf_w,$tcf_nz) = (null,null);
 my ($c_id,$cf_wt,$cf_w,$cf_nz);
 foreach $c_data (values %$cats_byname) {
@@ -182,7 +193,7 @@ foreach $c_data (values %$cats_byname) {
 
   delete($c_data->{tf}); ##-- frequency data all used up
 }
-my $tcf = PDL::CCS::Nd->newFromWhich($tcf_w,$tcf_nz,dims=>pdl(long,[$NT,$NG]),missing=>0);
+my $tcf = PDL::CCS::Nd->newFromWhich($tcf_w,$tcf_nz,dims=>pdl(long,[$NT,$NC]),missing=>0);
 
 
 ##-- $cats: { cenum=>$cenum, tenum=>$tenum, tcf=>$tcf_ccs, byname=>\%groups_byname, byid=>\@groups_byid }
