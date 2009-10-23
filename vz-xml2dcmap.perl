@@ -86,7 +86,7 @@ sub process_xml2catmap {
   my $root = $doc->documentElement;
 
   ##-- get & write classifications
-  my $xmlbase = basename($xmlfile);
+  my $xmlbase = $fullname;
   $outfh->print(
 		map {
 		  join("\t",
@@ -119,7 +119,11 @@ $parser->expand_entities(1);
 ##-- guts
 $outfh = IO::File->new(">$outfile")
   or die("$0: open failed for output file '$outfile': $!");
+$outfh->binmode(':utf8');
+$outfh->autoflush(1);
+
 processInputs(@ARGV);
+
 $outfh->close();
 
 __END__

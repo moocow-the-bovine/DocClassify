@@ -73,9 +73,11 @@ sub test1 {
   #our $cofile = 'wikidata.bin';
   #our $cofile = 'test1.bin';
   #our $cofile = 'wikidata.mf0.bin'; ##-- == wikidata.mf1.bin
-  our $cofile = 'wikidata.mf1.bin'; ##-- NT=567089 , N=7305120 , NT/N= 0.0776289780318462
+  #our $cofile = 'wikidata.mf1.bin'; ##-- NT=567089 , N=7305120 , NT/N= 0.0776289780318462
   #our $cofile = 'wikidata.mf2.bin'; ##-- NT=270109 , N=7008140 , NT/N= 0.0385421809495815
   #our $cofile = 'wikidata.mf5.bin'; ##-- NT=115301 , N=6603977 , NT/N= 0.0174593279171021
+  ##--
+  our $cofile = 'wikidata2.mf1.bin'; ##-- NT=?
   our $co = Storable::retrieve($cofile);
 
   my $NT  = $co->{tenum}->size;
@@ -212,6 +214,7 @@ sub docLoadCsv {
   ##
   my $doc = {docFile=>$file,};
   $doc->{catName} = <$fh>;
+  $doc->{catName} =~ s/^\d+\s*//;
   chomp($doc->{catName});
 
   ##-- parse file data (TAB-separated: TERM FREQ ...)
@@ -273,14 +276,16 @@ sub test_vzdata {
     #$cbfile = 'vzdata-nn.mf5.bin';
     #$cbfile = 'vzdata-nn.mf1.bin';
     $cbfile = 'test-nn.mf1.bin';
+    ##--
+    #$cbfile = 'wikidata2.mf1.bin';
   }
   print STDERR "$0: cbLoadCsv($cbfile)\n" if ($verbose);
   my $cb = cbLoadBin($cbfile) or die("$0: cbLoadBin() failed for '$cbfile': $!");
   my $cenum = $cb->{cenum};
 
   ##-- svd
-  #my $dosvd =1;
-  my $dosvd =0;
+  my $dosvd =1;
+  #my $dosvd =0;
   my $dolog =1;
   my $svdr  =64;
   if ($dosvd) {

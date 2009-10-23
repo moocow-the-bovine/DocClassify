@@ -20,21 +20,12 @@ our ($help);
 
 #our $outputEncoding = 'UTF-8';
 #our $inputEncoding  = 'UTF-8';
-#our $gdir   = 'bygroup.d';
 our $format = 1; ##-- formatted output?
 
-our $input_file_re  = qr/\.xml$/;
-our $out_suffix = '.raw';
+our $input_file_re  = qr/\.real\.xml$/;
+our $out_suffix = '.group.xml';
+our $out_dir = undef;
 our $recurse = 1;
-
-our @raw_xpaths =
-  (
-   '//head/title',
-   '//head/descrition',
-   '//head/description',
-   '//body/thread/title',
-   '//body/thread/posts/post/plain',
-  );
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -47,7 +38,8 @@ GetOptions(##-- General
 	   ##-- I/O
 	   'recursive|recurse|r' => \$recurse,
 	   'input-file-re|ifr|if|ir=s' => \$input_file_re,
-	   'output-suffix|raw-suffix|os|rs|s=s' => \$out_suffix,
+	   'output-suffix|group-xml-suffix|gxs|gs|os=s' => \$out_suffix,
+	   'output-dir|od|d=s' => \$out_dir,
 	   #'format|f!' => sub { $format = $_[1] ? 1 : 0; },
 	  );
 
@@ -59,49 +51,67 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ## Subs
 ##------------------------------------------------------------------------------
 
+sub sanitizeString {
+  my $s = shift;
+  $s =~ s/[\s\&\:\/\\\:\.\,]/_/g;
+  $s =~ s/_+/_/g;
+  return $s;
+}
+
 our (@files);
 sub processInputs {
   my @inputs = @_;
   foreach (@inputs) {
-    if    (-d $_ && $recurse) { find({wanted=>\&wanted_xml2raw,follow=>1,no_chdir=>1},$_); }
-    elsif (-d $_) { push(@files, grep {$_=~$input_file_re} map {glob("$_/*")} grep {-d $_} @inputs); }
-    else { push(@files,$_); }
+    if (-d $_) {
+      $out_dir = $_ if (!defined($out_dir));
+      if ($recurse) { find({wanted=>\&wanted,follow=>1,no_chdir=>1},$_); }
+      else          { push(@files, grep {$_=~$input_file_re} map {glob("$_/*")} grep {-d $_} @inputs); }
+    }
+    else {
+      $out_dir = dirname($_) if (!defined($out_dir));
+      push(@files,$_);
+    }
   }
   my $cwd = cwd();
   foreach my $file (@files) {
     chdir(dirname($file));
-    process_xml2raw(basename($file),$file);
+    process_xmlcollect(basename($file),$file);
     chdir($cwd);
   }
 }
 
-sub wanted_xml2raw {
+sub wanted {
   return if ($_ !~ $input_file_re);
   push(@files,$File::Find::name);
 }
 
-our ($parser);
-sub process_xml2raw {
+our ($parser,%groups);
+sub process_xmlcollect {
   my ($xmlfile,$fullname) = @_;
   $fullname = $xmlfile if (!defined($fullname));
 
-  ##-- be verbose
-  print STDERR "$0: FILE: $xmlfile\n" if ($verbose>=2);
+  ##-- be verbose?
+  print STDERR "$0: INFILE: $xmlfile\n" if ($verbose>=2);
 
-  ##-- parse document
+  ##-- parse xml document
   my $doc = $parser->parse_file($xmlfile)
     or die("$0: could not parse file '$xmlfile': $!");
-  #my $root = $doc->documentElement;
+  my $root = $doc->documentElement;
+  $root->setAttribute('src',$xmlfile);
 
-  ##-- dump raw text file
-  my $outbase = dirname($xmlfile) .'/'. basename($xmlfile,'.xml','.XML');
-  my $rawfile = "${outbase}${out_suffix}";
-  my $outfh   = IO::File->new(">$rawfile") or die("$0: open failed forraw text file '$rawfile': $!");
-  $outfh->binmode(':utf8');
+  ##-- append document data to each assigned (group,degree) pair
+  my ($g_name,$g_id,$g_deg, $g,$deg, $gd_docs);
+  foreach my $g_node (@{$root->findnodes('head/classification/vat|head/classification/cat')}) {
+    ##-- assure groups is defined
+    ($g_name,$g_id,$g_deg) = map {$g_node->getAttribute($_)} qw(name id degree);
+    $g = $groups{$g_name} = { id=>$g_id,name=>$g_name } if (!defined($g=$groups{$g_name}));
+    $g->{deg2docs} = {} if (!defined($g->{deg2docs}));
 
-  ##-- dump: raw text
-  $outfh->print(map { ("\n\n",$_->textContent,"\n\n") } @{$doc->findnodes(join('|',@raw_xpaths))});
-  $outfh->close();
+    foreach $deg ($g_deg..3) {
+      $gd_docs = $g->{deg2docs}{$deg} = [] if (!defined($gd_docs=$g->{deg2docs}{$deg}));
+      push(@$gd_docs,$doc);
+    }
+  }
 
   return;
 }
@@ -123,6 +133,27 @@ $parser->expand_entities(1);
 ##-- guts
 processInputs(@ARGV);
 
+##-- write all output groups
+print STDERR "$0: output(dir=$out_dir)\n" if ($verbose);
+$out_dir = '.' if (!defined($out_dir));
+my ($g,$deg, $g_id,$g_name, $gd_docs,$doc, $gd_doc,$gd_root);
+my ($outfile);
+foreach $g (values(%groups)) {
+  ($g_id,$g_name) = @$g{qw(id name)};
+  foreach $deg (keys(%{$g->{deg2docs}})) {
+    next if (!defined($gd_docs = $g->{deg2docs}{$deg}));
+    $outfile = "${out_dir}/".sprintf("%0.2d_%s.d%d%s",$g_id,sanitizeString($g_name),$deg,$out_suffix);
+    print STDERR "$0: OUTFILE: $outfile\n" if ($verbose);
+
+    $gd_doc = XML::LibXML::Document->new('1.0','UTF-8');
+    $gd_doc->setDocumentElement( $gd_doc->createElement('groups') );
+    $gd_root= $gd_doc->documentElement;
+    $gd_root->appendChild( $_->documentElement->cloneNode(1) ) foreach (@$gd_docs);
+    $gd_doc->toFile($outfile,$format)
+      or die("$0: failed to write '$outfile' for group \"$g_id $g_name\", degree $deg: $!");
+  }
+}
+
 print STDERR "$0: done\n" if ($verbose);
 
 __END__
@@ -130,11 +161,11 @@ __END__
 
 =head1 NAME
 
-vz-xml2raw.perl - extract raw text from vz-xml files
+vz-xmlcollect.perl - collect vz-xml files by group
 
 =head1 SYNOPSIS
 
- vz-xml2raw.perl [OPTIONS] [INPUT(s)...]
+ vz-xmlcollect.perl [OPTIONS] [INPUT(s)...]
 
  General Options:
   -help                     # this help message

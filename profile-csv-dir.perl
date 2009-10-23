@@ -82,6 +82,7 @@ sub profile_csv_file {
 
   my $c_name = <$fh>;
   chomp($c_name);
+  $c_name =~ s/^\d+\s*//;
 
   ##-- check if we're ignoring this file's group
   if ($NC && !defined($cenum->{sym2id}{$c_name})) {
