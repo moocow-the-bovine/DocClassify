@@ -28,10 +28,34 @@ our %EXPORT_TAGS =
    norm=>[qw(_gausscdf _gausswidth)],
    cmp=>[qw(min2 max2)],
    io=>[qw(stringfh)],
+   libxml=>[qw(libxmlParser)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
 $EXPORT_TAGS{all} = [@EXPORT_OK];
+
+
+##==============================================================================
+## Functions: libxml utilities
+
+## $LIBXML_PARSER
+##   shared XML::LibXML parser object
+our ($LIBXML_PARSER);
+
+## $parser = libxmlParser()
+##   get shared XML::LibXML parser object
+sub libxmlParser {
+  return $LIBXML_PARSER if (defined($LIBXML_PARSER));
+  $LIBXML_PARSER = XML::LibXML->new();
+  $LIBXML_PARSER->keep_blanks(0); ##-- ignore "ignorable whitespace"
+  #$LIBXML_PARSER->keep_blanks(1); ##-- keep all whitespace
+  $LIBXML_PARSER->line_numbers(1);
+  $LIBXML_PARSER->load_ext_dtd(1);
+  $LIBXML_PARSER->validation(0);
+  $LIBXML_PARSER->recover(1);
+  $LIBXML_PARSER->expand_entities(1);
+  return $LIBXML_PARSER;
+}
 
 ##==============================================================================
 ## Functions: generic utilities
