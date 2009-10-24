@@ -13,6 +13,7 @@ use File::Basename qw(basename);
 use Pod::Usage;
 
 #use strict;
+BEGIN { select(STDERR); $|=1; select(STDOUT); }
 
 ##------------------------------------------------------------------------------
 ## Constants & Globals
@@ -23,20 +24,30 @@ our ($help,$verbose);
 #our $outputEncoding = 'UTF-8';
 #our $inputEncoding  = 'UTF-8';
 #our $format   = 1;
-our $outfile  = '-';
 
+our %fcopts = (
+	       verbose=>2,
+	       recursive=>1,
+	       inputFileMatch=>qr/\.xml/,
+	       inputFileTrim=>qr/\.[^\.]*$/,
+	       outputFile=>undef,
+	       outputFileSuffix=>'.csv',
+	      );
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
 GetOptions(##-- General
 	   'help|h' => \$help,
+	   'verbose|v=i' => \$fcopts{verbose},
 
 	   ##-- I/O
-	   #'input-encoding|ie=s'             => \$inputEncoding,
-	   #'output-encoding|oe=s'            => \$outputEncoding,
-	   'output|o=s'=>\$outfile,
+	   'recursive|recurse|r!' => \$fcopts{recursive},
+	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
+	   'output-suffix|os=s' => \$fcopts{outputFileSuffix},
+	   #'format|f=1' => \$format
 	  );
+$verbose=$fcopts{verbose};
 
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
@@ -46,6 +57,16 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ## Subs
 ##------------------------------------------------------------------------------
 
+our ($fc);
+sub cb_xml2csv {
+  my ($xmlfile) = @_;
+  my $doc = DocClassify::Document->new(file=>$xmlfile);
+  my ($outfile,$outfh) = $fc->in2out($xmlfile);
+  $outfh->binmode(':utf8');
+  my $sig = $doc->termSignature();
+  $sig->saveCsvFile($outfh, dumpCats=>1,dumpFreqs=>1);
+  $outfh->close() if (!defined($fc->{outputFile}));
+}
 
 ##------------------------------------------------------------------------------
 ## MAIN
@@ -53,33 +74,25 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
-open(OUT,">$outfile") or die("$0: open failed for '$outfile': $!");
+$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_xml2csv );
+$fc->churn(@ARGV);
 
-foreach $f (@ARGV) {
-  #print STDERR "$progname: parsing file '$f'...";
-
-  do_stuff();
-
-  #print STDERR " done.\n";
-}
-
-close(OUT);
 
 =pod
 
 =head1 NAME
 
-template.perl - undocumented program
+dc-xml2csv.perl - convert DocClassify xml docs to CSV term-frequency signature files
 
 =head1 SYNOPSIS
 
- template.perl [OPTIONS] [FILE...]
+ dc-xml2csv.perl [OPTIONS] [INPUT(s)...]
 
- General Options:
+ Options:
   -help                  # this help message
-
- I/O Options:
-  -output FILE           # specify output file (default='-' (STDOUT))
+  -verbose LEVEL         # verbosity level
+  -output-file FILE      # all output to a single file
+  -output-suffix SUFFIX  # one outfile per infile, suffix SUFFIX (default=.csv)
 
 =cut
 

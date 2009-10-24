@@ -7,8 +7,9 @@
 package DocClassify;
 
 use DocClassify::Object;
+use DocClassify::Document;
 use DocClassify::Signature;
-use DocClassify::Map;
+use DocClassify::FileChurner;
 
 use strict;
 
