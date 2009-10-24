@@ -28,10 +28,10 @@ our ($help,$verbose);
 our %fcopts = (
 	       verbose=>2,
 	       recursive=>1,
-	       inputFileMatch=>qr/\.xml/,
+	       inputFileMatch=>qr/\.csv/,
 	       inputFileTrim=>qr/\.[^\.]*$/,
 	       outputFile=>undef,
-	       outputFileSuffix=>'.raw',
+	       outputFileSuffix=>'.sig',
 	      );
 
 ##------------------------------------------------------------------------------
@@ -58,13 +58,13 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 our ($fc);
-sub cb_xml2raw {
-  my ($xmlfile) = @_;
-  my $doc = DocClassify::Document->new(file=>$xmlfile);
-  my ($outfile,$outfh) = $fc->in2out($xmlfile);
-  $outfh->binmode(':utf8');
-  my $ref = $doc->rawText();
-  $outfh->print($$ref);
+sub cb_csv2sig {
+  my ($infile) = @_;
+  my $sig = DocClassify::Signature->new->loadCsvFile($infile)
+    or die("$0: loadCsvFile() failed for '$infile': $!");
+  my ($outfile,$outfh) = $fc->in2out($infile);
+  $sig->saveBinFile($outfh)
+    or die("$0: saveBinFh() failed for '$outfile': $!");
   $outfh->close() if (!defined($fc->{outputFile}));
 }
 
@@ -74,7 +74,7 @@ sub cb_xml2raw {
 
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
-$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_xml2raw );
+$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_csv2sig );
 $fc->churn(@ARGV);
 
 
@@ -82,17 +82,17 @@ $fc->churn(@ARGV);
 
 =head1 NAME
 
-dc-xml2raw.perl - convert DocClassify xml docs to raw text files
+dc-csv2sig.perl - convert CSV term-frequency signature files to DocClassify signatures
 
 =head1 SYNOPSIS
 
- dc-xml2raw.perl [OPTIONS] [INPUT(s)...]
+ dc-csv2sig.perl [OPTIONS] [INPUT(s)...]
 
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
   -output-file FILE      # all output to a single file
-  -output-suffix SUFFIX  # one outfile per infile, suffix SUFFIX (default=.raw)
+  -output-suffix SUFFIX  # one outfile per infile, suffix SUFFIX (default=.sig)
 
 =cut
 

@@ -108,16 +108,18 @@ sub loadCsvFile {
   my $N  = $sig->{N};
   my ($line,$cat,$cid,$deg, $term,$freq,$rest);
   while (defined($line=<$fh>)) {
-    chomp;
+    chomp($line);
     next if ($line =~ /^\s*$/ || $line =~ /^%%/);
 
     ##-- category declarations
-    if ($line =~ m/^(?:\<(\d+)\>)?(?:\s*(\d+))?\s*(.*)$/) {
-      ($deg,$cid,$cat) = ($1,$2,$3);
-      $deg = $CAT_DEG_DEFAULT if (!defined($deg));
-      $sig->{cat2deg}{$cat}=min2( $cat, $CAT_DEG_MAX );
-      $sig->{cat2id}{$cat} = $cid if (defined($cid) && !defined($sig->{cat2id}{$cat}));
-      next;
+    if ($line !~ m/\t/) {
+      if ($line =~ m/^(?:\<(\d+)\>)?(?:\s*(\d+))?\s*(.*)$/) {
+	($deg,$cid,$cat) = ($1,$2,$3);
+	$deg = $CAT_DEG_DEFAULT if (!defined($deg));
+	$sig->{cat2deg}{$cat} = min2( $deg, $CAT_DEG_MAX );
+	$sig->{cat2id}{$cat}  = $cid if (defined($cid) && !defined($sig->{cat2id}{$cat}));
+      }
+      next; ##-- just skip anything else without a TAB
     }
 
     ##-- TERM FREQ ...
