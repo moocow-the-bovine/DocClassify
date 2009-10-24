@@ -1,12 +1,13 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::Document.pm
 ## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
-## Descript: document classifier: document
+## Descript: document classifier: document (raw xml data)
 
 
 package DocClassify::Document;
 use DocClassify::Object;
 use DocClassify::Utils ':all';
+use DocClassify::Signature;
 use IO::File;
 use Carp;
 use strict;
@@ -17,7 +18,7 @@ use strict;
 our @ISA = qw(DocClassify::Object);
 
 ## @XML_CAT_XPATHS
-## for xml input
+##  + XPaths for categorization
 our @XML_CAT_XPATHS =
   (
    '//head/classification/cat',
@@ -25,14 +26,31 @@ our @XML_CAT_XPATHS =
   );
 
 ## @XML_TERM_XPATHS
-## for xml input
+##  + XPaths for term signatures
 our @XML_TERM_XPATHS =
   (
    '//cooked//w[@stop!="1"]',
   );
 
+## $XML_POS_REGEX
+##  + regex matching PoS of terms to select
+our $XML_POS_REGEX = qr/^N/;
+
+## $XML_TEXT_REGEX
+##  + regex matching text of terms to select
+our $XML_TEXT_REGEX = qr/./;
+
+## $XML_TEXT_ATTR
+##  + plain (normalized) text attribute
+our $XML_TEXT_ATTR = 'norm';
+
+## $XML_LEMMA_ATTR
+##  + lemma attribute
+our $XML_LEMMA_ATTR = 'lemma';
+
+
 ## @XML_RAW_XPATHS
-##  for raw output
+##  + XPaths for raw text extraction
 our @XML_RAW_XPATHS =
   (
    '//head/title',
@@ -42,145 +60,111 @@ our @XML_RAW_XPATHS =
    '//body/thread/posts/post/plain',
   );
 
+## $DOC_ID
+##  + used for auto-generating doc-ids
+our $DOC_ID = 0;
+
 ##==============================================================================
 ## Constructors etc.
 
-## $obj = $CLASS_OR_OBJ->new(%opts)
-## %$obj, %opts:
-##  ##-- base data
-##  tf   => \%term2freq,  ##-- raw frequency hash
-##  name => $srcName,     ##-- source name (default=undef)
-##  N    => $totalFreq,   ##-- total frequency
+## $doc = $CLASS_OR_OBJ->new(%opts)
+## %$doc, %opts:
+##  ##-- source options
+##  file => $srcFile,     ##-- load from file (sets label=$srcFile)
+##  string => $srcString, ##-- load from string, (sets label='string')
+##  label => $srcLabel,   ##-- override initial document label
+##  id => $id,            ##-- unique id (string or integer; default = ++$DOC_ID)
 ##  ##
-##  ##-- optional data
-##  cat2deg => \%cat2deg, ##-- $categoryName => $degree (lower degree is better "fit")
+##  ##-- other data
+##  xdoc => $xmlDoc,      ##-- XML::LibXML::Document object (default: none)
+##  #...
 sub new {
   my $that = shift;
-  return $that->SUPER::new(
-			   tf=>{},
-			   N=>0,
-			   name=>undef,
-			   cat2deg=>{},
-			   @_,
-			  );
+  my $doc = $that->SUPER::new(
+			      ##-- source options
+			      label=>undef,
+			      xdoc =>undef,
+			      id   =>undef,
+			      @_,
+			     );
+
+  ##-- ensure label, id are set
+  $doc->label() if (!defined($doc->{label}));
+  $doc->id() if (!defined($doc->{id}));
+  return $doc;
 }
 
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(tf N cat2seg)
+##  + override returns qw(xdoc id)
 sub noShadowKeys {
-  return qw(tf N cat2deg);
+  return qw(xdoc id);
 }
 
 ##==============================================================================
-## Methods: Agglomeration
+## Methods: labelling
 
-## $doc = $doc->addDoc($doc2)
-##  adds frequency and category data from $doc2
-sub addDoc {
-  my ($doc1,$doc2) = @_;
+## $label = $doc->label()
+## $label = $doc->label($label)
+##  + get label, setting it if not already defined
+sub label {
+  my $doc = shift;
+  return $doc->{label}=$_[0] if (defined($_[0]));
+  return $doc->{label} if (defined($doc->{label}));
+  return $doc->{label} = $doc->{file} if (defined($doc->{file}));
+  #return $doc->{label} = $doc->{string} if (defined($doc->{string}));
+  return $doc->{label} = 'string' if (defined($doc->{string}));
+  return $doc->{label};
+}
 
-  ##-- add: frequencies
-  $doc1->{N} += $doc2->{N};
-  my ($t,$f);
-  while (($t,$f)=each(%{$doc2->{tf}})) {
-
-    $doc1->{tf}{$t} += $f;
-  }
-
-  ##-- add: category data
-  my ($c,$d);
-  while (($c,$d)=each(%{$doc2->{cat2deg}})) {
-    $doc1->{cat2deg}{$c} = min2( ($doc1->{cat2deg}{$c}||9999), $d );
-  }
-
-  ##-- return
-  return $doc1;
+## $id = $doc->id()
+## $id = $doc->id($id)
+##  + get id, setting if not already defined
+sub id {
+  my $doc = shift;
+  return $doc->{id} = $_[0] if (defined($_[0]));
+  return $doc->{id} if (defined($doc->{id}));
+  return $doc->{id} = ++$DOC_ID;
 }
 
 ##==============================================================================
-## Methods: I/O
+## Methods: Term-Frequency Signature
 
-
-##==============================================================================
-## Methods: I/O: CSV
-
-## $doc = $doc->loadCsvFile($file_or_fh,%opts)
-## %opts, %$doc keys:
-sub loadCsvFile {
-  my ($doc,$file,%opts) = @_;
-
-  ##-- set document name
-  $doc->{name} = $file;
-
-  my $fh = ref($file) ? $file : IO::File->new("<$file");
-  confess(ref($doc)."::loadCsvFile(): open failed for file '$file': $!") if (!defined($fh));
-  $fh->binmode(':utf8');
-
-  ##-- parse rest of file (TAB-separated: (TERM FREQ ...) or tab-less (CAT_ID? DEG? CAT_NAME) or comment /^%%/)
-  my $tf = $doc->{tf};
-  my ($line,$cat,$deg, $term,$freq,$rest);
-  while (defined($line=<$fh>)) {
-    chomp;
-    next if ($line =~ /^\s*$/ || $line =~ /^%%/);
-
-    if ($line !~ /\t/) {
-      ##-- category declaration: CLASS_ID? DEG? CLASS_NAME
-      $line =~ s/^\d+\s*//;
-      if ($line =~ /^(\d+)\s*(.*)$/) {
-	($deg,$cat) = ($1,$2);
-      } else {
-	($deg,$cat) = (1,$line);
-      }
-      $doc->{cat2deg}{$cat}=$deg;
-      next;
-    }
-
-    ##-- TERM FREQ ...
-    ($term,$freq,$rest) = split(/\t/,$line,3);
-    $tf->{$term} += $freq;
-    $N += $freq;
-  }
-  $fh->close if (!ref($file));
-}
-
-##==============================================================================
-## Methods: I/O: XML
-
-## $doc = $doc->loadXmlFile($file_or_fh,%opts)
-## %opts, %$doc keys:
-##  posRegex => $regex,           ##-- default: /^N/
-##  textStopList => \%text2undef, ##-- text stop-list, default: empty
-##  textRegex => $regex,          ##-- text regex, default: none (keep all)
-##  textAttr  => $attr,           ##-- default: 'norm'
-##  lemmaAttr => $attr,           ##-- default: 'lemma'
-sub loadXmlFile {
-  my ($doc,$file,%opts) = @_;
+## \%tfhash = $doc->termSignature(%opts)
+##  + %opts:
+##     textStopList => \%stopword2undef, ##-- stop-list
+##     textAttr => $a,                   ##-- default=$XML_TEXT_ATTR
+##     textRegex => $re,                 ##-- default=$XML_TEXT_REGEX
+##     posRegex => $re,                  ##-- default=$XML_POS_REGEX
+##     lemmaAttr => $a,                  ##-- default=$XML_LEMMA_ATTR
+sub termSignature {
+  my ($doc,%opts) = @_;
+  %opts = (%$doc,%opts);
 
   ##-- defaults
-  $opts{posRegex} = qr/^N/ if (!defined($opts{posRegex}));
-  $opts{lemmaAttr} = 'lemma' if (!defined($opts{lemmaAttr}));
-  $opts{textAttr} = 'norm' if (!defined($opts{textAttr}));
+  $opts{textAttr} = $XML_TEXT_ATTR if (!defined($opts{textAttr}));
+  $opts{textRegex} = $XML_TEXT_REGEX if (!defined($opts{textRegex}));
+  $opts{posRegex}  = $XML_POS_REGEX if (!defined($opts{posRegex}));
+  $opts{lemmaAttr} = $XML_LEMMA_ATTR if (!defined($opts{lemmaAttr}));
 
-  ##-- doc name
-  $doc->{name} = $file;
-  my $parser = libxmlParser();
-  my $doc = ref($file) ? $parser->parse_fh($file) : $parser->parse_file($file);
-  confess(ref($doc)."::loadXmlFile(): parse failed for file '$file': $!") if (!$doc);
+  ##-- common vars
+  my $sig = DocClassify::Signature->new();
+  my $xdoc = $doc->xmlDoc();
 
   ##-- category data
-  my ($c_node,$c_name,$c_deg);
-  foreach $c_node (@{$doc->findnodes(join('|',@XML_CAT_XPATHS))}) {
-    ($c_name,$c_deg) = map {$c_node->getAttribute($_)} qw(id name degree);
-    $doc->{cat2seg}{$c_name} = $c_deg;
+  my ($c_node,$c_id,$c_name,$c_deg);
+  foreach $c_node (@{$xdoc->findnodes(join('|',@XML_CAT_XPATHS))}) {
+    ($c_id,$c_name,$c_deg) = map {$c_node->getAttribute($_)} qw(id name degree);
+    $sig->{cat2id}{$c_name} = $c_id;
+    $sig->{cat2deg}{$c_name} = $c_deg;
   }
 
-  ##-- term frequency
-  my $tf = $doc->{tf};
-  my $N  = $doc->{N};
-  my ($t_node,$t_text,$t_lemma);
-  foreach $t_node (@{$doc->findnodes(join('|',@XML_TERM_XPATHS))}) {
+  ##-- term frequency hash
+  my $tf = $sig->{tf};
+  my $N  = $sig->{N};
+  my ($t_node,$t_text,$t_pos,$t_lemma);
+  foreach $t_node (@{$xdoc->findnodes(join('|',@XML_TERM_XPATHS))}) {
     $t_text = $t_node->getAttribute($opts{textAttr});
     next if (defined($opts{textStopList}) && exists($opts{textStopList}{$t_text}));
     next if (defined($opts{textRegex}) && $t_text !~ $opts{textRegex});
@@ -192,10 +176,80 @@ sub loadXmlFile {
     $tf->{$t_lemma}++;
     $N++;
   }
-  $doc->{N}=$N;
-  $fh->close() if (!ref($file));
+  $sig->{N}=$N;
 
-  return $doc;
+  return $sig;
+}
+
+##==============================================================================
+## Methods: Raw Text
+
+## \$str = $doc->rawText(%opts)
+## + %opts:
+##     str=>\$str,
+##     xpaths => \@xpaths, ##-- override @XML_RAW_XPATHS
+sub rawText {
+  my ($doc,%opts) = @_;
+  %opts = (%$doc,%opts);
+
+  ##-- defaults
+  $opts{xpaths} = \@XML_RAW_XPATHS if (!defined($opts{xpaths}));
+  my $ref = $opts{str};
+  if (!defined($opts{str})) {
+    my $str = '';
+    $ref = \$str;
+  }
+
+  ##-- dump & return
+  my $xdoc = $doc->xmlDoc();
+  $$ref = join("\n\n", map {$_->textContent} @{$xdoc->findnodes(join('|',@{$opts{xpaths}}))})."\n";
+  return $ref;
+}
+
+
+
+
+##==============================================================================
+## Methods: I/O
+
+##--------------------------------------------------------------
+## Methods: I/O: XML
+
+## $xdoc = $doc->xmlDoc(%opts)
+##  + gets cached xml document or load from source
+sub xmlDoc {
+  return $_[0]{xdoc} if (defined($_[0]{xdoc}));
+  return $_[0]->loadXmlDoc(@_[1..$#_])
+}
+
+
+## $xdoc = $doc->loadXmlDoc(%opts)
+##  + (re-)loads $doc->{xdoc} from specified source
+##  + %opts clobbers %$doc
+##  + implicitly re-sets $doc->{label} from %opts or source
+sub loadXmlDoc {
+  my ($doc,%opts) = shift;
+  delete($doc->{label});
+  @$doc{keys(%opts)} = values(%opts);
+  $doc->label() if (!defined($doc->{label})); ##-- re-set label
+
+  my $parser = libxmlParser();
+  if (defined($doc->{doc})) {
+    $doc->{xdoc} = $doc->{doc};
+    delete($doc->{doc});
+  }
+  elsif (defined($doc->{string})) {
+    $doc->{xdoc} = $parser->parse_string(ref($doc->{string}) ? ${$doc->{string}} : $doc->{string});
+  }
+  elsif (defined($doc->{file})) {
+    $doc->{xdoc} = ref($doc->{file}) ? $parser->parse_fh($doc->{file}) : $parser->parse_file($doc->{file});
+  }
+  else {
+    confess(ref($doc)."::loadXmlDoc(): no XML document source to load from!");
+  }
+  confess(ref($doc)."::loadXmlDoc(): ".$doc->label.": could not parse source document: $!") if (!$doc->{xdoc});
+
+  return $doc->{xdoc};
 }
 
 
