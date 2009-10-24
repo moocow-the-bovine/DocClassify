@@ -28,7 +28,7 @@ our ($help,$verbose);
 our %fcopts = (
 	       verbose=>2,
 	       recursive=>1,
-	       inputFileMatch=>qr/\.csv$/,
+	       inputFileMatch=>qr/\.xml$/,
 	       inputFileTrim=>qr/\.[^\.]*$/,
 	       outputFile=>undef,
 	       outputFileSuffix=>'.sig',
@@ -58,13 +58,16 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 our ($fc);
-sub cb_csv2sig {
+sub cb_xml2sig {
   my ($infile) = @_;
-  my $sig = DocClassify::Signature->new->loadCsvFile($infile)
-    or die("$0: loadCsvFile() failed for '$infile': $!");
+  my $doc = DocClassify::Document->new(file=>$infile)
+    or die("$0: Document->new() failed for '$infile': $!");
   my ($outfile,$outfh) = $fc->in2out($infile);
+  $outfh->binmode(':utf8');
+  my $sig = $doc->termSignature()
+    or die("$0: termSignature() failed for '$infile': $!");
   $sig->saveBinFile($outfh)
-    or die("$0: saveBinFh() failed for '$outfile': $!");
+    or die("$0: saveBinFile() failed for '$outfile': $!");
   $outfh->close() if (!defined($fc->{outputFile}));
 }
 
@@ -74,7 +77,7 @@ sub cb_csv2sig {
 
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
-$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_csv2sig );
+$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_xml2sig );
 $fc->churn(@ARGV);
 
 
@@ -82,11 +85,11 @@ $fc->churn(@ARGV);
 
 =head1 NAME
 
-dc-csv2sig.perl - convert CSV term-frequency signature files to DocClassify signatures
+dc-xml2sig.perl - convert DocClassify xml docs to binary term-frequency signature files
 
 =head1 SYNOPSIS
 
- dc-csv2sig.perl [OPTIONS] [INPUT(s)...]
+ dc-xml2sig.perl [OPTIONS] [INPUT(s)...]
 
  Options:
   -help                  # this help message

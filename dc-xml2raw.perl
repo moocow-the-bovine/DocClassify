@@ -28,7 +28,7 @@ our ($help,$verbose);
 our %fcopts = (
 	       verbose=>2,
 	       recursive=>1,
-	       inputFileMatch=>qr/\.xml/,
+	       inputFileMatch=>qr/\.xml$/,
 	       inputFileTrim=>qr/\.[^\.]*$/,
 	       outputFile=>undef,
 	       outputFileSuffix=>'.raw',
