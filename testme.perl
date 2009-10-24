@@ -396,7 +396,89 @@ sub test_vzdata {
   print STDERR "$0: test_vzdata(test_dir=>$test_dir) done: what now?\n";
   exit(0);
 }
-test_vzdata();
+#test_vzdata();
+
+##======================================================================
+## test dump pdl
+
+use Data::Dumper;
+
+BEGIN { *PDL::ddFreeze = \&PDL::ddFrozen::ddFreeze; }
+
+package PDL::ddFrozen;
+BEGIN { our %frozen = qw(); }
+sub ddFreeze {
+  my $pdl = shift;
+  return if (ref($pdl) ne 'PDL');
+  my $ref = { cref=>$$pdl, sto=>Storable::freeze($pdl) };
+  $$pdl = $ref;
+  bless($pdl,'PDL::ddFrozen');
+  $frozen{"$pdl"} = $pdl;
+}
+sub ddToast {
+  my $fpdl = shift;
+  return $fpdl if (ref($fpdl) ne 'PDL::ddFrozen');
+  my $thaw = Storable::thaw($$fpdl->{sto});
+  $$fpdl = $$thaw;
+  bless($thaw,'PDL::ddFrozen::NoFree');
+  return bless($fpdl,'PDL');
+}
+sub unfreeze {
+  foreach (@_) {
+    delete($frozen{"$_"});
+    $$_ = $$_->{cref};
+    bless($_,'PDL');
+  }
+}
+sub unfreezeAll {
+  unfreeze($_) foreach (values(%frozen));
+  %frozen = qw();
+}
+
+sub UNIVERSAL::ddFreeze { ; }
+sub UNIVERSAL::ddToast { $_[0]; }
+
+package main;
+
+sub test_dump_pdl {
+  my $p = sequence(4);
+  my $h = { str=>'foo', p=>$p, obj=>bless([],'MyObject'), };
+  my $d = Data::Dumper->new([$h],['h2']);
+  $d->Freezer('ddFreeze');
+  $d->Toaster('ddToast');
+  my $hs = $d->Dump;
+  PDL::ddFrozen::unfreezeAll(); ##-- avoid memory leak, must call after Dump()
+  eval "$hs";
+  #x $h2
+
+  ##-- try with ccs: ok (needs UNIVERSAL::ddFreeze, UNIVERSAL::ddToast)
+  my $ccs = PDL::CCS::Nd->newFromDense( sequence(4,3)%2 );
+  $d->Reset->Values([$ccs])->Names(['ccs2']);
+  my $ds = $d->Dump;
+  PDL::ddFrozen::unfreezeAll(); ##-- avoid memory leak, must call after Dump()
+  eval "$ds";
+  warn("$@") if ($@);
+  #x $ccs2
+
+  ##-- try using 2 dumper calls & Seen()
+  ##  + ugly; also doesn't work very well
+  $d->Reset->Values([$h])->Names(['h2'])->Freezer('')->Toaster('');
+  my $hs0 = $d->Dump;
+  my @seen0 = $d->Seen;
+  my $seen1 = qw();
+  my ($name);
+  foreach (grep {ref($_) eq 'PDL'} @seen0) {
+    $name = "Storable::thaw(q(".Storable::freeze($_)."))";
+    $seen1{$name} = $_;
+  }
+  $d->init_refaddr_format(); ##-- bug in Data::Dumper v2.121_08
+  $d->Reset->Seen(\%seen1); ##-- errors?
+  my $hs1 = $d->Dump;
+  print $hs1;
+
+  print STDERR "$0: test_dump_pdl() done -- what now?\n";
+}
+test_dump_pdl();
 
 
 ##======================================================================

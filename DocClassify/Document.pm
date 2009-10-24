@@ -77,6 +77,7 @@ our $DOC_ID = 0;
 ##  ##
 ##  ##-- other data
 ##  xdoc => $xmlDoc,      ##-- XML::LibXML::Document object (default: none)
+##  cats => \@catList,    ##-- [ {id=>$catId,deg=>$catDeg,name=>$catName}, ... ] : see cats()
 ##  #...
 sub new {
   my $that = shift;
@@ -97,9 +98,9 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(xdoc id)
+##  + override returns qw(xdoc id cats)
 sub noShadowKeys {
-  return qw(xdoc id);
+  return qw(xdoc id cats);
 }
 
 ##==============================================================================
@@ -129,7 +130,33 @@ sub id {
 }
 
 ##==============================================================================
-## Methods: Term-Frequency Signature
+## Methods: Parsing
+
+##--------------------------------------------------------------
+## Methods: Parsing: Header Data
+
+## @cats = $doc->cats()
+## \@cats = $doc->cats()
+##  + Returns array (ref) of category membership data:
+##    @cats = ( {id=>$catId,deg=>$catDeg,name=>$catName}, ... )
+##  + just returns $doc->{cats} if defined, otherwise parses xml doc
+sub cats {
+  my $doc = shift;
+  if (!defined($doc->{cats})) {
+    ##-- parse category data
+    $doc->{cats} = [];
+    my $xdoc = $doc->xmlDoc();
+    my ($c_node,$c_id,$c_name,$c_deg);
+    foreach $c_node (@{$xdoc->findnodes(join('|',@XML_CAT_XPATHS))}) {
+      ($c_id,$c_name,$c_deg) = map {$c_node->getAttribute($_)} qw(id name degree);
+      push(@{$doc->{cats}}, {id=>$c_id,deg=>$c_deg,name=>$c_name});
+    }
+  }
+  return wantarray ? @{$doc->{cats}} : $doc->{cats};
+}
+
+##--------------------------------------------------------------
+## Methods: Parsing: Term-Frequency Signature
 
 ## \%tfhash = $doc->termSignature(%opts)
 ##  + %opts:
@@ -150,17 +177,16 @@ sub termSignature {
 
   ##-- common vars
   my $sig = DocClassify::Signature->new();
-  my $xdoc = $doc->xmlDoc();
 
   ##-- category data
-  my ($c_node,$c_id,$c_name,$c_deg);
-  foreach $c_node (@{$xdoc->findnodes(join('|',@XML_CAT_XPATHS))}) {
-    ($c_id,$c_name,$c_deg) = map {$c_node->getAttribute($_)} qw(id name degree);
-    $sig->{cat2id}{$c_name} = $c_id;
-    $sig->{cat2deg}{$c_name} = $c_deg;
+  my ($cat);
+  foreach $cat ( @{$doc->cats} ) {
+    $sig->{cat2id}{$cat->{name}}  = $cat->{id} if (!defined($sig->{cat2id}{$cat->{name}}));
+    $sig->{cat2deg}{$cat->{name}} = $cat->{deg} if (!defined($sig->{cat2deg}{$cat->{name}}));
   }
 
   ##-- term frequency hash
+  my $xdoc = $doc->xmlDoc();
   my $tf = $sig->{tf};
   my $N  = $sig->{N};
   my ($t_node,$t_text,$t_pos,$t_lemma);
@@ -181,8 +207,8 @@ sub termSignature {
   return $sig;
 }
 
-##==============================================================================
-## Methods: Raw Text
+##--------------------------------------------------------------
+## Methods: Parsing: Raw Text
 
 ## \$str = $doc->rawText(%opts)
 ## + %opts:
