@@ -97,11 +97,11 @@ $corpus->saveXmlFile($fcopts{outputFile}, saveCats=>$wantCats);
 
 =head1 NAME
 
-dc-make-corpus.perl - make an XML corpus directory
+dc-corpus-create.perl - make an XML corpus directory
 
 =head1 SYNOPSIS
 
- dc-make-corpus.perl [OPTIONS] [INPUT(s)...]
+ dc-corpus-create.perl [OPTIONS] [INPUT(s)...]
 
  Options:
   -help                  # this help message

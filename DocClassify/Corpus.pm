@@ -75,6 +75,75 @@ sub addCorpus {
   return $corpus;
 }
 
+
+##==============================================================================
+## Methods: Splitting
+
+## ($c1,$c2) = $corpus->splitCorpus($frac1,%opts)  ##-- array context
+##  + $frac1: fraction of corpus (0 <= $frac1 <= 1) to $c1
+##  + %opts:
+##      seed => $randomSeed,  ##-- for reproducability
+##      label1 => $label1,
+##      label2 => $label2,
+##      exclusive => $bool,   ##-- passed to docsByCat()
+sub splitCorpus {
+  my ($corpus,$frac1,%opts) = @_;
+  my $frac2 = 1-$frac1;
+
+  ##-- create sub-corpora
+  my $c1 = $corpus->shadow(label=>$opts{label1});
+  my $c2 = $corpus->shadow(label=>$opts{label2});
+
+  ##-- proceed by category: build cat2doc hash
+  my $cat2doc = $corpus->docsByCat(%opts);
+  my ($cat,$cdocs,@ckeys, $csize1,$csize2, @cdocs1,@cdocs2,$doc);
+  while (($cat,$cdocs)=each(%$cat2doc)) {
+    ##-- random sort
+    srand($opts{seed}) if (defined($opts{seed})); ##-- random seed (because hash order may change)
+    @ckeys = map {rand} @$cdocs;
+    @$cdocs = @$cdocs[sort {$ckeys[$a]<=>$ckeys[$b]} (0..$#$cdocs)];
+
+    ##-- assign category documents to sub-corpora
+    $csize1=$csize2=0;
+    foreach $doc (@$cdocs) {
+      if ( !$csize1 || ($csize1 && $csize2 && $csize1/($csize1+$csize2) < $frac1) ) {
+	##-- not enough alotted to $c1
+	$c1->addDocument($doc);
+	$csize1 += $doc->sizeBytes();
+      } else {
+	$c2->addDocument($doc);
+	$csize2 += $doc->sizeBytes();
+      }
+    }
+  }
+
+  return ($c1,$c2);
+}
+
+## \%cat2doc = $corpus->docsByCat(%opts)
+##  + returns map ($catName=>\@docs)
+##  + %opts:
+##     exclusive => $bool, ##-- assign each doc to at most 1 cat (default=1)
+BEGIN { *cat2doc = \&docsByCat; }
+sub docsByCat {
+  my ($corpus,%opts) = @_;
+  my $excl = defined($opts{exclusive}) ? $opts{exclusive} : 1;
+
+  my $c2d = {};
+  my ($doc,$dcats);
+  foreach $doc (@{$corpus->{docs}}) {
+    $dcats = $doc->cats();
+    next if (!$dcats || !@$dcats); ##-- no category data available
+    if ($excl) {
+      push(@{$c2d->{$dcats->[0]{name}}},$doc);
+    } else {
+      push(@{$c2d->{$_->{name}}},$doc) foreach (@$dcats);
+    }
+  }
+
+  return $c2d;
+}
+
 ##==============================================================================
 ## Methods: I/O
 
@@ -90,7 +159,7 @@ sub saveXmlDoc {
   my $xdoc = XML::LibXML::Document->new('1.0','UTF-8');
   $xdoc->setDocumentElement($xdoc->createElement('corpus'));
   my $root = $xdoc->documentElement;
- $root->setAttribute('label',($corpus->{label}||''));
+  $root->setAttribute('label',($corpus->{label}||''));
 
   ##-- raw document list
   my $docs_node = $root->addNewChild(undef,'docs');
@@ -100,6 +169,7 @@ sub saveXmlDoc {
     $d_node->setAttribute('id',$doc->id);
     $d_node->setAttribute('label',$doc->label) if (defined($doc->{file}) && $doc->label ne $doc->{file});
     $d_node->setAttribute('file',$doc->{file}) if (defined($doc->{file}));
+    $d_node->setAttribute('bytes',$doc->sizeBytes); ##-- save document size in bytes
     if ($opts{saveCats} || !defined($opts{saveCats})) {
       foreach $cat (@{$doc->cats}) {
 	$c_node = $d_node->addNewChild(undef,'cat');
@@ -140,7 +210,7 @@ sub saveXmlString {
 ## $corpus = $CLASS_OR_OBJECT->loadXmlDoc($xdoc,%opts)
 ##  + (re-)loads corpus data from $xdoc
 sub loadXmlDoc {
-  my ($that,$xdoc,%opts) = shift;
+  my ($that,$xdoc,%opts) = @_;
   my $corpus = ref($that) ? $that->clear : $that->new(%opts);
 
   ##-- load: label
@@ -154,6 +224,8 @@ sub loadXmlDoc {
     $doc->label($d_node->getAttribute('label'));
     $doc->id($d_node->getAttribute('id'));
     $doc->{file} = $d_node->getAttribute('file');
+    $doc->label();
+    $doc->id();
     foreach $c_node (@{$d_node->findnodes('./cat')}) {
       $cat = {};
       $cat->{$_} = $c_node->getAttribute($_) foreach (qw(id deg name));
@@ -169,9 +241,9 @@ sub loadXmlDoc {
 sub loadXmlFile {
   my ($that,$file,%opts) = @_;
   my $parser = libxmlParser();
-  my $xdoc = ref($file) ? $parser->parseFH($file) : $parser->parseFile($file)
+  my $xdoc = ref($file) ? $parser->parse_fh($file) : $parser->parse_file($file)
     or confess((ref($that)||$that)."::loadXmlFile(): could not parse '$file': $!");
-  return $that->loadXmlDoc($xdoc);
+  return $that->loadXmlDoc($xdoc,%opts);
 }
 
 ## $corpus = $CLASS_OR_OBJECT->loadXmlString($str,%opts)
@@ -180,7 +252,7 @@ sub loadXmlFile {
 sub loadXmlString {
   my ($that,$str,%opts) = @_;
   my $parser = libxmlParser();
-  my $xdoc = $parser->parseString(ref($str) ? $$str : $str)
+  my $xdoc = $parser->parse_string(ref($str) ? $$str : $str)
     or confess((ref($that)||$that)."::loadXmlFile(): could not parse string: $!");
   return $that->loadXmlDoc($xdoc);
 }

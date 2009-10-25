@@ -21,15 +21,16 @@ our @ISA = qw(DocClassify::Object);
 ##  + XPaths for categorization
 our @XML_CAT_XPATHS =
   (
-   '//head/classification/cat',
-   '//head/classification/vat',
+   '/*/head/classification/cat',
+   '/*/head/classification/vat',
   );
 
 ## @XML_TERM_XPATHS
 ##  + XPaths for term signatures
 our @XML_TERM_XPATHS =
   (
-   '//cooked//w[@stop!="1"]',
+   #'//cooked/s/w[@stop!="1"]',
+   '//w[@stop!="1"]',
   );
 
 ## $XML_POS_REGEX
@@ -53,11 +54,11 @@ our $XML_LEMMA_ATTR = 'lemma';
 ##  + XPaths for raw text extraction
 our @XML_RAW_XPATHS =
   (
-   '//head/title',
-   '//head/descrition',
-   '//head/description',
-   '//body/thread/title',
-   '//body/thread/posts/post/plain',
+   '/*/head/title',
+   '/*/head/descrition',
+   '/*/head/description',
+   '/*/body/thread/title',
+   '/*/body/thread/posts/post/plain',
   );
 
 ## $DOC_ID
@@ -78,7 +79,8 @@ our $DOC_ID = 0;
 ##  ##-- other data
 ##  xdoc => $xmlDoc,      ##-- XML::LibXML::Document object (default: none)
 ##  cats => \@catList,    ##-- [ {id=>$catId,deg=>$catDeg,name=>$catName}, ... ] : see cats()
-##  #...
+##  sig => $termSignature,##-- cached signature
+##  raw => $rawText,      ##-- cached raw text
 sub new {
   my $that = shift;
   my $doc = $that->SUPER::new(
@@ -98,9 +100,16 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(xdoc id cats)
+##  + override returns qw(xdoc id cats sig raw)
 sub noShadowKeys {
-  return qw(xdoc id cats);
+  return qw(xdoc id cats sig raw);
+}
+
+## $doc = $doc->clearCache()
+##  + clears cached keys qw(xdoc raw sig)
+sub clearCache {
+  delete(@{$_[0]}{qw(xdoc raw sig)});
+  return $_[0];
 }
 
 ##==============================================================================
@@ -135,6 +144,41 @@ sub id {
 ##--------------------------------------------------------------
 ## Methods: Parsing: Header Data
 
+## $size = $doc->sizeBytes()
+##  + returns size of document in raw XML bytes (usually fast)
+sub sizeBytes {
+  my $doc = shift;
+  if (defined($doc->{str})) {
+    use bytes;
+    return ref($doc->{str}) ? length(${$doc->{str}}) : length($doc->{str});
+  } elsif (defined($doc->{file})) {
+    return -s $doc->{file};
+  } elsif (defined($doc->{xdoc})) {
+    use bytes;
+    return length($doc->{xdoc}->toString(1));
+  }
+  return undef;
+}
+
+## $nChars = $doc->sizeText()
+##  + calls $doc->rawText
+sub sizeText {
+  return length(${$_[0]->rawText});
+}
+
+## $nTermTokens = $doc->sizeTerms()
+##  + calls $doc->termSignature()
+sub sizeTerms {
+  return $_[0]->termSignature->{N};
+}
+
+## $nTokens = $doc->sizeTokens()
+##  + slow
+sub sizeTokens {
+  my $doc = shift;
+  return scalar(@{$doc->xmlDoc->findnodes(join('|',@XML_TERM_XPATHS))});
+}
+
 ## @cats = $doc->cats()
 ## \@cats = $doc->cats()
 ##  + Returns array (ref) of category membership data:
@@ -152,6 +196,11 @@ sub cats {
       push(@{$doc->{cats}}, {id=>$c_id,deg=>$c_deg,name=>$c_name});
     }
   }
+  ##-- sanitize & sort
+  $_->{deg} = 1 foreach (grep {!defined($_->{deg})} @{$doc->{cats}});
+  @{$doc->{cats}} =
+    sort {$a->{deg}<=>$b->{deg} || $a->{id}<=>$b->{id} || $a->{name} cmp $b->{name}} @{$doc->{cats}};
+
   return wantarray ? @{$doc->{cats}} : $doc->{cats};
 }
 
@@ -167,6 +216,7 @@ sub cats {
 ##     lemmaAttr => $a,                  ##-- default=$XML_LEMMA_ATTR
 sub termSignature {
   my ($doc,%opts) = @_;
+  return $doc->{sig} if (defined($doc->{sig})); ##-- check cache
   %opts = (%$doc,%opts);
 
   ##-- defaults
@@ -204,7 +254,7 @@ sub termSignature {
   }
   $sig->{N}=$N;
 
-  return $sig;
+  return $doc->{sig}=$sig;
 }
 
 ##--------------------------------------------------------------
@@ -216,19 +266,22 @@ sub termSignature {
 ##     xpaths => \@xpaths, ##-- override @XML_RAW_XPATHS
 sub rawText {
   my ($doc,%opts) = @_;
-  %opts = (%$doc,%opts);
 
   ##-- defaults
-  $opts{xpaths} = \@XML_RAW_XPATHS if (!defined($opts{xpaths}));
-  my $ref = $opts{str};
-  if (!defined($opts{str})) {
-    my $str = '';
-    $ref = \$str;
+  my $ref = \$doc->{raw};
+  if (!defined($$ref)) {
+    ##-- compute raw text
+    %opts = (%$doc,%opts);
+    $opts{xpaths} = \@XML_RAW_XPATHS if (!defined($opts{xpaths}));
+    my $xdoc = $doc->xmlDoc();
+    $$ref = join("\n\n", map {$_->textContent} @{$xdoc->findnodes(join('|',@{$opts{xpaths}}))})."\n";
   }
 
-  ##-- dump & return
-  my $xdoc = $doc->xmlDoc();
-  $$ref = join("\n\n", map {$_->textContent} @{$xdoc->findnodes(join('|',@{$opts{xpaths}}))})."\n";
+  ##-- return
+  if (defined($opts{str})) {
+    ${$opts{str}} = $$ref;
+    return $opts{str};
+  }
   return $ref;
 }
 
