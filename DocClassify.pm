@@ -8,9 +8,12 @@ package DocClassify;
 
 use DocClassify::Object;
 use DocClassify::Document;
-use DocClassify::Signature;
 use DocClassify::FileChurner;
 use DocClassify::Corpus;
+use DocClassify::Signature;
+
+use DocClassify::Mapper;
+use DocClassify::Mapper::LSI;
 
 use strict;
 

@@ -91,8 +91,8 @@ dc-corpus-split.perl - split an XML corpus into training and test sets
   -verbose LEVEL         # verbosity level
   -n N                   # number of output corpora
   -seed SEED             # specify random seed (default=none)
-  -label LABFMT          # sprintf format for output labels (default=none)
-  -output OUTFMT         # sprintf format for output files (default=STDOUT='-')
+  -label LABFMT          # printf() format for output labels (default=none)
+  -output OUTFMT         # printf() format for output files (default=STDOUT='-')
 
 =cut
 
