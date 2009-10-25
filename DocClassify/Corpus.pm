@@ -8,6 +8,9 @@ package DocClassify::Corpus;
 use DocClassify::Object;
 use DocClassify::Utils ':all';
 use DocClassify::Document;
+
+use PDL;
+
 use IO::File;
 use Carp;
 use strict;
@@ -79,46 +82,41 @@ sub addCorpus {
 ##==============================================================================
 ## Methods: Splitting
 
-## ($c1,$c2) = $corpus->splitCorpus($frac1,%opts)  ##-- array context
-##  + $frac1: fraction of corpus (0 <= $frac1 <= 1) to $c1
+## (@corpora) = $corpus->splitN($n,%opts)
+##  + $N: number of (uniformly sized) sub-corpora into which to split $corpus
 ##  + %opts:
 ##      seed => $randomSeed,  ##-- for reproducability
-##      label1 => $label1,
-##      label2 => $label2,
 ##      exclusive => $bool,   ##-- passed to docsByCat()
-sub splitCorpus {
-  my ($corpus,$frac1,%opts) = @_;
-  my $frac2 = 1-$frac1;
+##      label => $fmt,        ##-- sprintf-format for new labels (passed $i, default="$corpus->{label}.%0.2d")
+sub splitN {
+  my ($corpus,$N,%opts) = @_;
 
   ##-- create sub-corpora
-  my $c1 = $corpus->shadow(label=>$opts{label1});
-  my $c2 = $corpus->shadow(label=>$opts{label2});
+  $opts{label} = "$corpus->{label}.%0.2d" if (!defined($opts{label}));
+  my @corpora = map {$corpus->shadow(label=>sprintf($opts{label},$_))} (1..$N);
 
   ##-- proceed by category: build cat2doc hash
   my $cat2doc = $corpus->docsByCat(%opts);
-  my ($cat,$cdocs,@ckeys, $csize1,$csize2, @cdocs1,@cdocs2,$doc);
+  my ($cat,$cdocs,@ckeys, $scsizes,$sci, $doc);
   while (($cat,$cdocs)=each(%$cat2doc)) {
-    ##-- random sort
+    ##-- randomize doc-list
     srand($opts{seed}) if (defined($opts{seed})); ##-- random seed (because hash order may change)
     @ckeys = map {rand} @$cdocs;
     @$cdocs = @$cdocs[sort {$ckeys[$a]<=>$ckeys[$b]} (0..$#$cdocs)];
 
     ##-- assign category documents to sub-corpora
-    $csize1=$csize2=0;
+    $scsizes = zeroes(long,$N);
     foreach $doc (@$cdocs) {
-      if ( !$csize1 || ($csize1 && $csize2 && $csize1/($csize1+$csize2) < $frac1) ) {
-	##-- not enough alotted to $c1
-	$c1->addDocument($doc);
-	$csize1 += $doc->sizeBytes();
-      } else {
-	$c2->addDocument($doc);
-	$csize2 += $doc->sizeBytes();
-      }
+      $sci = $scsizes->minimum_ind->sclr;
+      push(@{$corpora[$sci]{docs}},$doc);
+      $scsizes->slice("($sci)") += $doc->sizeBytes;
     }
   }
 
-  return ($c1,$c2);
+  #@corpora = @corpora[random($N)->qsorti->list]; ##-- extra random permutation step
+  return @corpora;
 }
+
 
 ## \%cat2doc = $corpus->docsByCat(%opts)
 ##  + returns map ($catName=>\@docs)

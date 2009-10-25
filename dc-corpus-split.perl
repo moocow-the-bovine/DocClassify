@@ -19,21 +19,16 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our ($help,$verbose);
+our ($help);
+our $verbose = 2;
 
 #our $outputEncoding = 'UTF-8';
 #our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
+our $format   = 1;
 
-our $outfile1 = '-';
-our $outfile2 = '-';
-
-our $frac1=undef;
-our $frac2=undef;
-
-our ($label1,$label2);
-
+our $outfmt = '-';
 our $seed=undef;
+our $labfmt=undef;
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -44,12 +39,10 @@ GetOptions(##-- General
 
 	   ##-- Misc
 	   'srand|seed|s=i' => \$seed,
-	   'fraction1|frac1|f1=f' => \$frac1,
-	   'fraction2|frac2|f2=f' => \$frac2,
-	   'label1|l1=s' => \$label1,
-	   'label2|l2=s' => \$label2,
-	   'output-file1|outfile1|out1|of1|o1=s'=> \$outfile1,
-	   'output-file2|outfile2|out2|of2|o2=s'=> \$outfile2,
+	   'label-fmt|labfmt|lf|l=s' => \$labfmt,
+	   'n-corpora|nc|n=i' => \$n_corpora,
+	   'output-fmt|output|outfile|outfmt|out|of|o=s'=> \$outfmt,
+	   'format-xml|format|fx|f!' => \$format,
 	  );
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
@@ -63,34 +56,25 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ## MAIN
 ##------------------------------------------------------------------------------
 
-##-- sanity checks
-if (!defined($frac1) && !defined($frac2)) {
-  $frac1 = 0.9;
-  $frac2 = 0.1;
-} elsif (!defined($frac1)) {
-  $frac1 = 1.0-$frac2;
-} elsif (!defined($frac2)) {
-  $frac2 = 1.0-$frac1;
-}
-die("$0: cannot handle negative fractions!") if ($frac1 < 0 || $frac2 < 0);
-
-##-- re-normalize (in case of integer fractions)
-if ($frac1+$frac2 != 1.0) {
-  $frac1 = $frac1/($frac1+$frac2);
-  $frac2 = $frac2/($frac1+$frac2);
-}
+##-- sanity check(s)
+$outfmt .= '.%0.2d' if ($outfmt ne '-' && $outfmt !~ m/%(?:\d*)(?:\.?)(?:\d*)d/);
 
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
 
 my $cfile = shift(@ARGV);
+print STDERR "$0: loadXmlFile($cfile)\n" if ($verbose);
 our $corpus = DocClassify::Corpus->loadXmlFile($cfile)
   or die("$0: load failed for XML corpus file '$cfile': $!");
 
-our ($c1,$c2) = $corpus->splitCorpus($frac1,seed=>$seed,label1=>$label1,label2=>$label2);
+print STDERR "$0: splitN(n=>$n_corpora)\n" if ($verbose);
+our @subc = $corpus->splitN($n_corpora,seed=>$seed,label=>$labfmt);
 
-$c1->saveXmlFile($outfile1) or die("$0: saveXmlFile($outfile1) failed: $!");
-$c2->saveXmlFile($outfile2) or die("$0: saveXmlFile($outfile2) failed: $!");
+foreach $i (0..$#subc) {
+  my $outfile = sprintf($outfmt,$i+1);
+  print STDERR "$0: saveXmlFile($outfile)\n" if ($verbose);
+  $subc[$i]->saveXmlFile($outfile,format=>$format);
+}
 
 =pod
 
@@ -105,11 +89,10 @@ dc-corpus-split.perl - split an XML corpus into training and test sets
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
+  -n N                   # number of output corpora
   -seed SEED             # specify random seed (default=none)
-  -frac1 FRAC1           # fraction of corpus to OUTFILE1 (default=0.9)
-  -frac2 FRAC2           # fraction of corpus to OUTFILE2 (default=1-FRAC1)
-  -out1 OUTFILE1         # output file 1 (e.g. training set)
-  -out2 OUTFILE2         # output file 2 (e.g. test set)
+  -label LABFMT          # sprintf format for output labels (default=none)
+  -output OUTFMT         # sprintf format for output files (default=STDOUT='-')
 
 =cut
 

@@ -39,6 +39,8 @@ our %corpusOpts = (
 		  );
 our $wantCats = 1;
 
+our $inputCorpora = 0; ##-- where INPUTs are corpora or document files/dirs
+
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
@@ -48,9 +50,10 @@ GetOptions(##-- General
 
 	   ##-- Misc
 	   'label|l=s' => \$corpusOpts{label},
-	   'categories|cats|c!' => \$wantCats,
+	   'categories|cats|cat!' => \$wantCats,
 
 	   ##-- I/O
+	   'union|merge|corpora|u|m|c!' => \$inputCorpora,
 	   'recursive|recurse|r!' => \$fcopts{recursive},
 	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
 	   #'output-suffix|os=s' => \$fcopts{outputFileSuffix},
@@ -69,13 +72,21 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 our ($fc,$corpus);
 sub cb_make_corpus {
   my ($infile) = @_;
-  my $doc = DocClassify::Document->new(file=>$infile)
-    or die("$0: Document->new() failed for '$infile': $!");
-  if ($wantCats) {
-    $doc->cats();            ##-- parse relevant data
-    delete($doc->{xdoc});    ##-- cleanup
+  if ($inputCorpora) {
+    ##-- read corpora
+    my $c2 = DocClassify::Corpus->loadXmlFile($infile,%corpusOpts)
+      or die("$0: loadXmlFile() failed for input corpus '$infile': $!");
+    $corpus->addCorpus($c2);
+  } else {
+    ##-- read documents
+    my $doc = DocClassify::Document->new(file=>$infile)
+      or die("$0: Document->new() failed for '$infile': $!");
+    if ($wantCats) {
+      $doc->cats();            ##-- parse relevant data
+      delete($doc->{xdoc});    ##-- cleanup
+    }
+    $corpus->addDocument($doc);
   }
-  $corpus->addDocument($doc);
 }
 
 ##------------------------------------------------------------------------------
@@ -85,7 +96,7 @@ sub cb_make_corpus {
 ##-- vars
 $corpus = DocClassify::Corpus->new( %corpusOpts );
 
-##-- ye olde guttes
+##-- load inputs
 push(@ARGV,'-') if (!@ARGV);
 $fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_make_corpus );
 $fc->churn(@ARGV);
@@ -106,6 +117,7 @@ dc-corpus-create.perl - make an XML corpus directory
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
+  -input-corpus CORPUS   # load (additional) corpus data from CORPUS (multiples ok)
   -output-file FILE      # all output to a single file
   -label LABEL           # set global corpus label
   -cats , -nocats        # do/don't parse document categories (default=do)
