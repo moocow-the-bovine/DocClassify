@@ -11,6 +11,7 @@ use DocClassify::Utils ':all';
 use MUDL::Enum;
 use MUDL::SVD;
 use MUDL::Cluster::Distance;
+use MUDL::Cluster::Distance::Builtin;
 
 use PDL;
 use PDL::CCS::Nd;
@@ -32,7 +33,7 @@ our $verbose = 2;
 ## $map = $CLASS_OR_OBJ->new(%opts)
 ## %$map, %opts:
 ##  ##-- options
-##  sigopts => \%opts,               ##-- options for $doc->termSignature()
+##  lemmatize => \%opts,             ##-- options for $doc->typeSignature->lemmatize()
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
 ##  minFreq => $f,                   ##-- minimum global term-frequency (default=0)
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (default=NTypes/NTokens)
@@ -56,33 +57,34 @@ our $verbose = 2;
 ##  xcf => $xcf_pdl,                 ##-- dense PDL ($svdr,$NC) = $svd->apply($tcf->decode)
 sub new {
   my $that = shift;
-  return $that->SUPER::new(
+  my $obj =  $that->SUPER::new(
 			   ##-- options
-			   sigopts => {},
-			   trainExclusive => 1,
-			   minFreq => 1,
-			   smoothf=>undef,
-			   unkTerm => '__UNKNOWN__',
-			   svdr => 64,
-			   dist => 'u',
+			       lemmatize => {},
+			       trainExclusive => 1,
+			       minFreq => 1,
+			       smoothf=>undef,
+			       unkTerm => '__UNKNOWN__',
+			       svdr => 64,
+			       dist => 'u',
 
-			   ##-- data: enums
-			   cenum => MUDL::Enum->new,
-			   tenum => MUDL::Enum->new,
+			       ##-- data: enums
+			       cenum => MUDL::Enum->new,
+			       tenum => MUDL::Enum->new,
 
-			   ##-- data: training
-			   gf => {},
-			   c2sigs => {},
+			       ##-- data: training
+			       gf => {},
+			       c2sigs => {},
 
-			   ##-- data: post-compile
-			   tcf=>undef,
-			   svd=>undef,
-			   xcf=>undef,
-			   distf=>undef,
+			       ##-- data: post-compile
+			       tcf=>undef,
+			       svd=>undef,
+			       xcf=>undef,
+			       distf=>undef,
 
-			   ##-- user args
-			   @_,
-			  );
+			       ##-- user args
+			       @_,
+			      );
+  return $obj;
 }
 
 
@@ -102,13 +104,13 @@ sub noShadowKeys {
 
 ## $map = $map->trainDocument($doc)
 ##  + add training data from $doc
-##  + calls $doc->termSignature()
+##  + calls $doc->typeSignature()->lemmatize( %{$map->{lemmatize}} )
 sub trainDocument {
   my ($map,$doc) = @_;
-  my $sig = $doc->termSignature(%{$map->{sigopts}});
+  my $sig = $map->lemmaSignature($doc);
 
   ##-- add sig frequency data to global hash
-  $map->{gf}{$_} += $sig->{tf}{$_} foreach (keys(%{$sig->{tf}}));
+  $map->{gf}{$_} += $sig->{lf}{$_} foreach (keys(%{$sig->{lf}}));
 
   ##-- add sig to category-local hashes
   my ($cat);
@@ -150,14 +152,14 @@ sub compile {
   print STDERR ref($map)."::compile(): enums\n" if ($verbose);
   my $tenum = $map->{tenum};
   $tenum->clear();
-  @$tenum{id2sym} = ($map->{unkTerm}, keys(%{$map->{gf}}));
-  @{$tenum->{sym2id}}{@$tenum{id2sym}} = (0..$#{$tenum->{id2sym}});
+  @{$tenum->{id2sym}} = ($map->{unkTerm}, keys(%{$map->{gf}}));
+  @{$tenum->{sym2id}}{@{$tenum->{id2sym}}} = (0..$#{$tenum->{id2sym}});
   my $NT = $tenum->size;
 
   ##-- ensure all relevant categories are defined in $map->{cenum}
   my $cenum = $map->{cenum};
   $cenum->clear();
-  $cenum->addSymbol($_) foreach (keys(%{$map->c2sigs}));
+  $cenum->addSymbol($_) foreach (keys(%{$map->{c2sigs}}));
   my $NC = $cenum->size;
 
   ##-- get term-cat-frequency matrix: $tcf : [$tid,$cid] => f($tid,$cid)
@@ -169,14 +171,15 @@ sub compile {
     $c_id = $cenum->{sym2id}{$c_name};
 
     foreach $sig (@$c_sigs) {
-      $sig_wt = pdl(long, grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{tf}})});
+      $sig_wt = pdl(long, grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})});
       $sig_w  = $sig_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$c_id);
-      $sig_nz = pdl(double, @{$sig->{tf}}{@{$tenum->{id2sym}}[$sig_wt->list]});
+      $sig_nz = pdl(double, @{$sig->{lf}}{@{$tenum->{id2sym}}[$sig_wt->list]});
 
       $tcf_w  = $tcf_w->glue(1,$sig_w);
       $tcf_nz = $tcf_nz->append($sig_nz);
 
-      #delete($sig->{tf});	##-- frequency data all used up
+      #delete($sig->{lf});	##-- frequency data all used up
+      #$sig->unlemmatize();     ##-- lemma data all used up
     }
   }
   my $dims = pdl(long,$tenum->size,$cenum->size);
@@ -206,6 +209,17 @@ sub compile {
 ##  + override checks for $map->{xcf}
 sub compiled { return defined($_[0]{xcf}); }
 
+## $map = $map->clearTrainingCache()
+##  + clears any cached data from training
+##  + after calling this, $map may no longer be able to train
+##  + override clears training data @$map{qw(gf c2sigs)}
+sub clearTrainingCache {
+  my $map = shift;
+  %{$map->{gf}} = qw();
+  %{$map->{c2sigs}} = qw();
+  #delete($map->{tcf}); ##-- still useful for debugging
+  return $map;
+}
 
 ##==============================================================================
 ## Methods: API: Classification
@@ -221,6 +235,9 @@ sub compiled { return defined($_[0]{xcf}); }
 sub mapDocument {
   my ($map,$doc) = @_;
 
+  ##-- be verbose
+  print STDERR ref($map)."::mapDocument(".$doc->label.")\n" if ($verbose>=2);
+
   ##-- get doc pdl
   my $dtf = $map->docPdlRaw($doc);
   my $dtN = $dtf->sum;
@@ -232,8 +249,8 @@ sub mapDocument {
 
   ##-- dump distances to $doc->{cats}
   @{$doc->{cats}} = map {
-    {id=>$_,name=>$map->{cenum}{id2sym}{$_},dist=>$cdmat->at($_,0),deg=>99}
-  } @{$cdmat->flat->qsorti->list};
+    {id=>$_,name=>$map->{cenum}{id2sym}[$_],dist=>$cdmat->at($_,0),deg=>99}
+  } $cdmat->flat->qsorti->list;
   $doc->{cats}[0]{deg} = 1;
 
   return $doc;
@@ -253,11 +270,13 @@ sub svdApply {
   return $map->{svd}->apply($fpdl->slice(":,*1"));
 }
 
-## $sig = $map->docSignature($doc)
-##  + wrapper for $doc->termSignature with options %{$map->{sigopts}}
-sub docSignature {
-  my ($map,$doc) = @_;
-  return $doc->termSignature(%{$map->{sigopts}});
+## $sig = $map->lemmaSignature($doc_or_sig)
+##  + wrapper for $doc->termSignature->lemmatize with options %{$map->{lemmatize}}
+sub lemmaSignature {
+  my ($map,$sig) = @_;
+  $sig = $sig->typeSignature if (!UNIVERSAL::isa($sig,'DocClassify::Signature'));
+  $sig = $sig->lemmatize( %{$map->{lemmatize}} ) if (!$sig->lemmatized);
+  return $sig;
 }
 
 ## $fpdl = $map->docPdlRaw($doc, $want_ccs=0)
@@ -270,10 +289,10 @@ sub docPdlRaw {
 ##  + $fpdl is dense or CCS::Nd pdl($NT): [$tid]=>f($tid,$sig)
 sub sigPdlRaw {
   my ($map,$sig, $as_ccs) = @_;
-  $sig = $map->docSignature($sig) if (!UNIVERSAL::isa($sig,'DocClassify::Signature')); ##-- handle docs
+  $sig = $map->lemmaSignature($sig); ##-- ensure lemmatized signature
   my $tenum = $map->{tenum};
-  my $dtf_wt = pdl(long,   grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{tf}})});
-  my $dtf_nz = pdl(double, @{$sig->{tf}}{@{$tenum->{id2sym}}[$dtf_wt->list]});
+  my $dtf_wt = pdl(long,   grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})});
+  my $dtf_nz = pdl(double, @{$sig->{lf}}{@{$tenum->{id2sym}}[$dtf_wt->list]});
   if ($as_ccs) {
     ##-- ccs mode
     return PDL::CCS::Nd->newFromWhich($dtf_wt->slice("*1,"),$dtf_nz,dims=>pdl(long,[$tenum->size]),missing=>0);

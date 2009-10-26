@@ -88,6 +88,11 @@ sub compile { return $_[0]; }
 ##  + default always returns false
 sub compiled { return 0; }
 
+## $map = $map->clearTrainingCache()
+##  + clears any cached data from training
+##  + after calling this, $map may no longer be able to train
+##  + default implementation does nothing
+sub clearTrainingCache { return $_[0]; }
 
 ##==============================================================================
 ## Methods: API: Classification
@@ -98,7 +103,7 @@ sub compiled { return 0; }
 ##  + Default implementation just calls $map->mapDocument() on each $doc in $corpus.
 sub mapCorpus {
   my ($map,$corpus) = @_;
-  $map->mapDocument($_) foreach (@{$corpus->{doc}});
+  $map->mapDocument($_) foreach (@{$corpus->{docs}});
   return $corpus;
 }
 

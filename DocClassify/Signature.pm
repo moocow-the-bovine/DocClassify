@@ -33,8 +33,8 @@ our $LEMMATIZE_TEXT_REGEX = undef;
 
 ## $LEMMATIZE_POS_REGEX
 ##  + default pos regex for lemmatize()
-#our $LEMMATIZE_POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ)/;
-our $LEMMATIZE_POS_REGEX = qr/^N/;
+#our $LEMMATIZE_POS_REGEX = qr/^N/;
+our $LEMMATIZE_POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ)/;
 
 ## $LEMMATIZE_LEMMA_ATTR
 ##  + default lemma attribute for lemmatize()
