@@ -37,7 +37,7 @@ our %fcopts = (
 our %corpusOpts = ( label=>'', );
 
 our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, saveCats=>1 );
+our %saveopts = ( mode=>undef, format=>1, saveCats=>0, saveSigs=>0, );
 
 our $inputCorpora = 0; ##-- where INPUTs are corpora or document files/dirs
 
@@ -51,13 +51,12 @@ GetOptions(##-- General
 	   ##-- Misc
 	   'label|l=s' => \$corpusOpts{label},
 	   'categories|cats|cat!' => \$saveopts{saveCats},
+	   #'signatures|sigs|sig!' => \$saveopts{saveSigs},
 
 	   ##-- I/O
 	   'union|merge|corpora|u|m|c!' => \$inputCorpora,
 	   'recursive|recurse|r!' => \$fcopts{recursive},
 	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
-	   #'output-suffix|os=s' => \$fcopts{outputFileSuffix},
-	   #'format|f=1' => \$format
 	   'input-mode|im=s' => \$loadopts{mode},
 	   'output-mode|om=s' => \$saveopts{mode},
 	   'format-xml|format|fx|f!' => sub { $saveopts{format}=$_[1] ? 1 : 0; },
@@ -120,9 +119,10 @@ dc-corpus-create.perl - make a corpus directory (XML or binary)
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
-  -input-corpus CORPUS   # load (additional) corpus data from CORPUS (multiples ok)
+  -union CORPUS          # load (additional) corpus data from CORPUS (multiples ok)
   -output-file FILE      # set corpus output file (default=-)
   -label LABEL           # set global corpus label
+  -cats , -nocats        # do/don't save category data (default=don't)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output corpus (default=guess or xml)
 

@@ -29,6 +29,7 @@ our $verbose = 2;
 our $outfmt = '-';
 our $seed=undef;
 our $labfmt=undef;
+our $n_corpora = 2;
 
 our %loadopts = ( mode=>undef, );
 our %saveopts = ( mode=>undef, format=>1, );
@@ -64,7 +65,9 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 
 ##-- sanity check(s)
 $saveopts{mode} = DocClassify::Corpus->guessFileMode($outfmt,%saveopts) if (!defined($saveopts{mode}));
-$outfmt .= '.%0.2d' if ($outfmt ne '-' && $outfmt !~ m/%(?:\d*)(?:\.?)(?:\d*)d/);
+if ($outfmt ne '-' && $outfmt !~ m/%(?:\d*)(?:\.?)(?:\d*)d/) {
+  $outfmt =~ s/\.([^\.]*)$/%d.$1/;
+}
 
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
@@ -78,7 +81,7 @@ print STDERR "$0: splitN(n=>$n_corpora)\n" if ($verbose);
 our @subc = $corpus->splitN($n_corpora,seed=>$seed,label=>$labfmt);
 
 foreach $i (0..$#subc) {
-  my $outfile = sprintf($outfmt,$i+1);
+  my $outfile = sprintf($outfmt,$i);
   print STDERR "$0: saveFile($outfile)\n" if ($verbose);
   $subc[$i]->saveFile($outfile,%saveopts);
 }

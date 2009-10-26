@@ -94,6 +94,7 @@ sub frac {
 sub precision {
   my ($hash,$unit) = @_;
   $unit = 'docs' if (!defined($unit));
+  return $hash->{"pr_${unit}"} if (defined($hash->{"pr_${unit}"}));
   my $tp = $hash->{"tp_${unit}"} || 0;
   my $fp = $hash->{"fp_${unit}"} || 0;
   return frac($tp, ($tp+$fp));
@@ -103,6 +104,7 @@ sub precision {
 sub recall {
   my ($hash,$unit) = @_;
   $unit = 'docs' if (!defined($unit));
+  return $hash->{"rc_${unit}"} if (defined($hash->{"rc_${unit}"}));
   my $tp = $hash->{"tp_${unit}"} || 0;
   my $fn = $hash->{"fn_${unit}"} || 0;
   return frac($tp, ($tp+$fn));
@@ -111,6 +113,8 @@ sub recall {
 ## $F = F(\%hash,$units)
 sub F {
   my ($hash,$unit) = @_;
+  $unit = 'docs' if (!defined($unit));
+  return $hash->{"F_${unit}"} if (defined($hash->{"F_${unit}"}));
   my ($pr,$rc) = (precision(@_),recall(@_));
   return frac(2.0, ($pr**-1 + $rc**-1));
 }
@@ -121,11 +125,11 @@ sub prF {
 }
 
 ## $str = report($label,\%hash,$unit)
-our $llen = 58;
+our $llen = 48;
 our $flen = '6.2';
 sub report {
   my ($lab,$hash,$unit) = @_;
-  return sprintf("%-${llen}s: pr=%${flen}f  rc=%${flen}f  F=%${flen}f\n", $lab,prF($hash,$unit));
+  return sprintf("%-${llen}s: pr=%${flen}f  rc=%${flen}f  F=%${flen}f\n", $lab, map {100*$_} prF($hash,$unit));
 }
 
 ##------------------------------------------------------------------------------
@@ -142,8 +146,8 @@ our $corpus2 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile2,%loadopts
 
 ## %l2doc = $label=>[$doc1,$doc2]
 our %l2doc = qw();
-$l2doc->{$_->label}[0] = $_ foreach (@{$cfile1->{docs}});
-$l2doc->{$_->label}[1] = $_ foreach (@{$cfile2->{docs}});
+$l2doc{$_->label}[0] = $_ foreach (@{$corpus1->{docs}});
+$l2doc{$_->label}[1] = $_ foreach (@{$corpus2->{docs}});
 my ($doc1,$doc2);
 foreach (values(%l2doc)) {
   ($doc1,$doc2) = @$_;
@@ -167,27 +171,45 @@ our $Nbytes = 0;
 my ($docs, $cats1,$cats2);
 foreach $docs (values(%l2doc)) {
   ($doc1,$doc2) = @$docs;
-  ($cats1,$cats2) = ($doc1->cats,$doc2->cats);
+  ($cats1,$cats2) = (scalar($doc1->cats),scalar($doc2->cats));
   ($cat1,$cat2) = ($cats1->[0],$cats2->[0]);
-  if ($cat1 eq $cat2) {
-    true_positive($cat1,$doc1);
+  if ($cat1->{name} eq $cat2->{name}) {
+    true_positive($cat1->{name},$doc1);
   }
   else {
-    false_negative($cat1,$doc1);
-    false_positive($cat2,$doc1);
+    false_negative($cat1->{name},$doc1);
+    false_positive($cat2->{name},$doc1);
   }
-
 }
+##-- get average tp,fp,fn by document
+my $eg     = $c2e{''};
+my $Ncats  = scalar(keys(%c2e))-1;
+foreach (grep {$_ ne ''} keys(%c2e)) {
+  my $c = $c2e{$_};
+  $eg->{pr_avgdocs} += 1/$Ncats * precision($c,'docs');
+  $eg->{rc_avgdocs} += 1/$Ncats * recall($c,'docs');
+  ##
+  $eg->{pr_avgbytes} += 1/$Ncats * precision($c,'bytes');
+  $eg->{rc_avgbytes} += 1/$Ncats * recall($c,'bytes');
+}
+$eg->{F_avgdocs} = F($eg,'docs');
+$eg->{F_avgbytes} = F($eg,'bytes');
+
 
 ##-- report: precision, recall, F: by category
 print
   (
-   (map { report($_,$c2e{$_},'docs') } sort(keys(%c2e))),
-   report('GLOBAL', $c2e{''}, 'docs'),
+   (map { report("DOCS: $_",$c2e{$_},'docs') } grep {$_ ne ''} sort(keys(%c2e))),
    "\n",
    ##--
-   (map { report($_,$c2e{$_},'bytes') } sort(keys(%c2e))),
-   report('GLOBAL', $c2e{''}, 'bytes'),
+   (map { report("BYTES: $_",$c2e{$_},'bytes') } grep {$_ ne ''} sort(keys(%c2e))),
+   "\n",
+   ##--
+   report('DOCS: GLOBAL', $c2e{''}, 'docs'),
+   report('DOCS: AVERAGE', $c2e{''}, 'avgdocs'),
+   "\n",
+   report('BYTES: GLOBAL', $c2e{''}, 'bytes'),
+   report('BYTES: AVERAGE', $c2e{''}, 'avgbytes'),
   );
 
 =pod

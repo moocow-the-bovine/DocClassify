@@ -228,7 +228,7 @@ sub loadXmlDoc {
     $doc->id();
     foreach $c_node (@{$d_node->findnodes('./cat')}) {
       $cat = {};
-      $cat->{$_} = $c_node->getAttribute($_) foreach (qw(id deg name));
+      $cat->{$_->name} = $_->value foreach ($c_node->attributes);
       push(@{$doc->{cats}},$cat);
     }
   }

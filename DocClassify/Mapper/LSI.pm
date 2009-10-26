@@ -198,6 +198,11 @@ sub compile {
   print STDERR ref($map)."::compile(): SVD(svdr=>$map->{svdr})\n" if ($verbose);
   my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr});
   $svd->computeccs_nd($tcf);
+  ##
+  ##-- auto-shrink SVD
+  $svd->shrink();
+  print STDERR ref($map)."::compile(): SVD: shrunk to r=$svd->{r}\n" if ($verbose);
+  $map->{svdr} = $svd->{r};
   $map->{xcf} = $svd->apply($tcf->decode);
 
   ##-- create distance object
