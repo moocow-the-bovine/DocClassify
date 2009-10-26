@@ -107,6 +107,7 @@ sub noShadowKeys {
 ##  + calls $doc->typeSignature()->lemmatize( %{$map->{lemmatize}} )
 sub trainDocument {
   my ($map,$doc) = @_;
+  print STDERR ref($map)."::trainDocument(".$doc->label.")\n" if ($verbose >= 2);
   my $sig = $map->lemmaSignature($doc);
 
   ##-- add sig frequency data to global hash
@@ -189,10 +190,12 @@ sub compile {
   %{$map->{c2sigs}} = qw();
 
   ##-- smooth & log-transform term-cat matrix
-  $map->{smoothf} = $NT/$tcf->sum if (!defined($map->{smoothf}));
+  $map->{smoothf} = $NT/$tcf->sum if (!$map->{smoothf});
+  print STDERR ref($map)."::compile(): smooth(smoothf=$map->{smoothf})\n" if ($verbose);
   $tcf = ($tcf+$map->{smoothf})->inplace->log;
 
   ##-- create $map->{svd}, $map->{xcf} ~= $map->{svd}->apply($map->{tcf})
+  print STDERR ref($map)."::compile(): SVD(svdr=>$map->{svdr})\n" if ($verbose);
   my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr});
   $svd->computeccs_nd($tcf);
   $map->{xcf} = $svd->apply($tcf->decode);
@@ -249,9 +252,10 @@ sub mapDocument {
 
   ##-- dump distances to $doc->{cats}
   @{$doc->{cats}} = map {
-    {id=>$_,name=>$map->{cenum}{id2sym}[$_],dist=>$cdmat->at($_,0),deg=>99}
+    {id=>$_,name=>$map->{cenum}{id2sym}[$_],dist=>$cdmat->at($_,0)} #deg=>99
   } $cdmat->flat->qsorti->list;
-  $doc->{cats}[0]{deg} = 1;
+  #$doc->{cats}[0]{deg} = 1;
+  $doc->{cats}[$_]{deg} = $_+1 foreach (0..$#{$doc->{cats}});
 
   return $doc;
 }

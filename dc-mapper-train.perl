@@ -34,6 +34,7 @@ our %mapopts = (
 		lemmatize=>{},   ##-- see $DocClassify::Signature::LEMMA_XYZ variables for defaults
 		svdr => 64,      ##-- svd dimensions
 		minFreq =>0,     ##-- minimum frequency
+		smoothf =>undef, ##-- smoothing frequency
 		trainExclusive=>1, ##-- exclusive-mode training?
 	       ),
 
@@ -54,6 +55,7 @@ GetOptions(##-- General
 	   'label|l=s' => \$mapopts{label},
 	   'lemmatize-option|lemma-option|lemma|L=s%' => \$mapopts{lemmatize},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
+	   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$mapopts{smoothf},
 	   'svd-dims|svd-r|svdr|r=i' =>\$mapopts{svdr},
 	   'exclusive|x!' => \$mapopts{trainExclusive},
 	   'compile|c!' => \$compileMap,

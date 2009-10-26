@@ -177,7 +177,11 @@ sub cats {
   ##-- sanitize & sort
   $_->{deg} = 1 foreach (grep {!defined($_->{deg})} @{$doc->{cats}});
   @{$doc->{cats}} =
-    sort {$a->{deg}<=>$b->{deg} || $a->{id}<=>$b->{id} || $a->{name} cmp $b->{name}} @{$doc->{cats}};
+    sort {($a->{deg}<=>$b->{deg}
+	   || ($a->{dist}||0) <=> ($b->{dist}||0)
+	   || $a->{id}<=>$b->{id}
+	   || $a->{name} cmp $b->{name})
+	 } @{$doc->{cats}};
 
   return wantarray ? @{$doc->{cats}} : $doc->{cats};
 }

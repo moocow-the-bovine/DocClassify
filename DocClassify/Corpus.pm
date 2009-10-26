@@ -172,7 +172,7 @@ sub saveXmlDoc {
     if ($opts{saveCats} || !defined($opts{saveCats})) {
       foreach $cat (@{$doc->cats}) {
 	$c_node = $d_node->addNewChild(undef,'cat');
-	$c_node->setAttribute($_,(defined($cat->{$_}) ? $cat->{$_} : '')) foreach (qw(id deg name));
+	$c_node->setAttribute($_,(defined($cat->{$_}) ? $cat->{$_} : '')) foreach (sort(keys(%$cat)));
       }
     }
   }
