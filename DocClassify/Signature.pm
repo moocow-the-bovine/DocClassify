@@ -3,7 +3,6 @@
 ## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
 ## Descript: document classifier: signature (term frequencies)
 
-
 package DocClassify::Signature;
 use DocClassify::Object;
 use DocClassify::Utils ':all';
@@ -24,14 +23,33 @@ our $CAT_DEG_MAX = 3;
 ##  + default membership degree if unspecified (for loadCsvFile())
 our $CAT_DEG_DEFAULT = 1;
 
+## $LEMMATIZE_TEXT_ATTR
+##  + default text attribute for lemmatize()
+our $LEMMATIZE_TEXT_ATTR = 'norm';
+
+## $LEMMATIZE_TEXT_REGEX
+##  + default text regex for lemmatize()
+our $LEMMATIZE_TEXT_REGEX = undef;
+
+## $LEMMATIZE_POS_REGEX
+##  + default pos regex for lemmatize()
+#our $LEMMATIZE_POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ)/;
+our $LEMMATIZE_POS_REGEX = qr/^N/;
+
+## $LEMMATIZE_LEMMA_ATTR
+##  + default lemma attribute for lemmatize()
+our $LEMMATIZE_LEMMA_ATTR = 'lemma';
+
 ##==============================================================================
 ## Constructors etc.
 
 ## $sig = $CLASS_OR_OBJ->new(%opts)
 ## %$sig, %opts:
-##  ##-- base data
-##  tf   => \%term2freq,  ##-- raw frequency hash
+##  ##-- frequency data
+##  tf   => \%type2freq,  ##-- raw type-frequency hash (keys are TAB-separated "${ATTR}=${VAL}")
+##  lf   => \%lemma2freq, ##-- raw lemma-frequency hash (keys are lemmata; see lemmatize() method)
 ##  N    => $totalFreq,   ##-- total frequency
+##  Nl   => $lemmaFreq,   ##-- total lemma frequency (set by lemmatize())
 ##  ##
 ##  ##-- category information data
 ##  cat2deg => \%cat2deg, ##-- maps category names to membership degree ($deg>=1, 1 is best)
@@ -39,10 +57,19 @@ our $CAT_DEG_DEFAULT = 1;
 sub new {
   my $that = shift;
   return $that->SUPER::new(
+			   ##-- raw frequency data
 			   tf=>{},
 			   N=>0,
+
+			   ##-- lemmatized frequency data
+			   lf=>undef,
+			   Nl=>undef,
+
+			   ##-- category data
 			   cat2deg=>{},
 			   cat2id=>{},
+
+			   ##-- user args
 			   @_,
 			  );
 }
@@ -50,9 +77,9 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(tf N cat2deg)
+##  + override returns qw(tf N cat2deg lf Nl)
 sub noShadowKeys {
-  return qw(tf N cat2deg);
+  return qw(tf N cat2deg lf Nl);
 }
 
 ##==============================================================================
@@ -86,6 +113,67 @@ sub addSig {
 }
 
 ##==============================================================================
+## Methods: Pruning
+
+## $bool = $sig->lemmatized()
+##  + check if sig has been lemmatized
+##  + default just checks for $sig->{lf}
+sub lemmatized { return defined($_[0]{lf}); }
+
+## $sig = $sig->unlemmatize()
+##  + clears lemma-frequency hash
+##  + default just deletes @$sig{qw(lf Nl)}
+sub unlemmatize {
+  delete(@{$_[0]}{qw(lf Nl)});
+  return $_[0];
+}
+
+## $sig = $sig->lemmatize(%opts)
+##  + creates lemma-frequency hash $sig->{lf}, $sig->{Nl} from $sig->{tf}
+##  + does nothing if $sig->lemmatized() returns true
+##  + %opts:
+##     textAttr => $attr,        ##-- text attribute (default=$LEMMATIZE_TEXT_ATTR)
+##     textRegex => $re,         ##-- regex for wanted text (default=$LEMMATIZE_TEXT_REGEX)
+##     textStop => \%stopText,   ##-- unwanted if exists($stopText{$text}); default=undef (none)
+##     posRegex => $re,          ##-- regex for wanted PoS  (default=$LEMMATIZE_POS_REGEX)
+##     lemmaAttr => $attr,       ##-- lemma attribute (defaul=$LEMMATIZE_LEMMA_ATTR)
+sub lemmatize {
+  my ($sig,%opts) = @_;
+  return $sig if ($sig->lemmatized);
+
+  ##-- defaults
+  my $textAttr  = defined($opts{textAttr}) ? $opts{textAttr} : $LEMMATIZE_TEXT_ATTR;
+  my $textRegex = defined($opts{textRegex}) ? $opts{textRegex} : $LEMMATIZE_TEXT_REGEX;
+  my $textStop  = $opts{textStop};
+  my $posAttr   = 'pos';
+  my $posRegex  = defined($opts{posRegex}) ? $opts{posRegex} : $LEMMATIZE_POS_REGEX;
+  my $lemmaAttr = defined($opts{lemmaAttr}) ? $opts{lemmaAttr} : $LEMMATIZE_LEMMA_ATTR;
+
+  ##-- pre-compile regexes
+  $textRegex = qr/$textRegex/ if (defined($textRegex) && !UNIVERSAL::isa($textRegex,'Regexp'));
+  $posRegex  = qr/$posRegex/  if (defined($posRegex) && !UNIVERSAL::isa($posRegex,'Regexp'));
+
+  ##-- lemmatize
+  my $tf = $sig->{tf};
+  my $lf = $sig->{lf} = {};
+  my $Nlref = \$sig->{Nl};
+  $$Nlref = 0;
+
+  my ($y,$f, %ya);
+  while (($y,$f)=each(%$tf)) {
+    %ya = (map {split(/=/,$_,2)} split(/\t/,$y));
+    next if (defined($posRegex)  && $ya{$posAttr}  !~ $posRegex);
+    next if (defined($textStop)  && exists($textStop->{$ya{$textAttr}}));
+    next if (defined($textRegex) && $ya{$textAttr} !~ $textRegex);
+    $lf->{$ya{$lemmaAttr}} += $f;
+    $$Nlref += $f;
+  }
+
+  return $sig;
+}
+
+
+##==============================================================================
 ## Methods: I/O
 
 
@@ -95,18 +183,29 @@ sub addSig {
 ## $sig = $sig->loadCsvFile($file_or_fh,%opts)
 ##  + alias: loadTextFile()
 ##  + $file_or_fh is assumed to be utf-8 encoded
+##  + %opts:
+##     lemmatized => $bool, ##-- are we loading a lemma-map (true) or a type-map (false)? (default=true)
 BEGIN { *loadTextFile = \&loadCsvFile; }
 sub loadCsvFile {
   my ($sig,$file,%opts) = @_;
+  my $lemmatized = defined($opts{lemmatized}) ? $opts{lemmatized} : 1;
 
   my $fh = ref($file) ? $file : IO::File->new("<$file");
   confess(ref($sig)."::loadCsvFile(): open failed for file '$file': $!") if (!defined($fh));
-  $fh->binmode(':utf8');
+  $fh->binmode(':utf8') if ($fh->can('binmode'));
 
   ##-- parse rest of file (TAB-separated: (TERM FREQ ...) or tab-less ("<"DEG">"? CAT_ID? CAT_NAME) or comment /^%%/)
-  my $tf = $sig->{tf};
-  my $N  = $sig->{N};
-  my ($line,$cat,$cid,$deg, $term,$freq,$rest);
+  my ($xf,$xN);
+  if ($lemmatized) {
+    $sig->{lf} = {} if (!defined($xf=$sig->{lf}));
+    $sig->{Nl} = 0;
+    $xf = $sig->{lf};
+    $xN = \$sig->{Nl};
+  } else {
+    $xf = $sig->{tf};
+    $xN = \$sig->{N};
+  }
+  my ($line,$cat,$cid,$deg, $term,$freq,$rest, @fields);
   while (defined($line=<$fh>)) {
     chomp($line);
     next if ($line =~ /^\s*$/ || $line =~ /^%%/);
@@ -122,13 +221,19 @@ sub loadCsvFile {
       next; ##-- just skip anything else without a TAB
     }
 
-    ##-- TERM FREQ ...
-    ($term,$freq,$rest) = split(/\t/,$line,3);
-    $tf->{$term} += $freq;
-    $N += $freq;
+    if ($lemmatized) {
+      ##-- ATTR1=VAL1 "\t" ATTR2=VAL2 "\t" ... "\t" FREQ "\n"
+      ($term,$freq,$rest) = split(/\t/,$line,3);
+    } else {
+      ##-- LEMMA "\t" FREQ "\t" ...
+      @fields = split(/\t/,$line);
+      $freq   = pop(@fields);
+      $term   = join("\t",@fields);
+    }
+    $xf->{$term} += $freq;
+    $$xN += $freq;
   }
   $fh->close if (!ref($file));
-  $sig->{N} = $N;
 
   return $sig;
 }
@@ -137,15 +242,17 @@ sub loadCsvFile {
 ##  + alias: saveTextFile()
 ##  + $file_or_fh will be be utf-8 encoded
 ##  + %$opts:
-##     dumpCats => $bool,  ##-- dump category data? (default=true)
-##     dumpFreqs => $bool, ##-- dump term-frequency data? (default=true)
+##     dumpCats => $bool,   ##-- dump category data? (default=true)
+##     dumpFreqs => $bool,  ##-- dump term-frequency data? (default=true)
+##     lemmatized => $bool, ##-- dump a lemma-map (true) or a type-map (false)? (default=true)
 BEGIN { *saveTextFile = \&saveCsvFile; }
 sub saveCsvFile {
   my ($sig,$file,%opts) = @_;
+  my $lemmatized = defined($opts{lemmatized}) ? $opts{lemmatized} : 1;
 
   my $fh = ref($file) ? $file : IO::File->new(">$file");
   confess(ref($sig)."::saveCsvFile(): open failed for file '$file': $!") if (!defined($fh));
-  $fh->binmode(':utf8');
+  $fh->binmode(':utf8') if ($fh->can('binmode'));
 
   ##-- dump category data
   $opts{dumpCats} = $sig->{dumpCats} if (!defined($opts{dumpCats}));
@@ -164,8 +271,8 @@ sub saveCsvFile {
   $opts{dumpFreqs} = $sig->{dumpFreqs} if (!defined($opts{dumpFreqs}));
   if (!defined($opts{dumpFreqs}) || $opts{dumpFreqs}) {
     my ($t);
-    my $tf = $sig->{tf};
-    $fh->print( map {"$_\t$tf->{$_}\n"} sort {$tf->{$b}<=>$tf->{$a}} keys(%$tf) );
+    my $xf = $lemmatized ? $sig->lemmatize->{lf} : $sig->{tf};
+    $fh->print( map {"$_\t$xf->{$_}\n"} sort {$xf->{$b}<=>$xf->{$a}} keys(%$xf) );
   }
 
   ##-- cleanup & return

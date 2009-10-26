@@ -62,6 +62,112 @@ sub clone {
 ## Methods: I/O
 
 ##--------------------------------------------------------------
+## Methods: I/O: Generic
+
+## @IO_MODES
+##  + array of I/O modes:
+##     ( {name=>$modeName,re=>$filename_re,method=>$methodInfix, ...}, ... )
+our (@IO_MODES);
+BEGIN {
+  @IO_MODES =
+    (
+     {name=>'bin',re=>qr/\.(?:bin|sto|frz)$/i,method=>'Bin'},
+     {name=>'text',re=>qr/\.(?:txt)$/i,method=>'Text'},
+     {name=>'csv',re=>qr/\.(?:csv)$/i,method=>'Csv'},
+     {name=>'xml',re=>qr/\.(?:xml)$/i,method=>'Xml'},
+    );
+}
+
+## %IO_ALIAS
+##  + hash-ref of I/O mode aliases:
+##     ( $modeName=>\%modeHash, ..., 'DEFAULT'=>\%defaultHash )
+our (%IO_ALIAS);
+BEGIN {
+  %IO_ALIAS =
+    (
+     (map {($_->{name}=>$_)} @IO_MODES),
+     'txt'=>'text',
+     'native'=>'text',
+     'DEFAULT' => 'bin',
+    );
+  foreach (keys(%IO_ALIAS)) {
+    $IO_ALIAS{ucfirst($_)} = $IO_ALIAS{uc($_)} = $IO_ALIAS{lc($_)} = $IO_ALIAS{$_};
+  }
+}
+
+## \%mode = $CLASS_OR_OBJ->guessFileMode($filename,%opts)
+##  + guesses I/O mode name from $filename
+sub guessFileMode {
+  my ($obj,$file,%opts) = @_;
+  if (defined($file) && !defined($opts{mode})) {
+    ##-- guess mode from filename
+    foreach (@IO_MODES) {
+      return $_ if ($file =~ m/$_->{re}/);
+    }
+  }
+  ##-- use default mode
+  my $mode = ($opts{mode} || 'DEFAULT');
+  $mode=$IO_ALIAS{$mode} while (!ref($mode) && exists($IO_ALIAS{$mode}));
+  return ref($mode) ? $mode : $IO_MODES[0];
+}
+
+## $bool = $obj->saveFile($filename_or_fh,%opts)
+##  + %opts:
+##     mode=>$mode,  ##-- I/O mode; otherwise guessed from $filename_or_fh
+##     #others passed to $obj->saveModeFile()
+BEGIN { *save = \&saveFile; }
+sub saveFile {
+  my ($obj,$file,%opts) = @_;
+  my $mode = $obj->guessFileMode($file,%opts);
+  my $method = "save".($mode->{method} || ucfirst($mode->{name}))."File";
+  my $sub = $obj->can($method);
+  confess(ref($obj)."::saveFile(): no method for output mode '$mode->{name}'") if (!$sub);
+  return $sub->($obj,$file,%opts);
+}
+
+## $obj = $CLASS_OR_OBJ->loadFile($filename_or_fh,%opts)
+##  + %opts:
+##     mode=>$mode,  ##-- I/O mode; otherwise guessed from $filename_or_fh
+##     #others passed to $obj->loadModeFile()
+BEGIN { *load = \&loadFile; }
+sub loadFile {
+  my ($that,$file,%opts) = @_;
+  my $mode = $that->guessFileMode($file,%opts);
+  my $method = "load".($mode->{method} || ucfirst($mode->{name}))."File";
+  my $sub = $that->can($method);
+  confess((ref($that)||$that)."::loadFile(): no method for input mode '$mode->{name}'") if (!$sub);
+  return $sub->($that,$file,%opts);
+}
+
+## $str = $obj->saveString(%opts)
+##  + %opts:
+##     mode=>$mode,  ##-- I/O mode; otherwise guessed from $filename_or_fh
+##     #others passed to $obj->saveModeFile()
+BEGIN { *asString = \&saveString; }
+sub saveString {
+  my ($obj,%opts) = @_;
+  my $mode = $obj->guessFileMode(undef,%opts);
+  my ($fh,$ref) = stringfh('>');
+  $obj->saveFile($fh,%opts,mode=>$mode);
+  $fh->close();
+  return $$ref;
+}
+
+## $obj = $CLASS_OR_OBJ->loadString($str,%opts)
+##  + %opts:
+##     mode=>$mode,  ##-- I/O mode; otherwise guessed from $filename_or_fh
+##     #others passed to $obj->loadModeFile()
+BEGIN { *fromString = \&loadString; }
+sub loadString {
+  my ($that,$str,%opts) = @_;
+  my $mode = $that->guessFileMode(undef,%opts);
+  my ($fh,$ref) = stringfh('<',\$str);
+  my $obj = $that->loadFile($fh,%opts,mode=>$mode);
+  $fh->close();
+  return $obj;
+}
+
+##--------------------------------------------------------------
 ## Methods: I/O: Binary: save
 
 ## $bool = $obj->saveBinFile($filename_or_fh)
@@ -120,7 +226,6 @@ sub saveTextFile {
 }
 
 ## $str = $obj->saveTextString()
-BEGIN { *asString = \&saveTextString; }
 sub saveTextString {
   my $obj = shift;
   my ($fh,$ref) = stringfh('>');
@@ -140,7 +245,6 @@ sub loadTextFile {
 }
 
 ## $str = $CLASS_OR_OBJECT->loadTextString($str)
-BEGIN { *fromString = \&loadTextString; }
 sub loadTextString {
   my $obj = shift;
   my ($fh,$ref) = stringfh('<',\$_[0]);

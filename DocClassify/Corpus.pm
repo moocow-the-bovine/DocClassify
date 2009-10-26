@@ -167,7 +167,8 @@ sub saveXmlDoc {
     $d_node->setAttribute('id',$doc->id);
     $d_node->setAttribute('label',$doc->label) if (defined($doc->{file}) && $doc->label ne $doc->{file});
     $d_node->setAttribute('file',$doc->{file}) if (defined($doc->{file}));
-    $d_node->setAttribute('bytes',$doc->sizeBytes); ##-- save document size in bytes
+    $d_node->setAttribute('bytes',$doc->sizeBytes); ##-- save XML document size in bytes (e.g. for splitN())
+    $d_node->setAttribute('sigFile',$doc->{sigFile}) if (defined($doc->{sigFile}));
     if ($opts{saveCats} || !defined($opts{saveCats})) {
       foreach $cat (@{$doc->cats}) {
 	$c_node = $d_node->addNewChild(undef,'cat');
@@ -222,6 +223,7 @@ sub loadXmlDoc {
     $doc->label($d_node->getAttribute('label'));
     $doc->id($d_node->getAttribute('id'));
     $doc->{file} = $d_node->getAttribute('file');
+    $doc->{sigFile} = $d_node->getAttribute('sigFile');
     $doc->label();
     $doc->id();
     foreach $c_node (@{$d_node->findnodes('./cat')}) {

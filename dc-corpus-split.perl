@@ -24,11 +24,15 @@ our $verbose = 2;
 
 #our $outputEncoding = 'UTF-8';
 #our $inputEncoding  = 'UTF-8';
-our $format   = 1;
+#our $format   = 1;
 
 our $outfmt = '-';
 our $seed=undef;
 our $labfmt=undef;
+
+our %loadopts = ( mode=>undef, );
+our %saveopts = ( mode=>undef, format=>1, );
+
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -42,7 +46,9 @@ GetOptions(##-- General
 	   'label-fmt|labfmt|lf|l=s' => \$labfmt,
 	   'n-corpora|nc|n=i' => \$n_corpora,
 	   'output-fmt|output|outfile|outfmt|out|of|o=s'=> \$outfmt,
-	   'format-xml|format|fx|f!' => \$format,
+	   'input-mode|im=s' => \$loadopts{mode},
+	   'output-mode|om=s' => \$saveopts{mode},
+	   'format-xml|format|fx|f!' => \$saveopts{format},
 	  );
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
@@ -57,23 +63,24 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 ##-- sanity check(s)
+$saveopts{mode} = DocClassify::Corpus->guessFileMode($outfmt,%saveopts) if (!defined($saveopts{mode}));
 $outfmt .= '.%0.2d' if ($outfmt ne '-' && $outfmt !~ m/%(?:\d*)(?:\.?)(?:\d*)d/);
 
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
 
 my $cfile = shift(@ARGV);
-print STDERR "$0: loadXmlFile($cfile)\n" if ($verbose);
-our $corpus = DocClassify::Corpus->loadXmlFile($cfile)
-  or die("$0: load failed for XML corpus file '$cfile': $!");
+print STDERR "$0: loadFile($cfile)\n" if ($verbose);
+our $corpus = DocClassify::Corpus->loadFile($cfile,%loadopts)
+  or die("$0: load failed for corpus file '$cfile': $!");
 
 print STDERR "$0: splitN(n=>$n_corpora)\n" if ($verbose);
 our @subc = $corpus->splitN($n_corpora,seed=>$seed,label=>$labfmt);
 
 foreach $i (0..$#subc) {
   my $outfile = sprintf($outfmt,$i+1);
-  print STDERR "$0: saveXmlFile($outfile)\n" if ($verbose);
-  $subc[$i]->saveXmlFile($outfile,format=>$format);
+  print STDERR "$0: saveFile($outfile)\n" if ($verbose);
+  $subc[$i]->saveFile($outfile,%saveopts);
 }
 
 =pod
@@ -93,6 +100,8 @@ dc-corpus-split.perl - split an XML corpus into training and test sets
   -seed SEED             # specify random seed (default=none)
   -label LABFMT          # printf() format for output labels (default=none)
   -output OUTFMT         # printf() format for output files (default=STDOUT='-')
+  -input-mode MODE       # input mode (default=guess)
+  -output-mode MODE      # output mode (default=guess)
 
 =cut
 

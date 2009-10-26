@@ -25,31 +25,6 @@ our @XML_CAT_XPATHS =
    '/*/head/classification/vat',
   );
 
-## @XML_TERM_XPATHS
-##  + XPaths for term signatures
-our @XML_TERM_XPATHS =
-  (
-   #'//cooked/s/w[@stop!="1"]',
-   '//w[@stop!="1"]',
-  );
-
-## $XML_POS_REGEX
-##  + regex matching PoS of terms to select
-our $XML_POS_REGEX = qr/^N/;
-
-## $XML_TEXT_REGEX
-##  + regex matching text of terms to select
-our $XML_TEXT_REGEX = qr/./;
-
-## $XML_TEXT_ATTR
-##  + plain (normalized) text attribute
-our $XML_TEXT_ATTR = 'norm';
-
-## $XML_LEMMA_ATTR
-##  + lemma attribute
-our $XML_LEMMA_ATTR = 'lemma';
-
-
 ## @XML_RAW_XPATHS
 ##  + XPaths for raw text extraction
 our @XML_RAW_XPATHS =
@@ -63,6 +38,7 @@ our @XML_RAW_XPATHS =
 
 ## $DOC_ID
 ##  + used for auto-generating doc-ids
+##  + currently useless (just a dumb counter, no collision checking, etc.)
 our $DOC_ID = 0;
 
 ##==============================================================================
@@ -80,7 +56,9 @@ our $DOC_ID = 0;
 ##  xdoc => $xmlDoc,      ##-- XML::LibXML::Document object (default: none)
 ##  cats => \@catList,    ##-- [ {id=>$catId,deg=>$catDeg,name=>$catName}, ... ] : see cats()
 ##  sig => $termSignature,##-- cached signature
+##  sigFile => $sigFile,  ##-- cached signature file
 ##  raw => $rawText,      ##-- cached raw text
+##  rawFile => $rawFile,  ##-- cached raw text file
 sub new {
   my $that = shift;
   my $doc = $that->SUPER::new(
@@ -100,9 +78,9 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(xdoc id cats sig raw)
+##  + override returns qw(xdoc id cats sig raw sigFile rawFile)
 sub noShadowKeys {
-  return qw(xdoc id cats sig raw);
+  return qw(xdoc id cats sig raw sigFile rawFile);
 }
 
 ## $doc = $doc->clearCache()
@@ -167,16 +145,16 @@ sub sizeText {
 }
 
 ## $nTermTokens = $doc->sizeTerms()
-##  + calls $doc->termSignature()
+##  + calls $doc->typeSignature()
 sub sizeTerms {
-  return $_[0]->termSignature->{N};
+  return $_[0]->typeSignature->{N};
 }
 
 ## $nTokens = $doc->sizeTokens()
-##  + slow
+##  + calls $doc->typeSignature()
 sub sizeTokens {
   my $doc = shift;
-  return scalar(@{$doc->xmlDoc->findnodes(join('|',@XML_TERM_XPATHS))});
+  return $doc->typeSignature->{N};
 }
 
 ## @cats = $doc->cats()
@@ -205,25 +183,15 @@ sub cats {
 }
 
 ##--------------------------------------------------------------
-## Methods: Parsing: Term-Frequency Signature
+## Methods: Parsing: Type-Frequency Signature (NEW)
 
-## \%tfhash = $doc->termSignature(%opts)
-##  + %opts:
-##     textStopList => \%stopword2undef, ##-- stop-list
-##     textAttr => $a,                   ##-- default=$XML_TEXT_ATTR
-##     textRegex => $re,                 ##-- default=$XML_TEXT_REGEX
-##     posRegex => $re,                  ##-- default=$XML_POS_REGEX
-##     lemmaAttr => $a,                  ##-- default=$XML_LEMMA_ATTR
-sub termSignature {
+## $sig = $doc->typeSignature(%opts)
+##  + %opts: (none yet)
+sub typeSignature {
   my ($doc,%opts) = @_;
-  return $doc->{sig} if (defined($doc->{sig})); ##-- check cache
-  %opts = (%$doc,%opts);
-
-  ##-- defaults
-  $opts{textAttr} = $XML_TEXT_ATTR if (!defined($opts{textAttr}));
-  $opts{textRegex} = $XML_TEXT_REGEX if (!defined($opts{textRegex}));
-  $opts{posRegex}  = $XML_POS_REGEX if (!defined($opts{posRegex}));
-  $opts{lemmaAttr} = $XML_LEMMA_ATTR if (!defined($opts{lemmaAttr}));
+  return $doc->{sig} if (defined($doc->{sig}));            ##-- check for cached object
+  return DocClassify::Signature->loadFile($doc->{sigFile}) ##-- check for cached file
+    if ($doc->{sigFile} && -r ($doc->{sigFile}));
 
   ##-- common vars
   my $sig = DocClassify::Signature->new();
@@ -235,27 +203,108 @@ sub termSignature {
     $sig->{cat2deg}{$cat->{name}} = $cat->{deg} if (!defined($sig->{cat2deg}{$cat->{name}}));
   }
 
-  ##-- term frequency hash
+  ##-- get type-frequency signature (using XSL)
   my $xdoc = $doc->xmlDoc();
+  my $yf_stylesheet = $doc->typeFrequencyStylesheet();
+  my $xxdoc = $yf_stylesheet->transform($xdoc);
+  my $xxstr = $yf_stylesheet->output_string($xxdoc);
+
   my $tf = $sig->{tf};
   my $N  = $sig->{N};
-  my ($t_node,$t_text,$t_pos,$t_lemma);
-  foreach $t_node (@{$xdoc->findnodes(join('|',@XML_TERM_XPATHS))}) {
-    $t_text = $t_node->getAttribute($opts{textAttr});
-    next if (defined($opts{textStopList}) && exists($opts{textStopList}{$t_text}));
-    next if (defined($opts{textRegex}) && $t_text !~ $opts{textRegex});
-
-    $t_pos = $t_node->getAttribute('pos');
-    next if (defined($opts{posRegex}) && $t_pos !~ $opts{posRegex});
-
-    $t_lemma = $t_node->getAttribute($opts{lemmaAttr});
-    $tf->{$t_lemma}++;
+  foreach ($xxstr =~ /^(?!%%).+$/mg) {
+    $tf->{$_}++;
     $N++;
   }
   $sig->{N}=$N;
 
   return $doc->{sig}=$sig;
 }
+
+## $bool = $doc->saveSignature($sigFile,%saveopts)
+##  + saves document type signature to a (new) file
+##  + caches signature filename $doc->{sigFile}=$sigFile
+##  + caches document signature $doc->{sig}
+sub saveSignature {
+  my ($doc,$sigFile,%opts) = @_;
+  my $sig = $doc->typeSignature();
+  $doc->{sigFile} = $sigFile;
+  return $sig->saveFile($sigFile,%opts);
+}
+
+## $stylesheet = $CLASS_OR_OBJ->typeFrequencyStylesheet()
+sub typeFrequencyStylesheet {
+  our ($YF_STYLESHEET,$YF_STYLESTR);
+  return $YF_STYLESHEET if (defined($YF_STYLESHEET));
+  return $YF_STYLESHEET = xsl_stylesheet(string=>$YF_STYLESTR);
+}
+
+## $YF_STYLESHEET
+##  + XSL stylesheet for type-frequency counting (xml -> utf-8 text)
+our ($YF_STYLESHEET);
+
+## $YF_STYLESTR
+##  + XSL stylesheet string for type-frequency counting (xml -> utf-8 text)
+our $YF_STYLESTR = q(<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <xsl:output method="text" encoding="UTF-8"/>
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- parameters: (none) -->
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- options: (none) -->
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- Templates: root: recurse -->
+  <xsl:template match="/">
+   <xsl:apply-templates select="./*"/>
+  </xsl:template>
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- Templates: words: output TT-like format -->
+  <xsl:template match="w">
+    <xsl:apply-templates select="@*"/>
+    <xsl:text>&#10;</xsl:text>
+  </xsl:template>
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- Templates: word-attribute: ATTR1=VAL1 "\t" ATTR2=VAL2 ... -->
+  <xsl:template match="w/@*">
+    <xsl:if test="position()>1">
+      <xsl:text>&#09;</xsl:text>
+    </xsl:if>
+    <xsl:value-of select="name()"/>
+    <xsl:text>=</xsl:text>
+    <xsl:value-of select="normalize-space(.)"/>
+  </xsl:template>
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- Templates: cooked: output comment -->
+  <xsl:template match="//cooked">
+    <xsl:text>&#10;</xsl:text>
+    <xsl:text>%% COOKED type=</xsl:text>
+    <xsl:value-of select="./@type"/>
+    <xsl:text>&#10;</xsl:text>
+    <xsl:apply-templates select="./*"/>
+  </xsl:template>
+
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- Templates: sentence: output comment -->
+  <xsl:template match="s">
+    <xsl:text>&#10;</xsl:text>
+    <!-- <xsl:text>%% SENTENCE&#10;</xsl:text> -->
+    <xsl:apply-templates select="./*"/>
+  </xsl:template>
+
+  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+  <!-- Templates: default: ignore -->
+  <xsl:template match="*|@*|text()|comment()|processing-instruction()" priority="-1">
+    <xsl:apply-templates select="./*"/>
+  </xsl:template>
+
+</xsl:stylesheet>
+);
 
 ##--------------------------------------------------------------
 ## Methods: Parsing: Raw Text

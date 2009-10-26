@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<corpus label="">
+  <docs>
+    <doc id="1" file="test-big.xml" bytes="9765813"/>
+    <doc id="2" file="test-small.xml" bytes="7441"/>
+  </docs>
+</corpus>

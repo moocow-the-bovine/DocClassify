@@ -31,8 +31,19 @@ our %fcopts = (
 	       inputFileMatch=>qr/\.xml$/,
 	       inputFileTrim=>qr/\.[^\.]*$/,
 	       outputFile=>undef,
-	       outputFileSuffix=>'.sig',
+	       outputFileSuffix=>'.sig.bin',
 	      );
+
+our %loadopts =
+  (
+   mode=>undef,
+  );
+
+our %saveopts =
+  (
+   mode=>undef,
+   lemmatized=>0,
+  );
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -45,10 +56,9 @@ GetOptions(##-- General
 	   'recursive|recurse|r!' => \$fcopts{recursive},
 	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
 	   'output-suffix|os=s' => \$fcopts{outputFileSuffix},
-	   #'format|f=1' => \$format
+	   'output-mode|om=s' => \$saveopts{mode},
 	  );
 $verbose=$fcopts{verbose};
-
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 
@@ -64,10 +74,10 @@ sub cb_xml2sig {
     or die("$0: Document->new() failed for '$infile': $!");
   my ($outfile,$outfh) = $fc->in2out($infile);
   $outfh->binmode(':utf8');
-  my $sig = $doc->termSignature()
-    or die("$0: termSignature() failed for '$infile': $!");
-  $sig->saveBinFile($outfh)
-    or die("$0: saveBinFile() failed for '$outfile': $!");
+  my $sig = $doc->typeSignature()
+    or die("$0: typeSignature() failed for '$infile': $!");
+  $sig->saveFile($outfh,%saveopts)
+    or die("$0: Signature::saveFile() failed for '$outfile': $!");
   $outfh->close() if (!defined($fc->{outputFile}));
 }
 
@@ -95,7 +105,8 @@ dc-xml2sig.perl - convert DocClassify xml docs to binary term-frequency signatur
   -help                  # this help message
   -verbose LEVEL         # verbosity level
   -output-file FILE      # all output to a single file
-  -output-suffix SUFFIX  # one outfile per infile, suffix SUFFIX (default=.sig)
+  -output-suffix SUFFIX  # one outfile per infile, suffix SUFFIX (default=.sig.bin)
+  -output-mode MODE      # output mode (default=guess)
 
 =cut
 

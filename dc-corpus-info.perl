@@ -62,8 +62,8 @@ our $outfh = IO::File->new(">$outfile")
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
 foreach my $cfile (@ARGV) {
-  our $corpus = DocClassify::Corpus->loadXmlFile($cfile)
-    or die("$0: load failed for XML corpus file '$cfile': $!");
+  our $corpus = DocClassify::Corpus->loadFile($cfile)
+    or die("$0: load failed for corpus file '$cfile': $!");
 
   my $c2doc = $corpus->docsByCat();
   my $ndocs = scalar(@{$corpus->{docs}});

@@ -2,14 +2,14 @@
 
 use lib qw(. ./MUDL);
 
-use PDL;
-use Storable;
-use PDL::IO::Storable;
+use DocClassify;
+use DocClassify::Utils qw(:all);
 
 use MUDL;
 use MUDL::SVD;
 use MUDL::Cluster::Tree;
 
+use PDL;
 use PDL::Ngrams;
 use PDL::VectorValued;
 use PDL::CCS;
@@ -478,7 +478,99 @@ sub test_dump_pdl {
 
   print STDERR "$0: test_dump_pdl() done -- what now?\n";
 }
-test_dump_pdl();
+#test_dump_pdl();
+
+##======================================================================
+## test: signature counting
+
+sub getsig_findnodes {
+  my $xdoc = shift;
+  my $tf = {};
+  my ($ts);
+  foreach (@{$xdoc->findnodes('//w')}) {
+    $ts = join("\t", map {$_->name.'='.$_->value} $_->attributes);
+    $tf->{$ts}++;
+  }
+  return $tf;
+}
+
+use XML::LibXML;
+use XML::LibXSLT;
+sub getsig_xsl {
+  my $xdoc = shift;
+  our ($stylesheet);
+  my $xxdoc = $stylesheet->transform($xdoc);
+  my $xxstr = $stylesheet->output_string($xxdoc);
+
+  my $tf = {};
+  $tf->{$_}++ foreach ($xxstr =~ /^(?!%%).+$/mg);
+  return $tf;
+}
+
+use Benchmark qw(cmpthese timethese);
+sub test_getsig {
+  my $xfile = 'test-big.xml';
+  my $xparser = libxmlParser();
+  my $xdoc = $xparser->parse_file($xfile) or die("$0: parse failed for '$xfile': $!");
+
+  our $xslt = XML::LibXSLT->new();
+  our $style_file = 'dc-xml2t.xsl';
+  our $style_doc = $xparser->parse_file($style_file) or die("$0: parse failed for '$style_file': $!");
+  our $stylesheet = $xslt->parse_stylesheet($style_doc) or die("$0: style parse failed for '$style_file': $!");
+
+  my $s1 = getsig_findnodes($xdoc);
+  my $s2 = getsig_xsl($xdoc);
+
+  cmpthese(3, {'findnodes'=>sub{getsig_findnodes($xdoc)}, 'xsl'=>sub{getsig_xsl($xdoc)}, });
+  ## $xfile='test-small.xml', n=100
+  ##             Rate findnodes       xsl
+  ## findnodes 73.0/s        --      -81%
+  ## xsl        385/s      427%        --
+  ##----
+  ## $xfile='test-big.xml', n=3
+  ##           s/iter findnodes       xsl
+  ## findnodes   6.29        --      -48%
+  ## xsl         3.30       91%        --
+}
+#test_getsig();
+
+
+##======================================================================
+## test: signature acquisition, lemmatization
+
+sub test_sig_lemmatize {
+  my $docfile = 'test-small.xml';
+  my $doc = DocClassify::Document->new(file=>$docfile);
+  my $sig = $doc->typeSignature();
+  $sig->lemmatize;
+  $sig->saveFile("$docfile.types.csv",lemmatized=>0);
+  $sig->saveFile("$docfile.lemmata.csv",lemmatized=>1);
+  $sig->saveBinFile("$docfile.sig.bin");
+
+  my $sig2 = $sig->clone->unlemmatize;
+  $sig2->lemmatize( posRegex=>qr/^(?:N|VV|ADJ)/ );
+  $sig->saveFile("$docfile.types2.csv",lemmatized=>0);
+  $sig->saveFile("$docfile.lemmata2.csv",lemmatized=>1);
+
+  $sig2 = ref($sig)->new;
+  $sig2->loadFile("$docfile.types.csv",lemmatized=>0);
+  $sig2->loadFile("$docfile.lemmata.csv",lemmatized=>1);
+
+  #my $sig2s = $sig2->saveString(mode=>'csv',lemmatized=>1);
+
+  ##-- bench
+  timethese(-3, {
+		 #'doc:new' => sub { $doc = DocClassify::Document->new(file=>$docfile); },
+		 'doc:new+xml' => sub { $doc = DocClassify::Document->new(file=>$docfile)->xmlDoc; },
+		 'doc:new+sig' => sub { $doc = DocClassify::Document->new(file=>$docfile)->typeSignature; },
+		 'sig:lemmatize' => sub { $sig->unlemmatize->lemmatize; },
+		 'sig:load:bin' => sub { $sig2 = ref($sig)->new->loadFile("$docfile.sig.bin"); },
+		 'sig:load:csv' => sub { $sig2 = ref($sig)->new->loadCsvFile("$docfile.types.csv",lemmatized=>0)->loadCsvFile("$docfile.lemmata.csv",lemmatized=>1); },
+		});
+
+  print STDERR "test_sig_lemmatize() done: what now?\n";
+}
+test_sig_lemmatize();
 
 
 ##======================================================================
