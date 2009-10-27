@@ -27,7 +27,10 @@ our ($help);
 #our $format   = 1;
 
 our %corpusopts = qw();
+our %evalopts = qw();
+
 our %loadopts_corpus = ( mode=>undef, );
+our %saveopts_eval = ( mode=>'xml', format=>1, saveDocs=>0 );
 
 our $outfile = '-';
 
@@ -42,7 +45,9 @@ GetOptions(##-- General
 
 	   ##-- I/O
 	   'corpus-input-mode|input-mode|cim|im=s' => \$loadopts_corpus{mode},
-	   #'format-xml|format|fx|f!' => sub { $saveopts_corpus{format}=$_[1] ? 1 : 0; },
+	   'eval-output-mode|output-mode|eom|om=s' => \$saveopts_eval{mode},
+	   'save-documents|save-docs|docs|d!' => \$saveopts_eval{saveDocs},
+	   'format-xml|format|fx|f!' => sub { $saveopts_eval{format}=$_[1] ? 1 : 0; },
 	   'output-file|outfile|out|of|o=s'=> \$outfile,
 	  );
 
@@ -54,83 +59,6 @@ pod2usage({-exitval=>0, -verbose=>0, -msg=>'You must specify at least the WANTED
 ##------------------------------------------------------------------------------
 ## Subs
 ##------------------------------------------------------------------------------
-
-##-- subs: counting
-sub true_positive {
-  my ($cat,$doc) = @_;
-  $c2e{$cat}{tp_docs}++;
-  $c2e{$cat}{tp_bytes} += $doc->sizeBytes;
-  $c2e{''}{tp_docs}++;
-  $c2e{''}{tp_bytes} += $doc->sizeBytes;
-  $Ndocs++;
-  $Nbytes += $doc->sizeBytes;
-}
-sub false_negative {
-  my ($cat,$doc) = @_;
-  $c2e{$cat}{fn_docs}++;
-  $c2e{$cat}{fn_bytes} += $doc->sizeBytes;
-  $c2e{''}{fn_docs}++;
-  $c2e{''}{fn_bytes} += $doc->sizeBytes;
-  $Ndocs++;
-  $Nbytes += $doc->sizeBytes;
-}
-sub false_positive {
-  my ($cat,$doc) = @_;
-  $c2e{$cat}{fp_docs}++;
-  $c2e{$cat}{fp_bytes} += $doc->sizeBytes;
-  $c2e{''}{fp_docs}++;
-  $c2e{''}{fp_bytes} += $doc->sizeBytes;
-  #$Ndocs++;
-  #$Nbytes += $doc->sizeBytes;
-}
-
-## $frac = frac($num,$denom)
-sub frac {
-  my ($num,$denom) = @_;
-  return $denom==0 ? 0 : ($num/$denom);
-}
-
-## $pr = precision(\%hash,$units)
-sub precision {
-  my ($hash,$unit) = @_;
-  $unit = 'docs' if (!defined($unit));
-  return $hash->{"pr_${unit}"} if (defined($hash->{"pr_${unit}"}));
-  my $tp = $hash->{"tp_${unit}"} || 0;
-  my $fp = $hash->{"fp_${unit}"} || 0;
-  return frac($tp, ($tp+$fp));
-}
-
-## $rc = recall(\%hash,$units)
-sub recall {
-  my ($hash,$unit) = @_;
-  $unit = 'docs' if (!defined($unit));
-  return $hash->{"rc_${unit}"} if (defined($hash->{"rc_${unit}"}));
-  my $tp = $hash->{"tp_${unit}"} || 0;
-  my $fn = $hash->{"fn_${unit}"} || 0;
-  return frac($tp, ($tp+$fn));
-}
-
-## $F = F(\%hash,$units)
-sub F {
-  my ($hash,$unit) = @_;
-  $unit = 'docs' if (!defined($unit));
-  return $hash->{"F_${unit}"} if (defined($hash->{"F_${unit}"}));
-  my ($pr,$rc) = (precision(@_),recall(@_));
-  return frac(2.0, ($pr**-1 + $rc**-1));
-}
-
-## ($pr,$rc,$F) = prF(\%hash,$unit)
-sub prF {
-  return (precision(@_),recall(@_),F(@_));
-}
-
-## $str = report($label,\%hash,$unit)
-our $llen = 48;
-our $flen = '6.2';
-sub report {
-  my ($lab,$hash,$unit) = @_;
-  return sprintf("%-${llen}s: pr=%${flen}f  rc=%${flen}f  F=%${flen}f\n", $lab, map {100*$_} prF($hash,$unit));
-}
 
 ##------------------------------------------------------------------------------
 ## MAIN
@@ -144,73 +72,19 @@ our $corpus1 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile1,%loadopts
 our $corpus2 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile2,%loadopts_corpus)
   or die("$0: Corpus->loadFile() failed for '$cfile2': $!");
 
-## %l2doc = $label=>[$doc1,$doc2]
-our %l2doc = qw();
-$l2doc{$_->label}[0] = $_ foreach (@{$corpus1->{docs}});
-$l2doc{$_->label}[1] = $_ foreach (@{$corpus2->{docs}});
-my ($doc1,$doc2);
-foreach (values(%l2doc)) {
-  ($doc1,$doc2) = @$_;
-  if (defined($doc1) && !defined($doc2)) {
-    warn("$0: document label '".$doc1->label."' not defined for '$cfile2' -- ignoring");
-    delete($l2doc{$doc1->label});
-  }
-  elsif (!defined($doc1) && defined($doc2)) {
-    warn("$0: document label '".$doc2->label."' not defined for '$cfile1' -- ignoring");
-    delete($l2doc{$doc2->label});
-  }
-}
+##-- label input corpora
+$corpus1->{label} ||= $cfile1;
+$corpus2->{label} ||= $cfile2;
 
+##-- evaluate
+our $eval = DocClassify::Eval->new(%evalopts)
+  or die("$0: Eval->new() failed: $!");
+$eval->compare($corpus1, $corpus2)
+  or die("$0: Eval->compare() failed: $!");
 
-## %c2e: ($catName => { (tp|fp|fn)_(docs|bytes)=>$n }, ''=>{(tp|fp|fn)_(docs|bytes)=>$n}, )
-our %c2e = qw();
-our $Ndocs = 0;
-our $Nbytes = 0;
-
-##-- compare docs by label
-my ($docs, $cats1,$cats2);
-foreach $docs (values(%l2doc)) {
-  ($doc1,$doc2) = @$docs;
-  ($cats1,$cats2) = (scalar($doc1->cats),scalar($doc2->cats));
-  ($cat1,$cat2) = ($cats1->[0],$cats2->[0]);
-  if ($cat1->{name} eq $cat2->{name}) {
-    true_positive($cat1->{name},$doc1);
-  }
-  else {
-    false_negative($cat1->{name},$doc1);
-    false_positive($cat2->{name},$doc1);
-  }
-}
-##-- get average tp,fp,fn by document
-my $eg     = $c2e{''};
-my $Ncats  = scalar(keys(%c2e))-1;
-foreach (grep {$_ ne ''} keys(%c2e)) {
-  my $c = $c2e{$_};
-  $eg->{pr_avgdocs} += 1/$Ncats * precision($c,'docs');
-  $eg->{rc_avgdocs} += 1/$Ncats * recall($c,'docs');
-  ##
-  $eg->{pr_avgbytes} += 1/$Ncats * precision($c,'bytes');
-  $eg->{rc_avgbytes} += 1/$Ncats * recall($c,'bytes');
-}
-$eg->{F_avgdocs} = F($eg,'docs');
-$eg->{F_avgbytes} = F($eg,'bytes');
-
-
-##-- report: precision, recall, F: by category
-print
-  (
-   (map { report("DOCS: $_",$c2e{$_},'docs') } grep {$_ ne ''} sort(keys(%c2e))),
-   "\n",
-   ##--
-   (map { report("BYTES: $_",$c2e{$_},'bytes') } grep {$_ ne ''} sort(keys(%c2e))),
-   "\n",
-   ##--
-   report('DOCS: GLOBAL', $c2e{''}, 'docs'),
-   report('DOCS: AVERAGE', $c2e{''}, 'avgdocs'),
-   "\n",
-   report('BYTES: GLOBAL', $c2e{''}, 'bytes'),
-   report('BYTES: AVERAGE', $c2e{''}, 'avgbytes'),
-  );
+##-- report: just save
+$eval->saveFile($outfile, %saveopts_eval)
+  or die("$0: Eval->saveFile() failed for '$outfile': $!");
 
 =pod
 
@@ -225,8 +99,9 @@ dc-mapper-eval.perl - evaluate Mapper results
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
+  -docs , -nodocs        # do/don't save full document list (default=don't)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
-  -output-mode MODE      # I/O mode for output corpus (default=guess)
+  -output-mode MODE      # I/O mode for output eval data (default=xml)
   -output-file FILE      # set output file (default=-)
 
 =cut

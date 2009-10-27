@@ -15,6 +15,8 @@ use DocClassify::Signature;
 use DocClassify::Mapper;
 use DocClassify::Mapper::LSI;
 
+use DocClassify::Eval;
+
 use strict;
 
 ##==============================================================================
