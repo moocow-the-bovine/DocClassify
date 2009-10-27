@@ -329,15 +329,15 @@ sub saveXmlDoc {
       $cats_node1->setAttribute('n',1);
       $cats_node1->setAttribute('type','wanted');
       foreach $cat (@{$doc1->cats}) {
-	$c_node = $d_node->addNewChild(undef,'cat');
+	$c_node = $cats_node1->addNewChild(undef,'cat');
 	$c_node->setAttribute($_,(defined($cat->{$_}) ? $cat->{$_} : '')) foreach (sort(keys(%$cat)));
       }
       ##
       $cats_node2 = $d_node->addNewChild(undef,'cats');
-      $cats_node1->setAttribute('n',2);
-      $cats_node1->setAttribute('type','got');
+      $cats_node2->setAttribute('n',2);
+      $cats_node2->setAttribute('type','got');
       foreach $cat (@{$doc2->cats}) {
-	$c_node = $d_node->addNewChild(undef,'cat');
+	$c_node = $cats_node2->addNewChild(undef,'cat');
 	$c_node->setAttribute($_,(defined($cat->{$_}) ? $cat->{$_} : '')) foreach (sort(keys(%$cat)));
       }
     }
