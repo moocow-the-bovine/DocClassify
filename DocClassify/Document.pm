@@ -72,6 +72,7 @@ sub new {
   ##-- ensure label, id are set
   $doc->label() if (!defined($doc->{label}));
   $doc->id() if (!defined($doc->{id}));
+
   return $doc;
 }
 

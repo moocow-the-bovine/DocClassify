@@ -36,6 +36,8 @@ our %mapopts = (
 		minFreq =>0,     ##-- minimum frequency
 		smoothf =>1,     ##-- smoothing frequency (undef for NTypes/NTokens)
 		trainExclusive=>1, ##-- exclusive-mode training?
+		catProfile => 'average',   ##-- how to do category profiling
+		termWeight => 'entropy',   ##-- how to do term weighting
 	       ),
 
 our %loadopts_corpus = ( mode=>undef, );
@@ -58,6 +60,8 @@ GetOptions(##-- General
 	   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$mapopts{smoothf},
 	   'svd-dims|svd-r|svdr|r=i' =>\$mapopts{svdr},
 	   'exclusive|x!' => \$mapopts{trainExclusive},
+	   'cat-profile|catProfile|profile|cp=s' => \$mapopts{catProfile},
+	   'term-weight|termWeight|tw|w=s'       => \$mapopts{termWeight},
 	   'compile|c!' => \$compileMap,
 
 	   ##-- I/O
@@ -122,6 +126,8 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
   -svd-dims DIMS         # set max SVD dimensions (default=64)
+  -cat-profile HOW       # one of 'fold-in', 'average', 'weighted-average' (default='average')
+  -term-weight HOW       # one of 'uniform', 'entropy' (default='entropy')
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
   -input-mode MODE       # I/O mode for input corpora (default=guess)

@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <corpus label="">
   <docs>
-    <doc id="1" file="test-big.xml" bytes="9765813"/>
-    <doc id="2" file="test-small.xml" bytes="7441"/>
+    <doc id="1" file="test-big.xml" bytes="9765813" sigFile="test-big.xml.sig.bin">
+      <cat deg="1" id="5" name="Nahrungsmittel"/>
+    </doc>
+    <doc id="2" file="test-small.xml" bytes="7441" sigFile="test-small.xml.sig.bin">
+      <cat deg="2" id="12" name="Tourismus/ Reisen"/>
+    </doc>
   </docs>
 </corpus>

@@ -33,10 +33,40 @@ our %EXPORT_TAGS =
    io=>[qw(stringfh)],
    libxml=>[qw(libxmlParser)],
    libxslt=>[qw(xsl_stylesheet)],
+   plot=>[qw(usepgplot)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
 $EXPORT_TAGS{all} = [@EXPORT_OK];
+
+##==============================================================================
+## Functions: plotting utilities
+
+## undef = usepgplot()
+## undef = usepgplot($PACKAGE)
+sub usepgplot {
+  my $pkg = shift;
+  $pkg = 'main' if (!defined($pkg));
+  $pkg = ref($pkg) if (ref($pkg));
+  my $s = "package $pkg;".q{
+    require PDL::Graphics::PGPLOT;
+    require PDL::Graphics::PGPLOT::Window;
+    require PDL::Graphics::LUT;    ##-- for color tables used by e.g. imag()
+    require PDL::Image2D;          ##-- for box2d, patch2d
+    PDL::Graphics::PGPLOT->import();
+    PDL::Graphics::PGPLOT::Window->import();
+    PDL::Graphics::LUT->import();
+    PDL::Image2D->import();
+    #dev('/XWINDOW');
+    dev('/XS');
+    #ctab('Fire');             ##-- ?
+    #ctab('gray');
+    ctab(lut_data('smooth2')); ##-- color table similar to gnuplot 'pm3d' default; see string list lut_names() for more
+    autolog(1);
+  };
+  eval $s;
+  warn("usepgplot(): $@") if ($@);
+}
 
 
 ##==============================================================================
