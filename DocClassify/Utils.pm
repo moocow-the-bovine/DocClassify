@@ -31,7 +31,7 @@ our %EXPORT_TAGS =
    fit=>[qw(ylinfit ylogfit)],
    norm=>[qw(_gausscdf _gausswidth)],
    cmp=>[qw(min2 max2)],
-   io=>[qw(slurpFile stringfh)],
+   io=>[qw(slurpFile slurpLines stringfh)],
    libxml=>[qw(libxmlParser)],
    libxslt=>[qw(xsl_stylesheet)],
    plot=>[qw(usepgplot)],
@@ -163,6 +163,22 @@ sub slurpFile {
   }
   local $/=undef;
   $$ref = <$fh>;
+  $fh->close() if (!ref($file));
+  return $ref;
+}
+
+## \@lines = slurpLines($file_or_fh)
+## \@lines = slurpLines($file_or_fh,\@lines)
+## \@lines = slurpLines($file_or_fh,\@lines,@binmodes)
+sub slurpLines {
+  my ($file,$ref,@binmodes) = @_;
+  $ref =[] if (!defined($ref));
+  my $fh = ref($file) ? $file : IO::File->new("<$file");
+  confess(__PACKAGE__."::slurpFile(): open failed for '$file': $!") if (!defined($fh));
+  if (@binmodes && $fh->can('binmode')) {
+    $fh->binmode($_) foreach (@binmodes);
+  }
+  @$ref = <$fh>;
   $fh->close() if (!ref($file));
   return $ref;
 }

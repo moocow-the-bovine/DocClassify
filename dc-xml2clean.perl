@@ -59,18 +59,29 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 our ($fc);
+our $Nfiles=0;
 sub cb_xml2clean {
   my ($xmlfile) = @_;
-  my $xmlbufr = slurpFile($xmlfile);
-  $$xmlbufr =~ s/(\"\S*)\&(\S*\")/$1&amp;$2/g;
-  $$xmlbufr =~ s/(\"\S*)\"(\S*\")/$1&quot;$2/g;
-  $$xmlbufr =~ s/(\"\S*)\'(\S*\")/$1&apos;$2/g;
-  $$xmlbufr =~ s/(\"\S*)\<(\S*\")/$1&lt;$2/g;
-  $$xmlbufr =~ s/(\"\S*)\>(\S*\")/$1&gt;$2/g;
-  ##
   my ($outfile,$outfh) = $fc->in2out($xmlfile);
-  $outfh->print($$xmlbufr);
+  my $infh = IO::File->new("<$xmlfile") or die("$0: open failed for '$xmlfile': $!");
+  while (defined($_=<$infh>)) {
+    ##-- rename some bad fields
+    s|\<vat\b|\<cat|g;
+    s|/vat\>|/cat\>|g;
+    s|\<descrition\b|\<description|g;
+    s|/descrition\>|/description\>|g;
+    next if ($_ !~ /\<(?:w|cat|vat)\b/);
+    ##
+    s|\&|&amp;|g;
+    s|\'|&apos;|g;
+    s|="\<"|="&lt;"|g;
+    s|="\>"|="&gt;"|g;
+    s|=\"\"\"|=\"&quot;\"|g;
+  } continue {
+    $outfh->print($_);
+  }
   $outfh->close() if (!defined($fc->{outputFile}));
+  ++$Nfiles;
 }
 
 ##------------------------------------------------------------------------------
@@ -82,6 +93,7 @@ push(@ARGV,'-') if (!@ARGV);
 $fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_xml2clean );
 $fc->churn(@ARGV);
 
+print STDERR "$0: processed $Nfiles files.\n" if ($verbose);
 
 =pod
 
