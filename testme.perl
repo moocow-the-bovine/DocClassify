@@ -24,7 +24,7 @@ BEGIN { $,=' '; }
 ##======================================================================
 ## utils
 
-sub usepgplot {
+sub _usepgplot {
   require PDL::Graphics::PGPLOT;
   require PDL::Graphics::PGPLOT::Window;
   require PDL::Graphics::LUT;    ##-- for color tables used by e.g. imag()
@@ -570,7 +570,27 @@ sub test_sig_lemmatize {
 
   print STDERR "test_sig_lemmatize() done: what now?\n";
 }
-test_sig_lemmatize();
+#test_sig_lemmatize();
+
+##======================================================================
+## test: eval: i/o
+
+sub test_eval_io {
+  my $efile = 'vzdata-testset.lsimap-r128-avg-H.eval.xml';
+  #my $eval = DocClassify::Eval->loadFile($efile);
+  ##
+  my $cfile1 = 'vzdata-testset.corpus.xml';
+  my $cfile2 = 'vzdata-testset.lsimap-r128-avg-H.xml';
+  my $c1 = DocClassify::Corpus->loadFile($cfile1);
+  my $c2 = DocClassify::Corpus->loadFile($cfile2);
+  $eval = DocClassify::Eval->new()->compare($c1,$c2, label1=>$cfile1, label2=>$cfile2);
+  $eval->saveXmlFile($efile);
+  ##
+  $eval = ref($eval)->loadXmlFile($efile) or die("$0: Eval->load($efile) failed: $!");
+  $eval->saveXmlFile('-', saveDocs=>0) or die("$0: Eval->save('-') failed. $!");
+  print STDERR "$0: test_eval_io() done: what now?\n";
+}
+#test_eval_io();
 
 
 ##======================================================================

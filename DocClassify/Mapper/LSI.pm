@@ -34,6 +34,7 @@ our $verbose = 2;
 ## %$map, %opts:
 ##  ##-- options
 ##  lemmatize => \%opts,             ##-- options for $doc->typeSignature->lemmatize()
+##  #relemmatize => $bool,            ##-- whether to implicitly re-lemmatize documents (defualt=false)
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
 ##  minFreq => $f,                   ##-- minimum global term-frequency (default=1)
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1)
@@ -69,6 +70,7 @@ sub new {
   my $obj =  $that->SUPER::new(
 			       ##-- options
 			       lemmatize => {},
+			       #relemmatize => 1,
 			       trainExclusive => 1,
 			       minFreq =>0,
 			       smoothf =>1,
@@ -121,7 +123,7 @@ sub noShadowKeys {
 
 ## $map = $map->trainDocument($doc)
 ##  + add training data from $doc
-##  + calls $doc->typeSignature()->lemmatize( %{$map->{lemmatize}} )
+##  + calls $map->lemmaSignature($doc)
 sub trainDocument {
   my ($map,$doc) = @_;
   print STDERR ref($map)."::trainDocument(".$doc->label.")\n" if ($verbose >= 2);
@@ -423,7 +425,7 @@ sub svdApply {
 }
 
 ## $sig = $map->lemmaSignature($doc_or_sig)
-##  + wrapper for $doc->termSignature->lemmatize with options %{$map->{lemmatize}}
+##  + wrapper for $doc->termSignature->lemmatize() with options %{$map->{lemmatize}}
 sub lemmaSignature {
   my ($map,$sig) = @_;
   $sig = $sig->typeSignature if (!UNIVERSAL::isa($sig,'DocClassify::Signature'));

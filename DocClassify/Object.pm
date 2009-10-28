@@ -95,6 +95,11 @@ BEGIN {
   }
 }
 
+## $mode_hash_or_name = $CLASS_OR_OBJ->defaultIoMode()
+##  + returns default I/O mode for object
+##  + default implementation just returns 'DEFAULT'
+sub defaultIoMode { return 'DEFAULT'; }
+
 ## \%mode = $CLASS_OR_OBJ->guessFileMode($filename,%opts)
 ##  + guesses I/O mode name from $filename
 sub guessFileMode {
@@ -105,8 +110,8 @@ sub guessFileMode {
       return $_ if ($file =~ m/$_->{re}/);
     }
   }
-  ##-- use default mode
-  my $mode = ($opts{mode} || 'DEFAULT');
+  ##-- use default mode: get class default
+  my $mode = ($opts{mode} || $obj->defaultIoMode);
   $mode=$IO_ALIAS{$mode} while (!ref($mode) && exists($IO_ALIAS{$mode}));
   return ref($mode) ? $mode : $IO_MODES[0];
 }

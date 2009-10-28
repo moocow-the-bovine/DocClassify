@@ -30,7 +30,7 @@ our %corpusopts = qw();
 our %evalopts = qw();
 
 our %loadopts_corpus = ( mode=>undef, );
-our %saveopts_eval = ( mode=>'xml', format=>1, saveDocs=>0 );
+our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>0 );
 
 our $outfile = '-';
 
@@ -101,7 +101,7 @@ dc-mapper-eval.perl - evaluate Mapper results
   -verbose LEVEL         # verbosity level
   -docs , -nodocs        # do/don't save full document list (default=don't)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
-  -output-mode MODE      # I/O mode for output eval data (default=xml)
+  -output-mode MODE      # I/O mode for output eval data (default=guess)
   -output-file FILE      # set output file (default=-)
 
 =cut

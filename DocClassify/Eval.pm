@@ -126,9 +126,13 @@ sub compare {
     ($cat1,$cat2) = ($cats1->[0],$cats2->[0]);                     ##-- exclusive membership only!
     if ($cat1->{name} eq $cat2->{name}) {
       $eval->true_positive($cat1->{name},$doc1);
+      $cat1->{evalClass} = 'tp1';
+      $cat2->{evalClass} = 'tp2';
     } else {
       $eval->false_negative($cat1->{name},$doc1);
       $eval->false_positive($cat2->{name},$doc1);
+      $cat1->{evalClass} = 'fn';
+      $cat2->{evalClass} = 'fp';
     }
   }
 
@@ -145,10 +149,12 @@ sub compare {
     ##
     $eg->{pr_bytes_avg} += 1/$Ncats * precision($c,'bytes');
     $eg->{rc_bytes_avg} += 1/$Ncats * recall($c,'bytes');
+    ##
+    prF($c,$_) foreach (qw(docs bytes)); ##-- ensure pr,rc,F computed
   }
   $eg->{F_docs_avg}  = F($eg,'docs_avg');
   $eg->{F_bytes_avg} = F($eg,'bytes_avg');
-  prF($eg,$_) foreach (qw(docs bytes)); ##-- ensure computed
+  prF($eg,$_) foreach (qw(docs bytes)); ##-- ensure pr,rc,F computed
 
   return $eval;
 }
@@ -246,6 +252,15 @@ sub reportStr {
 ## Methods: I/O
 
 ##--------------------------------------------------------------
+## Methods: I/O: generic
+
+## $mode_hash_or_name = $CLASS_OR_OBJ->defaultIoMode()
+##  + returns default I/O mode for object
+##  + override returns 'xml'
+sub defaultIoMode { return 'xml'; }
+
+
+##--------------------------------------------------------------
 ## Methods: I/O: XML: save
 
 ## $xdoc = $eval->saveXmlDoc(%opts)
@@ -288,12 +303,12 @@ sub saveXmlDoc {
   $aed_node->setAttribute($_, ($c2e->{''}{$_."_docs_avg"}||0)) foreach (qw(pr rc F));
   $aeb_node->setAttribute($_, ($c2e->{''}{$_."_bytes_avg"}||0)) foreach (qw(pr rc F));
 
-  ##-- global eval data
-  my $ge_root = $data_root->addNewChild(undef,'global');
-  my $ged_node = $ge_root->addNewChild(undef,'by-n-docs');
-  my $geb_node = $ge_root->addNewChild(undef,'by-n-bytes');
-  $ged_node->setAttribute($_, ($c2e->{''}{$_."_docs"}||0)) foreach (qw(tp fp fn pr rc F));
-  $geb_node->setAttribute($_, ($c2e->{''}{$_."_bytes"}||0)) foreach (qw(tp fp fn pr rc F));
+  ##-- global total eval data
+  my $te_root = $data_root->addNewChild(undef,'total');
+  my $ted_node = $te_root->addNewChild(undef,'by-n-docs');
+  my $teb_node = $te_root->addNewChild(undef,'by-n-bytes');
+  $ted_node->setAttribute($_, ($c2e->{''}{$_."_docs"}||0)) foreach (qw(tp fp fn pr rc F));
+  $teb_node->setAttribute($_, ($c2e->{''}{$_."_bytes"}||0)) foreach (qw(tp fp fn pr rc F));
 
   ##-- category eval data
   my $ce_root = $data_root->addNewChild(undef,'by-category');
@@ -342,7 +357,6 @@ sub saveXmlDoc {
       }
     }
   }
-
   ##-- done
   return $xdoc;
 }
@@ -378,26 +392,60 @@ sub loadXmlDoc {
   my ($that,$xdoc,%opts) = @_;
   my $eval = ref($that) ? $that->clear : $that->new(%opts);
 
-  confess(ref($eval)."::loadXmlDoc(): not yet implemented!");
-
   ##-- load: label
   my $root = $xdoc->documentElement;
   $eval->{label} = $root->getAttribute('label');
 
-  ##-- load: documents
-  my ($d_node,$doc, $c_node,$cat);
-  foreach $d_node (@{$root->findnodes('./docs/doc')}) {
-    push(@{$eval->{docs}}, $doc=DocClassify::Document->new());
-    $doc->label($d_node->getAttribute('label'));
-    $doc->id($d_node->getAttribute('id'));
-    $doc->{file} = $d_node->getAttribute('file');
-    $doc->{sigFile} = $d_node->getAttribute('sigFile');
-    $doc->label();
-    $doc->id();
-    foreach $c_node (@{$d_node->findnodes('./cat')}) {
-      $cat = {};
-      $cat->{$_->name} = $_->value foreach ($c_node->attributes);
-      push(@{$doc->{cats}},$cat);
+  ##-- load: header data
+  my $head=$root->findnodes('head[1]')->[0];
+  $eval->{$_} = $head->findnodes('corpora[1]/@'.$_)->[0]->value foreach (qw(Ndocs Nbytes));
+  ##
+  $eval->{label1} = $head->findnodes('corpora[1]/corpus[1]/@label')->[0]->value;
+  $eval->{label2} = $head->findnodes('corpora[1]/corpus[2]/@label')->[0]->value;
+
+  ##-- load: data
+  my $data_root = $root->findnodes('data[1]')->[0];
+  my $c2e = $eval->{cat2eval};
+
+  ##-- data: eval: global average
+  my $ae_root = $data_root->findnodes('average[1]')->[0];
+  $c2e->{''}{$_."_docs_avg"} = $ae_root->findnodes("by-n-docs[1]/\@$_")->[0]->value foreach (qw(pr rc F));
+  $c2e->{''}{$_."_bytes_avg"} = $ae_root->findnodes("by-n-bytes[1]/\@$_")->[0]->value foreach (qw(pr rc F));
+
+  ##-- data: eval: global total
+  my $te_root = $data_root->findnodes('total[1]')->[0];
+  $c2e->{''}{$_."_docs"} = $te_root->findnodes("by-n-docs[1]/\@$_")->[0]->value foreach (qw(tp fp fn pr rc F));
+  $c2e->{''}{$_."_bytes"} = $te_root->findnodes("by-n-bytes[1]/\@$_")->[0]->value foreach (qw(tp fp fn pr rc F));
+
+  ##-- data: eval: by category
+  my ($ce_unit,$ce_node, $c_node,$c_name);
+  foreach $ce_unit (qw(docs bytes)) {
+    $ce_node = $data_root->findnodes('by-category[1]/by-n-'.$ce_unit.'[1]')->[0];
+    foreach $c_node (@{$ce_node->findnodes('cat')}) {
+      $c_name = $c_node->getAttribute('name');
+      $c2e->{$c_name}{$_."_".$ce_unit} = $c_node->getAttribute($_) foreach (qw(tp fp fn pr rc F));
+    }
+  }
+
+  ##-- data: eval: documents
+  my $lab2docs = $eval->{lab2docs};
+  my $docs_node = $data_root->findnodes('by-document[1]')->[0];
+  if (defined($docs_node)) {
+    my ($d_node,%d_attrs, $docs, $d_i,$doc,$dc_node,$cat);
+    foreach $d_node (@{$docs_node->findnodes('doc')}) {
+      %d_attrs = map {($_->name=>$_->value)} $d_node->attributes;
+      $docs    = [map {DocClassify::Document->new(%d_attrs)} qw(1 2)];
+      $lab2docs->{$docs->[0]->label} = $docs;
+      ##
+      ##-- parse categories
+      foreach $d_i (0..1) {
+	$doc = $docs->[$d_i];
+	foreach $dc_node (@{$d_node->findnodes('cats[@n="'.($d_i+1).'"][1]/cat')}) {
+	  $cat = { map {($_->name=>$_->value)} $dc_node->attributes };
+	  push(@{$doc->{cats}},$cat);
+	}
+	#$doc->cats(); ##-- should already be sorted in eval file
+      }
     }
   }
 
