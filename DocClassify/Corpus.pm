@@ -146,6 +146,14 @@ sub docsByCat {
 ## Methods: I/O
 
 ##--------------------------------------------------------------
+## Methods: I/O: XML: generic
+
+## $mode_hash_or_name = $CLASS_OR_OBJ->defaultIoMode()
+##  + returns default I/O mode for object
+##  + override returns 'xml'
+sub defaultIoMode { return 'xml'; }
+
+##--------------------------------------------------------------
 ## Methods: I/O: XML: save
 
 ## $xdoc = $corpus->saveXmlDoc(%opts)

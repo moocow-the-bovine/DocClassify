@@ -346,6 +346,14 @@ sub rawText {
 ## Methods: I/O
 
 ##--------------------------------------------------------------
+## Methods: I/O: XML: generic
+
+## $mode_hash_or_name = $CLASS_OR_OBJ->defaultIoMode()
+##  + returns default I/O mode for object
+##  + override returns 'bin'
+sub defaultIoMode { return 'bin'; }
+
+##--------------------------------------------------------------
 ## Methods: I/O: XML
 
 ## $xdoc = $doc->xmlDoc(%opts)

@@ -200,9 +200,10 @@ sub false_positive {
 }
 
 ## $frac = PACKAGE::frac($num,$denom)
+##  + treats 0/0 == 1
 sub frac {
   my ($num,$denom) = @_;
-  return $denom==0 ? 0 : ($num/$denom);
+  return $denom!=0 ? ($num/$denom) : ($num==0 ? 1 : 0);
 }
 
 ## $pr = PACKAGE::precision(\%catEvalHash,$units)

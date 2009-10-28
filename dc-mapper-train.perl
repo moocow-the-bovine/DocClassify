@@ -54,6 +54,7 @@ GetOptions(##-- General
 	   'verbose|v=i' => \$verbose,
 
 	   ##-- Map Options
+	   'mapper-class|mapclass|class|mapc|mc=s' => \$mapopts{class},
 	   'label|l=s' => \$mapopts{label},
 	   'lemmatize-option|lemma-option|lemma|L=s%' => $mapopts{lemmatize},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
@@ -62,6 +63,7 @@ GetOptions(##-- General
 	   'exclusive|x!' => \$mapopts{trainExclusive},
 	   'cat-profile|catProfile|profile|cp=s' => \$mapopts{catProfile},
 	   'term-weight|termWeight|tw|w=s'       => \$mapopts{termWeight},
+	   'mapper-option|mo=s' => \%mapopts,
 	   'compile|c!' => \$compileMap,
 
 	   ##-- I/O
@@ -118,18 +120,24 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
 
  dc-mapper-train.perl [OPTIONS] [CORPUS...]
 
- Options:
+ General Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
+
+ Mapper Options:
+  -mapper-class CLASS    # set mapper class (default='LSI')
   -label LABEL           # set global mapper label
   -lemma OPT=VALUE       # set lemmatization option
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
   -svd-dims DIMS         # set max SVD dimensions (default=64)
-  -cat-profile HOW       # one of 'fold-in', 'average', 'weighted-average' (default='average')
-  -term-weight HOW       # one of 'uniform', 'entropy' (default='entropy')
+  -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
+  -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
+  -mapper-option OPT=VAL # set generic (class-specific) mapper option
+
+ I/O Options:
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output mapper (default=guess)
   -output-file FILE      # set corpus output file (default=-)
