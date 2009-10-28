@@ -18,7 +18,16 @@ use strict;
 ##==============================================================================
 ## Globals
 
-our @ISA = qw(DocClassify::Object);
+our @ISA = qw(DocClassify::Object Exporter);
+
+our @EXPORT = qw();
+our %EXPORT_TAGS =
+  (
+   utils =>[qw(frac precision recall prF)],
+  );
+our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
+$EXPORT_TAGS{all} = [@EXPORT_OK];
+
 
 ##==============================================================================
 ## Constructors etc.
@@ -84,7 +93,7 @@ sub clear {
 }
 
 ##==============================================================================
-## Methods: Evaluation
+## Methods: Corpus Comparison
 
 ## $eval = $eval->compare($corpus1,$corpus2,%opts)
 ##  + $corpus1: "wanted" corpus (gold-standard)
@@ -136,14 +145,63 @@ sub compare {
     }
   }
 
-  ##-- get average pr,rc,F by document | bytes
+  return $eval;
+}
+
+##==============================================================================
+## Methods: Cross-Validation
+
+## $eval1 = $eval1->addEval($eval2)
+##  + adds evaluation data from $eval2 to $eval1
+sub addEval {
+  my ($eval1,$eval2) = @_;
+  $eval1->uncompile() if ($eval1->compiled);
+
+  ##-- add: lab2docs
+  my $l2d = $eval1->{lab2docs};
+  my ($lab,$docs);
+  while (($lab,$docs)=each(%{$eval2->{lab2docs}})) {
+    if (exists($l2d->{$lab})) {
+      confess(ref($eval1)."::addEval(): label '$lab' already exists!");
+      return undef;
+    }
+    $l2d->{$lab} = [@$docs];
+  }
+
+  ##-- add: c2e
+  my $c2e = $eval1->{cat2eval};
+  my ($cat,$chash1,$chash2);
+  my @addKeys = map {("${_}_docs","${_}_bytes")} qw(tp fp fn);
+  while (($cat,$chash2)=each(%{$eval2->{cat2eval}})) {
+    $chash1 = $c2e->{$cat};
+    $chash1 = $c2e->{$cat} = {} if (!defined($chash1));
+    $chash1->{$_} += ($chash2->{$_}||0) foreach (@addKeys);
+  }
+
+  ##-- add: Ndocs, Nbytes
+  $eval1->{Ndocs}  += $eval2->{Ndocs};
+  $eval1->{Nbytes} += $eval2->{Nbytes};
+
+  return $eval1;
+}
+
+##==============================================================================
+## Methods: Compilation
+
+## $eval = $eval->compile()
+##  + (re-)compiles $eval->{cat2eval}{$catName} pr,rc,F values, also $eval->{cat2eval}{''} doc-wise and byte-wise average values
+sub compile {
+  my $eval = shift;
+  ##
   my $c2e   = $eval->{cat2eval};
   my $Ncats = scalar(keys(%$c2e))-1;
   my $eg    = $c2e->{''};
   $eg       = $c2e->{''} = {} if (!defined($eg));
+  delete(@$eg{map {($_."_docs",$_."_bytes",$_."_docs_avg",$_."_bytes_avg")} qw(pr rc F)});
   my ($c);
   foreach (grep {$_ ne ''} keys(%$c2e)) {
     $c = $c2e->{$_};
+    ##
     $eg->{pr_docs_avg} += 1/$Ncats * precision($c,'docs');
     $eg->{rc_docs_avg} += 1/$Ncats * recall($c,'docs');
     ##
@@ -159,6 +217,22 @@ sub compare {
   return $eval;
 }
 
+## $bool = $eval->compiled()
+##  + returns true iff pr,rc,F have been compiled
+##  + really just checks for $eval->{cat2eval}{''}{F_docs}
+sub compiled {
+  return defined($_[0]{cat2eval}{''}{F_docs});
+}
+
+## $eval = $eval->uncompile()
+##  + un-compiles $eval->{cat2eval}{$catName} pr,rc,F values
+##  + un-compiles $eval->{cat2eval}{''} doc-wise and byte-wise average values
+sub uncompile {
+  my $eval = shift;
+  my @delkeys = map {("${_}_docs", "${_}_bytes", "${_}_docs_avg", "${_}_bytes_avg")} qw(pr rc F);
+  delete(@$_{@delkeys}) foreach (values(%{$eval->{cat2eval}}));
+  return $eval;
+}
 
 ##==============================================================================
 ## Methods: Utilities
@@ -270,6 +344,8 @@ sub defaultIoMode { return 'xml'; }
 ##     saveDocs => $bool,  ##-- whether to save raw document list (default=true)
 sub saveXmlDoc {
   my ($eval,%opts) = @_;
+  $eval->compile() if (!$eval->compiled); ##-- ensure compiled
+
   my $xdoc = XML::LibXML::Document->new('1.0','UTF-8');
   $xdoc->setDocumentElement($xdoc->createElement('eval'));
   my $root = $xdoc->documentElement;

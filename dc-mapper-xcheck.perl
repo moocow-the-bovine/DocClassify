@@ -68,7 +68,7 @@ GetOptions(##-- General
 	   ##-- Map Options
 	   'n-subcorpora|n=i' => \$n_subcorpora,
 	   'mapper-class|mapclass|class|mapc|mc=s' => \$mapopts{class},
-	   'label|l=s' => sub { $mapopts{label}=$corpusopts{label}=$_[1]; },
+	   'label|l=s' => sub { $evalopts{label}=$mapopts{label}=$corpusopts{label}=$_[1]; },
 	   'lemmatize-option|lemma-option|lemma|L=s%' => $mapopts{lemmatize},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
 	   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$mapopts{smoothf},
@@ -118,6 +118,7 @@ print STDERR "$prog: loadMasterCorpus($cfile0)\n" if ($verbose);
 our $corpus0 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile0,%loadopts_corpus)
     or die("$0: Corpus->loadFile() failed for master corpus '$cfile0': $!");
 $corpus0->{label} ||= $cfile0;
+our $label0 = $corpus0->{label};
 
 ##--------------------------------------------------------------
 ## Pre-compile & cache document signatures
@@ -132,7 +133,7 @@ if ($mapper0->can('lemmaSignature')) {
 ##--------------------------------------------------------------
 ## Split master corpus
 print STDERR "$prog: splitN(n=>$n_subcorpora)\n" if ($verbose);
-our @subcorpora = $corpus0->splitN($n_subcorpora, %splitopts, label=>"$cfile0.%d");
+our @subcorpora = $corpus0->splitN($n_subcorpora, %splitopts, label=>"$label0.%d");
 our ($i);
 foreach $i (0..$#subcorpora) {
   print STDERR "$prog: save($outdir/split.$i.xml)\n" if ($verbose >= 2);
@@ -143,11 +144,11 @@ foreach $i (0..$#subcorpora) {
 ##--------------------------------------------------------------
 ## Train - Test - Eval loop
 print STDERR "$prog: LOOP: TRAIN - MAP - EVAL\n" if ($verbose);
-our $eval = DocClassify::Eval->new(%evalopts);
+our $eval0 = DocClassify::Eval->new(%evalopts);
 foreach $i (0..$#subcorpora) {
   print STDERR "$prog: LOOP (i=$i): CORPORA\n" if ($verbose);
-  my $test = $subcorpora[$i]->shadow( %{$subcorpora[$i]}, label=>"TEST($i,$cfile0)" );
-  my $train = $test->shadow( label=>"TRAIN($i,$cfile0)" );
+  my $test = $subcorpora[$i]->shadow( %{$subcorpora[$i]}, label=>"TEST($i,$label0)" );
+  my $train = $test->shadow( label=>"TRAIN($i,$label0)" );
   $train->addCorpus($_) foreach (@subcorpora[grep {$_ != $i} (0..$#subcorpora)]);
   #$test->saveFile("$outdir/test.$i.xml");
   #$train->saveFile("$outdir/train.$i.xml");
@@ -161,23 +162,33 @@ foreach $i (0..$#subcorpora) {
   ##-- apply mapper to test corpus
   print STDERR "$prog: LOOP (i=$i): MAP\n" if ($verbose);
   my $test_mapped = $test->clone;
-  $test_mapped->{label} = "MAPPED(TEST($i,$cfile0))";
+  $test_mapped->{label} = "MAPPED($i,$label0)";
   $mapper->mapCorpus($test_mapped);
   $test_mapped->saveFile("$outdir/test.$i.mapped.xml");
 
   ##-- evaluate
   print STDERR "$prog: LOOP (i=$i): EVAL\n" if ($verbose);
-  $eval->clear->compare($test,$test_mapped);
-  $eval->{label} = "EVAL($i,$cfile0)";
+  my $eval = $eval0->shadow()->compare($test,$test_mapped)->compile();
+  $eval->{label} = "EVAL($i,$label0)";
   $eval->saveFile("$outdir/eval.$i.xml", %saveopts_eval)
     or die("$0: Eval->saveFile($outdir/eval.$i.xml) failed: $!");
+
+  ##-- evaluate: add to global
+  $eval0->addEval($eval);
 }
+
+##-- evaluate: total
+print STDERR "$prog: FINAL: EVAL ($outdir/eval.all.xml)\n" if ($verbose);
+@$eval0{qw(label label1 label2)} = ("EVAL($label0)","TEST(i,$label0)","MAPPED(i,$label0)");
+$eval0->compile();
+$eval0->saveFile("$outdir/eval.all.xml", %saveopts_eval)
+  or die("$0: Eval->saveFile($outdir/eval.all.xml) failed: $!");
 
 =pod
 
 =head1 NAME
 
-dc-mapper-xcheck.perl - cross-validation split, train & eval in one swell foop
+dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swell foop
 
 =head1 SYNOPSIS
 

@@ -12,6 +12,7 @@ use PDL::Ngrams;
 use PDL::CCS;
 #use PDL::Fit::Linfit; ##-- weirdness in tests (DynaLoader crashes on PDL::Slatec sub-dependency)
 use IO::Handle;
+use IO::File;
 use Exporter;
 
 use XML::LibXML;
@@ -30,7 +31,7 @@ our %EXPORT_TAGS =
    fit=>[qw(ylinfit ylogfit)],
    norm=>[qw(_gausscdf _gausswidth)],
    cmp=>[qw(min2 max2)],
-   io=>[qw(stringfh)],
+   io=>[qw(slurpFile stringfh)],
    libxml=>[qw(libxmlParser)],
    libxslt=>[qw(xsl_stylesheet)],
    plot=>[qw(usepgplot)],
@@ -67,6 +68,7 @@ sub usepgplot {
   eval $s;
   warn("usepgplot(): $@") if ($@);
 }
+
 
 
 ##==============================================================================
@@ -142,8 +144,29 @@ sub xsl_stylesheet {
 
 
 ##==============================================================================
-## Functions: generic utilities
+## Functions: I/O
 ##  + mostly lifted from MUDL::PDL::Smooth
+
+## \$str = slurpFile($file_or_fh)
+## \$str = slurpFile($file_or_fh,\$str)
+## \$str = slurpFile($file_or_fh,\$str,@binmodes)
+sub slurpFile {
+  my ($file,$ref,@binmodes) = @_;
+  if (!defined($ref)) {
+    my $str = '';
+    $ref = \$str;
+  }
+  my $fh = ref($file) ? $file : IO::File->new("<$file");
+  confess(__PACKAGE__."::slurpFile(): open failed for '$file': $!") if (!defined($fh));
+  if (@binmodes && $fh->can('binmode')) {
+    $fh->binmode($_) foreach (@binmodes);
+  }
+  local $/=undef;
+  $$ref = <$fh>;
+  $fh->close() if (!ref($file));
+  return $ref;
+}
+
 
 ## ($outfh,\$str) = stringfh($mode)
 ## ($outfh,\$str) = stringfh($mode,\$str)
@@ -158,11 +181,18 @@ sub stringfh {
   return ($fh,$ref);
 }
 
+##==============================================================================
+## Functions: Math
+
 ## $min = min2($x,$y)
 sub min2 { return $_[0] < $_[1] ? $_[0] : $_[1]; }
 
 ## $max = max2($x,$y)
 sub max2 { return $_[0] > $_[1] ? $_[0] : $_[1]; }
+
+##==============================================================================
+## Functions: PDL utils
+##  + mostly lifted from MUDL::PDL::Smooth
 
 ## $coefs         = ylinfit($y,$x) ##-- scalar context
 ## ($yfit,$coefs) = ylinfit($y,$x) ##-- array context

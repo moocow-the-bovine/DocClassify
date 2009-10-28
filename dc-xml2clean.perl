@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Utils ':io';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -19,92 +20,84 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 2;
-our ($help);
+our ($help,$verbose);
 
 #our $outputEncoding = 'UTF-8';
 #our $inputEncoding  = 'UTF-8';
 #our $format   = 1;
 
-our %corpusopts = qw();
-our %evalopts = qw();
-
-our %loadopts_corpus = ( mode=>undef, );
-our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>0 );
-
-our $outfile = '-';
+our %fcopts = (
+	       verbose=>2,
+	       recursive=>1,
+	       inputFileMatch=>qr/\.xml$/,
+	       inputFileTrim=>qr/\.[^\.]*$/,
+	       outputFile=>undef,
+	       outputFileSuffix=>'.clean.xml',
+	      );
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
 GetOptions(##-- General
 	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
-
-	   ##-- Mapping Options (none)
+	   'verbose|v=i' => \$fcopts{verbose},
 
 	   ##-- I/O
-	   'corpus-input-mode|input-mode|cim|im=s' => \$loadopts_corpus{mode},
-	   'eval-output-mode|output-mode|eom|om=s' => \$saveopts_eval{mode},
-	   'save-documents|save-docs|docs|d!' => \$saveopts_eval{saveDocs},
-	   'format-xml|format|fx|f!' => sub { $saveopts_eval{format}=$_[1] ? 1 : 0; },
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
+	   'recursive|recurse|r!' => \$fcopts{recursive},
+	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
+	   'output-suffix|os=s' => \$fcopts{outputFileSuffix},
+	   #'format|f=1' => \$format
 	  );
+$verbose=$fcopts{verbose};
 
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
-pod2usage({-exitval=>0, -verbose=>0, -msg=>'You must specify at least the WANTED corpus!'}) if (!@ARGV);
 
 
 ##------------------------------------------------------------------------------
 ## Subs
 ##------------------------------------------------------------------------------
 
+our ($fc);
+sub cb_xml2clean {
+  my ($xmlfile) = @_;
+  my $xmlbufr = slurpFile($xmlfile);
+  $$xmlbufr =~ s/(\"\S*)\&(\S*\")/$1&amp;$2/g;
+  $$xmlbufr =~ s/(\"\S*)\"(\S*\")/$1&quot;$2/g;
+  $$xmlbufr =~ s/(\"\S*)\'(\S*\")/$1&apos;$2/g;
+  $$xmlbufr =~ s/(\"\S*)\<(\S*\")/$1&lt;$2/g;
+  $$xmlbufr =~ s/(\"\S*)\>(\S*\")/$1&gt;$2/g;
+  ##
+  my ($outfile,$outfh) = $fc->in2out($xmlfile);
+  $outfh->print($$xmlbufr);
+  $outfh->close() if (!defined($fc->{outputFile}));
+}
+
 ##------------------------------------------------------------------------------
 ## MAIN
 ##------------------------------------------------------------------------------
 
-##-- load input corpora
+##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
-our ($cfile1,$cfile2) = @ARGV;
-our $corpus1 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile1,%loadopts_corpus)
-  or die("$0: Corpus->loadFile() failed for '$cfile1': $!");
-our $corpus2 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile2,%loadopts_corpus)
-  or die("$0: Corpus->loadFile() failed for '$cfile2': $!");
+$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_xml2clean );
+$fc->churn(@ARGV);
 
-##-- label input corpora
-$corpus1->{label} ||= $cfile1;
-$corpus2->{label} ||= $cfile2;
-
-##-- evaluate
-our $eval = DocClassify::Eval->new(%evalopts)
-  or die("$0: Eval->new() failed: $!");
-$eval->compare($corpus1, $corpus2)
-  or die("$0: Eval->compare() failed: $!");
-$eval->compile()
-  or die("$0: Eval->compile() failed: $!");
-
-##-- report: just save
-$eval->saveFile($outfile, %saveopts_eval)
-  or die("$0: Eval->saveFile() failed for '$outfile': $!");
 
 =pod
 
 =head1 NAME
 
-dc-mapper-eval.perl - evaluate Mapper results
+dc-xml2clean.perl - convert "dirty" pseudo-xml docs to "clean" well-formed XMl
 
 =head1 SYNOPSIS
 
- dc-mapper-eval.perl [OPTIONS] CORPUS_WANTED CORPUS_GOT
+ dc-xml2clean.perl [OPTIONS] [INPUT(s)...]
 
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
-  -docs , -nodocs        # do/don't save full document list (default=don't)
-  -input-mode MODE       # I/O mode for input corpora (default=guess)
-  -output-mode MODE      # I/O mode for output eval data (default=guess)
-  -output-file FILE      # set output file (default=-)
+  -output-file FILE      # all output to a single file
+  -output-suffix SUFFIX  # one outfile per infile, suffix SUFFIX (default=.clean.xml)
 
 =cut
 
