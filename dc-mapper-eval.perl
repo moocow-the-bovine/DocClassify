@@ -88,6 +88,9 @@ $eval->compile()
 $eval->saveFile($outfile, %saveopts_eval)
   or die("$0: Eval->saveFile() failed for '$outfile': $!");
 
+##-- brief report
+$eval->saveTextFile(\*STDERR) if ($verbose);
+
 =pod
 
 =head1 NAME

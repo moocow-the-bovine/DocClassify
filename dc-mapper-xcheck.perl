@@ -172,6 +172,7 @@ foreach $i (0..$#subcorpora) {
   $eval->{label} = "EVAL($i,$label0)";
   $eval->saveFile("$outdir/eval.$i.xml", %saveopts_eval)
     or die("$0: Eval->saveFile($outdir/eval.$i.xml) failed: $!");
+  $eval->saveTextFile(\*STDERR) if ($verbose);
 
   ##-- evaluate: add to global
   $eval0->addEval($eval);
@@ -183,6 +184,8 @@ print STDERR "$prog: FINAL: EVAL ($outdir/eval.all.xml)\n" if ($verbose);
 $eval0->compile();
 $eval0->saveFile("$outdir/eval.all.xml", %saveopts_eval)
   or die("$0: Eval->saveFile($outdir/eval.all.xml) failed: $!");
+
+$eval0->saveTextFile(\*STDERR) if ($verbose);
 
 =pod
 

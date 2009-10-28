@@ -28,6 +28,7 @@ our @ISA = qw(Exporter);
 
 our %EXPORT_TAGS =
   (
+   si=>[qw(sistr)],
    fit=>[qw(ylinfit ylogfit)],
    norm=>[qw(_gausscdf _gausswidth)],
    cmp=>[qw(min2 max2)],
@@ -70,6 +71,28 @@ sub usepgplot {
 }
 
 
+
+##==============================================================================
+## Utils: SI
+##==============================================================================
+
+## $si_str = PACKAGE::sistr($val, $printfFormatChar, $printfFormatPrecision, $printfFormatSpace)
+sub sistr {
+  my ($x, $how, $prec, $ws) = @_;
+  $how  = 'f' if (!defined($how));
+  $prec = '.2' if (!defined($prec));
+  $ws   = ' ' if (!defined($ws));
+  my $fmt = "%${prec}${how}";
+  return sprintf("$fmt${ws}T", $x/10**12) if ($x >= 10**12);
+  return sprintf("$fmt${ws}G", $x/10**9)  if ($x >= 10**9);
+  return sprintf("$fmt${ws}M", $x/10**6)  if ($x >= 10**6);
+  return sprintf("$fmt${ws}K", $x/10**3)  if ($x >= 10**3);
+  return sprintf("$fmt${ws} ", $x)        if ($x >=  1);
+  return sprintf("$fmt${ws}m", $x*10**3)  if ($x >= 10**-3);
+  return sprintf("$fmt${ws}u", $x*10**6)  if ($x >= 10**-6);
+  return sprintf("$fmt${ws}n", $x*10**9)  if ($x >= 10**-9);
+  return sprintf("$fmt${ws} ", $x); ##-- default
+}
 
 ##==============================================================================
 ## Functions: libxml utilities

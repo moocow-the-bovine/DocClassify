@@ -202,9 +202,15 @@ sub compile {
   foreach (grep {$_ ne ''} keys(%$c2e)) {
     $c = $c2e->{$_};
     ##
+    $eg->{tp_docs_avg} += 1/$Ncats * ($c->{tp_docs}||0);
+    $eg->{fp_docs_avg} += 1/$Ncats * ($c->{fp_docs}||0);
+    $eg->{fn_docs_avg} += 1/$Ncats * ($c->{fn_docs}||0);
     $eg->{pr_docs_avg} += 1/$Ncats * precision($c,'docs');
     $eg->{rc_docs_avg} += 1/$Ncats * recall($c,'docs');
     ##
+    $eg->{tp_bytes_avg} += 1/$Ncats * ($c->{tp_bytes}||0);
+    $eg->{fp_bytes_avg} += 1/$Ncats * ($c->{fp_bytes}||0);
+    $eg->{fn_bytes_avg} += 1/$Ncats * ($c->{fn_bytes}||0);
     $eg->{pr_bytes_avg} += 1/$Ncats * precision($c,'bytes');
     $eg->{rc_bytes_avg} += 1/$Ncats * recall($c,'bytes');
     ##
@@ -314,12 +320,26 @@ sub prF {
   return (precision(@_),recall(@_),F(@_));
 }
 
-## $str = PACKAGE::reportStr($label,\%catEvalHash,$unit)
+## $str = PACKAGE::reportStr($label,\%catEvalHash,$unit, %opts)
+##  + %opts:
+##     llen=>$fmtLen, ##-- default=24 #48
+##     plen=>$fmtLen, ##-- default='4.1'
+##     ilen=>$fmtLen, ##-- default='4',
 sub reportStr {
-  my ($lab,$hash,$unit) = @_;
-  my $llen = 48;
-  my $flen = '6.2';
-  return sprintf("%-${llen}s: pr=%${flen}f  rc=%${flen}f  F=%${flen}f\n", $lab, map {100*$_} prF($hash,$unit));
+  my ($lab,$hash,$unit,%opts) = @_;
+  my ($llen,$plen,$ilen) = @opts{qw(llen plen ilen)};
+  #$llen ||= 48;
+  $llen ||= 24;
+  $plen ||= '5.1';
+  $ilen ||= 4;
+  prF($hash,$unit);
+  return (join('  ',
+	       sprintf("%-${llen}s:", $lab),
+	       #(map {sprintf("$_=%${ilen}d", ($hash->{$_.'_'.$unit}||0))} qw(tp fp fn)),
+	       (map {"$_=".sistr(($hash->{$_.'_'.$unit}||0),'d',$ilen,' ')} qw(tp fp fn)),
+	       ':',
+	       (map {sprintf("$_=%${plen}f", 100*($hash->{$_.'_'.$unit}||0))} qw(pr rc F))
+	      )."\n");
 }
 
 
@@ -333,6 +353,30 @@ sub reportStr {
 ##  + returns default I/O mode for object
 ##  + override returns 'xml'
 sub defaultIoMode { return 'xml'; }
+
+##--------------------------------------------------------------
+## Methods: I/O: Ascii (output only)
+
+## $eval = $eval->saveTextFile($file_or_fh,%opts)
+sub saveTextFile {
+  my ($eval,$file,%opts) = @_;
+  $eval->compile if (!$eval->compiled);
+
+  my $fh = ref($file) ? $file : IO::File->new(">$file");
+  confess(ref($eval)."::saveTextFile: open failed for '$file': $!") if (!defined($fh));
+  $fh->binmode(':utf8') if ($fh->can('binmode'));
+
+  ##-- brief report
+  my $ge = $eval->{cat2eval}{''};
+  my %ropts = (llen=>20);
+  $fh->print(ref($eval).": ".($eval->{label}||'(no label)').": Summary\n",
+	     reportStr(" : Docs  : Total", $ge, 'docs', %ropts),
+	     reportStr(" : Docs  : Average", $ge, 'docs_avg', %ropts),
+	     reportStr(" : Bytes : Total", $ge, 'bytes', %ropts),
+	     reportStr(" : Bytes : Average", $ge, 'bytes_avg', %ropts),
+	    );
+  return $fh;
+}
 
 
 ##--------------------------------------------------------------
