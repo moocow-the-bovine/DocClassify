@@ -79,7 +79,7 @@ foreach my $cfile (@ARGV) {
   }
 
   my $llen = '-60';
-  my $ilen = '9';
+  my $ilen = '10';
   my $flen = '6.2';
   $outfh->print(
 		"Corpus File: $cfile\n",
