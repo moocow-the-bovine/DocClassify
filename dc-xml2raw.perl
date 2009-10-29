@@ -58,6 +58,7 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 our ($fc);
+our $Nfiles=0;
 sub cb_xml2raw {
   my ($xmlfile) = @_;
   my $doc = DocClassify::Document->new(file=>$xmlfile);
@@ -66,6 +67,7 @@ sub cb_xml2raw {
   my $ref = $doc->rawText();
   $outfh->print($$ref);
   $outfh->close() if (!defined($fc->{outputFile}));
+  ++$Nfiles;
 }
 
 ##------------------------------------------------------------------------------
@@ -77,6 +79,7 @@ push(@ARGV,'-') if (!@ARGV);
 $fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_xml2raw );
 $fc->churn(@ARGV);
 
+print STDERR "$0: processed $Nfiles files.\n" if ($verbose);
 
 =pod
 
