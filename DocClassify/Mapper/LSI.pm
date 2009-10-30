@@ -232,7 +232,7 @@ sub compile {
   }
 
   ##-- matrix: term-doc frequency: $tdm : [$tid,$did] => f($term[$tid],$doc[$did])
-  print STDERR ref($map)."::compile(): matrix: tdm: (NT=$NT x NC=$NC) [Term x Doc -> Freq]\n" if ($verbose);
+  print STDERR ref($map)."::compile(): matrix: tdm: (NT=$NT x ND=$ND) [Term x Doc -> Freq]\n" if ($verbose);
   my ($tdm_w,$tdm_nz) = (null,null);
   my ($d_name,$d_id);
   my ($c_name,$c_id,$c_deg);
