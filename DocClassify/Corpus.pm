@@ -159,7 +159,7 @@ sub defaultIoMode { return 'xml'; }
 ## $xdoc = $corpus->saveXmlDoc(%opts)
 ##  + creates xml document from $corpus
 ##  + %opts:
-##     saveCats => $bool,  ##-- whether to save category data (default=true)
+##     saveCats => $bool,  ##-- whether to save category data (default=true if present)
 sub saveXmlDoc {
   my ($corpus,%opts) = @_;
   my $xdoc = XML::LibXML::Document->new('1.0','UTF-8');
@@ -177,7 +177,7 @@ sub saveXmlDoc {
     $d_node->setAttribute('file',$doc->{file}) if (defined($doc->{file}));
     $d_node->setAttribute('bytes',$doc->sizeBytes); ##-- save XML document size in bytes (e.g. for splitN())
     $d_node->setAttribute('sigFile',$doc->{sigFile}) if (defined($doc->{sigFile}));
-    if ($opts{saveCats} || !defined($opts{saveCats})) {
+    if ($opts{saveCats} || (!defined($opts{saveCats}) && $doc->{cats})) {
       foreach $cat (@{$doc->cats}) {
 	$c_node = $d_node->addNewChild(undef,'cat');
 	$c_node->setAttribute($_,(defined($cat->{$_}) ? $cat->{$_} : '')) foreach (sort(keys(%$cat)));
