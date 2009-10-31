@@ -320,12 +320,18 @@ sub compile {
 
 
   ##-- create $map->{xdm} ~= $map->{svd}->apply($map->{tdm})
-  ##   ::: EXPECT MEMORY CRASH HERE (decoded PDL (NT=50K x ND=113) @ 43MB) :::
-  print STDERR ref($map)."::compile(): matrix: tdm: decode\n" if ($verbose);
-  my $tdmd = $tdm->decode;
-  print STDERR ref($map)."::compile(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($verbose);
-  my $xdm = $map->{xdm} = $svd->apply($tdmd);
-  undef($tdmd);
+  my ($xdm);
+  if (0) {
+    ##   ::: EXPECT MEMORY CRASH HERE (decoded PDL (NT=50K x ND=113) @ 43MB) :::
+    print STDERR ref($map)."::compile(): matrix: tdm: decode\n" if ($verbose);
+    my $tdmd = $tdm->decode;
+    print STDERR ref($map)."::compile(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($verbose);
+    $xdm = $map->{xdm} = $svd->apply($tdmd);
+    undef($tdmd);
+  } else {
+    print STDERR ref($map)."::compile(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($verbose);
+    $xdm = $map->{xdm} = $svd->apply($tdm); ##-- apply directly to sparse matrix
+  }
 
   ##-- create $map->{xcm} ~= $map->{svd}->apply($map->{tcm})
   print STDERR ref($map)."::compile(): matrix: xcm: (r=$map->{svdr} x NC=$NC) [R x Cat -> Sv] : prof=$catProfile\n" if ($verbose);
