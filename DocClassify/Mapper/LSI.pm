@@ -36,7 +36,8 @@ our $verbose = 2;
 ##  lemmatize => \%opts,             ##-- options for $doc->typeSignature->lemmatize()
 ##  #relemmatize => $bool,            ##-- whether to implicitly re-lemmatize documents (defualt=false)
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
-##  minFreq => $f,                   ##-- minimum global term-frequency (default=1)
+##  minFreq => $f,                   ##-- minimum global frequency f(t) for term-inclusion (default=0)
+##  minDocFreq => $ndocs,            ##-- minimum number of docs with f(t,d)>0 for term-inclusion (default=0)
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1)
 ##  unkTerm => $str,                 ##-- unknown term string (default='__UNKNOWN__')
 ##  svdr => $svdr,                   ##-- number of reduced dimensions (default=64)
@@ -51,7 +52,8 @@ our $verbose = 2;
 ##  denum => $docEnum,               ##-- document (label) enum ($ND=$docEnum->size()=scalar(@docs))
 ##  ##
 ##  ##-- data: training
-##  gf => \%global_tf,               ##-- global term-frequency hash
+##  gf => \%global_tf,               ##-- global term-frequency hash: ($term=>$freq, ...)
+##  df => \%global_df,               ##-- global term-docfrequency hash: ($term=>$ndocs, ...)
 ##  #c2sigs => \%cat2sigs,            ##-- maps category names to term-signatures
 ##  docs   => \@docs,                ##-- training docs, indexed by local $docid ($ND=$docEnum->size()=scalar(@docs))
 ##  sigs   => \@sigs,                ##-- training sigs, indexed by local $docid
@@ -73,6 +75,7 @@ sub new {
 			       #relemmatize => 1,
 			       trainExclusive => 1,
 			       minFreq =>0,
+			       minDocFreq =>0,
 			       smoothf =>1,
 			       unkTerm => '__UNKNOWN__',
 			       svdr => 64,
@@ -87,6 +90,7 @@ sub new {
 
 			       ##-- data: training
 			       gf => {},
+			       df => {},
 			       #c2sigs => {},
 			       docs => [],
 			       sigs => [],
@@ -109,9 +113,9 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(gf c2sigs denum docs dcm tdm tcm svd xdm xcm distf)
+##  + override returns qw(gf df c2sigs denum docs dcm tdm tcm svd xdm xcm distf)
 sub noShadowKeys {
-  return qw(gf c2sigs denum docs sigs dcm tdm tcm svd xdm xcm tw distf);
+  return qw(gf df c2sigs denum docs sigs dcm tdm tcm svd xdm xcm tw distf);
 }
 
 ##==============================================================================
@@ -129,8 +133,13 @@ sub trainDocument {
   print STDERR ref($map)."::trainDocument(".$doc->label.")\n" if ($verbose >= 2);
   my $sig = $map->lemmaSignature($doc);
 
-  ##-- add sig frequency data to global hash
-  $map->{gf}{$_} += $sig->{lf}{$_} foreach (keys(%{$sig->{lf}}));
+  ##-- add sig frequency data to global hash(es)
+  my ($gf,$df) = @$map{qw(gf df)};
+  my ($t,$f);
+  while (($t,$f)=each(%{$sig->{lf}})) {
+    $gf->{$t} += $f;
+    $df->{$t}++;
+  }
 
   ##-- add sig to local category enum
   my $cats = $map->{trainExclusive} ? [$doc->cats->[0]] : $doc->cats;
@@ -174,9 +183,14 @@ sub addCat {
 sub compile {
   my $map = shift;
 
-  ##-- trim global frequency hash
-  print STDERR ref($map)."::compile(): trim(minFreq=>$map->{minFreq})\n" if ($verbose);
+  ##-- trim by global term frequency
+  print STDERR ref($map)."::compile(): trim: globalTermFreq(minFreq=>$map->{minFreq})\n" if ($verbose);
   delete(@{$map->{gf}}{ grep {$map->{gf}{$_} < $map->{minFreq}} keys(%{$map->{gf}}) }) if ($map->{minFreq}>0);
+
+  ##-- trim by doc "frequency"
+  print STDERR ref($map)."::compile(): trim: docTermFreq(minDocFreq=>$map->{minDocFreq})\n" if ($verbose);
+  delete(@{$map->{gf}}{ grep {$map->{df}{$_} < $map->{minDocFreq}} keys(%{$map->{gf}}) }) if ($map->{minDocFreq}>0);
+  delete(@{$map->{df}}{ grep {!exists($map->{gf}{$_})} keys(%{$map->{df}}) };
 
   ##-- get cat-profiling method
   my $catProfile = $map->{catProfile};

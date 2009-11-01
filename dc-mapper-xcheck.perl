@@ -40,6 +40,7 @@ our %mapopts = (
 		lemmatize=>{},   ##-- see $DocClassify::Signature::LEMMA_XYZ variables for defaults
 		svdr => 64,      ##-- svd dimensions
 		minFreq =>0,     ##-- minimum frequency
+		minDocFreq =>0,  ##-- minimum #/docs with f(t,d)>0 for term-inclusion
 		smoothf =>1,     ##-- smoothing frequency (undef for NTypes/NTokens)
 		trainExclusive=>1, ##-- exclusive-mode training?
 		catProfile => 'average',   ##-- how to do category profiling
@@ -71,6 +72,7 @@ GetOptions(##-- General
 	   'label|l=s' => sub { $evalopts{label}=$mapopts{label}=$corpusopts{label}=$_[1]; },
 	   'lemmatize-option|lemma-option|lemma|L=s%' => $mapopts{lemmatize},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
+	   'min-doc-frequency|min-docs|mdf|md=f' => \$mapopts{minDocFreq},
 	   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$mapopts{smoothf},
 	   'svd-dims|svd-r|svdr|r=i' =>\$mapopts{svdr},
 	   'exclusive|x!' => sub { $splitopts{exclusive}=$mapopts{trainExclusive}=$_[1]; },
@@ -210,6 +212,7 @@ dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swe
   -label LABEL           # set global mapper label
   -lemma OPT=VALUE       # set lemmatization option
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
+  -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
   -svd-dims DIMS         # set max SVD dimensions (default=64)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
