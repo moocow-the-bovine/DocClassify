@@ -102,7 +102,7 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 
 ##--------------------------------------------------------------
 ## Initialize: Hacks
-$DocClassify::Mapper::LSI::verbose = 2 if ($DocClassify::Mapper::LSI::verbose > 2);
+#$DocClassify::Mapper::LSI::verbose = 2 if ($DocClassify::Mapper::LSI::verbose > 2);
 
 ##--------------------------------------------------------------
 ## Initialize: output directory

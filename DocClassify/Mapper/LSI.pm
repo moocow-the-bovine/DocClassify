@@ -344,9 +344,12 @@ sub compile {
     print STDERR ref($map)."::compile(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($verbose);
     $xdm = $map->{xdm} = $svd->apply($tdmd);
     undef($tdmd);
-  } else {
+  } elsif (0) {
     print STDERR ref($map)."::compile(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($verbose);
     $xdm = $map->{xdm} = $svd->apply($tdm); ##-- apply directly to sparse matrix
+  } else {
+    print STDERR ref($map)."::compile(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($verbose);
+    $xdm = $map->{xdm} = $svd->{u};         ##-- we've already computed the bugger (duh!)
   }
 
   ##-- create $map->{xcm} ~= $map->{svd}->apply($map->{tcm})
@@ -446,6 +449,7 @@ sub svdApply {
   $fpdl = $fpdl->todense if (UNIVERSAL::isa($fpdl,'PDL::CCS::Nd')); ##-- avoid memory explosion in Nd::inner()
   $fpdl = ($fpdl+$map->{smoothf})->log;
   $fpdl = $fpdl->slice(":,*1") if ($fpdl->ndims != 2);              ##-- ... someone passed in a flat term pdl...
+  $fpdl *= $map->{tw} if (defined($map->{tw}));                     ##-- apply term-weights if available
   return $map->{svd}->apply($fpdl);
 }
 

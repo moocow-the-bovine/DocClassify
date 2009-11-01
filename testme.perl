@@ -610,8 +610,84 @@ sub test_group_sizes {
 
   print STDERR "$0: test_group_sizes() done -- what now?\n";
 }
-test_group_sizes();
+#test_group_sizes();
 
+##======================================================================
+## test svd (again)
+sub test_svd {
+  my ($m,$n) = (7,5); ## $m~Terms, $n~Docs
+  my $a = sequence($n,$m)+1;
+  my $r = 2;
+  my $rm1 = $r-1;
+
+  ##-- built-in "correct" version
+  my ($u0,$s0,$v0) = svd($a); ## $u0($r<=$n,$m), $s0($r<=$n), $v0($r<=$n,$n)
+  my $ss0 = stretcher($s0);
+  my $aa0 = $u0 x $ss0 x $v0->xchg(0,1);
+  print "a~=(u0 x ss0 x v0^t): OK\n" if (all($a->approx($aa0k)));
+  ##
+  my $u0k = $u0->slice("0:$rm1,:"); ##-- ($r<=$n,$m)
+  my $s0k = $s0->slice("0:$rm1");   ##-- ($r<=$n)
+  my $ss0k = stretcher($s0k);       ##-- ($r,$r) : diag
+  my $v0k = $v0->slice("0:$rm1,:"); ##-- ($r<=$n,$n)
+  my $aa0k = $u0k x $ss0k x $v0k->xchg(0,1);
+  print "a~=(u0k x ss0k x v0k^t): OK\n" if (all($a->approx($aa0k)));
+  ##
+  ##-- assertions:
+  ##  + T   x T^t = 1_(y~$r<<$m)  : ($u0 x $u0->xchg(0,1))->approx( stretcher(ones($m)) ) : NO
+  ##    ----> typo in wikipedia ?!
+  ##    ----> maybe should read:
+  ##    T^t x T   = 1_(y~?)       : ($u0->xchg(0,1) x $u0)->approx( stretcher(ones($n)) ) : CLOSE, NOT QUITE
+  ##  + T   x T^t = 1_(m~$m)      : ($u0 x $u0->xchg(0,1))->approx( stretcher(ones($m)) ) : NO
+  ##  + D^t x D   = 1_(y~?)       : ($v0->xchg(0,1) x $v0)->approx( stretcher(ones($n)) ) : YES
+  ##  + D   x D^t = 1_(n~$n)      : ($v0 x $v0->xchg(0,1))->approx( stretcher(ones($n)) ) : YES
+
+  my $svd = MUDL::SVD->new(r=>$r);
+  $svd->compute($a);
+  my ($u,$s,$v) = @$svd{qw(u sigma v)};
+  my $ss = stretcher($s);
+  my $aa = $u x $ss x $v->xchg(0,1);
+  print "a~=(u x ss x v^t): OK\n" if (all($a->approx($aa)));
+  ##-- wikipedia:
+  ## + RAW: A = T x S x D^t
+  ##   - A: (m~Terms,    n~Docs)     : term-doc frequency
+  ##   - T: (m~Terms,    r~Concepts) : term-concept vecs
+  ##   - S: (r~Concepts, r~Concepts) : diagonal singular values
+  ##   - D: (n~Docs,     r~Concepts) : document-concept vecs
+  ## + REDUCED: A ~= A_k = T_k x S_k x D_k^t, for k << r
+  ##   - A_k: (m~Terms,    n~Docs)       : term-doc frequency
+  ##   - T_k: (m~Terms,    k<<r~Concepts): term-concept vecs
+  ##   - S_k: (k~Concepts, k<<r~Concepts): diagonal "significant" singular values
+  ##   - D_k: (n~Docs,     k<<r~Concepts): document-concept vecs
+  ## + for us:
+  ##   - A   ~ $a   (m~$m~Terms,    n~$n~Docs)      ##-- PDL col-primary: ($n,$m)
+  ##   - T_k ~ $u   (m~$m~Terms,    k~$r~Concepts)  ##-- PDL col-primary: ($r,$m)
+  ##   - S_k ~ $ss  (k~$r~Concepts, k~$r~Concepts)  ##-- PDL (square):    ($r,$r)
+  ##   - D_k ~ $v   (n~$n~Docs,     k~$r~Concepts)  ##-- PDL col-primary: ($r,$n)
+  ##   : A_k ~= T_k  x S_k x D_k^t
+  ##          = $u   x $ss x $v->xchg(0,1)
+  ## + APPLICATION:
+  ##   - [wikip/LSI] ... a simple transformation of the (A = T x S x D^t) equation into the
+  ##     equivalent D = A^t x T x inv(S) equation, a new vector, "d", for a query
+  ##     or for a new document can be created by computing a new column in A and
+  ##     then multiplying the new column by (T x inv(S))
+  ##   - [wikip/LSA] ... This means that if you have a query vector "q", you must do
+  ##     the translation
+  ##        \hat{q} = \Sigma_k^{-1} \times U_k^T \times q
+  ##     (me)    qx = inv($s) x $u->xchg(0,1) x $q
+  ##     before you compare it with the document vectors in the concept space (V^t)
+  my $vx = $v->xchg(0,1); ##-- "document space"
+  #my $q  = $a->slice("-1,")+1;
+  my $q = ones(1,$m);
+  my $qx = inv($ss) x $u->xchg(0,1) x $q;
+  my $vqx = $vx->glue(0,$qx);
+
+  ##-- check "document space": my def ($ar) vs. "real thing" ($vx)
+  my $ar = $svd->apply($a);
+
+  print STDERR "$0: test_svd() done: what now?\n";
+}
+test_svd();
 
 ##======================================================================
 ## MAIN (dummy)
