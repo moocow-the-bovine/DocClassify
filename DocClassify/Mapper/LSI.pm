@@ -25,7 +25,9 @@ use strict;
 
 our @ISA = qw(DocClassify::Mapper);
 
-our $verbose = 2;
+
+#our $verbose = 2;
+our $verbose = 3;
 
 ##==============================================================================
 ## Constructors etc.
@@ -130,7 +132,7 @@ sub noShadowKeys {
 ##  + calls $map->lemmaSignature($doc)
 sub trainDocument {
   my ($map,$doc) = @_;
-  print STDERR ref($map)."::trainDocument(".$doc->label.")\n" if ($verbose >= 2);
+  print STDERR ref($map)."::trainDocument(".$doc->label.")\n" if ($verbose >= 3);
   my $sig = $map->lemmaSignature($doc);
 
   ##-- add sig frequency data to global hash(es)
@@ -408,7 +410,7 @@ sub mapDocument {
   my ($map,$doc) = @_;
 
   ##-- be verbose
-  print STDERR ref($map)."::mapDocument(".$doc->label.")\n" if ($verbose>=2);
+  print STDERR ref($map)."::mapDocument(".$doc->label.")\n" if ($verbose>=3);
 
   ##-- sanity check(s)
   confess(ref($map)."::mapDocument(): no feature-category matrix 'xcm'!") if (!defined($map->{xcm}));

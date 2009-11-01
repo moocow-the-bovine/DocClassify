@@ -592,6 +592,26 @@ sub test_eval_io {
 }
 #test_eval_io();
 
+##======================================================================
+## test: group sizes
+
+use MUDL::PDL::Plot;
+sub test_group_sizes {
+  my $nbfile = 'plots/nbytes.dat';
+  my $nb = rcols($nbfile);
+  usepgplot();
+  points($nb->qsort,{axis=>'logy'}); ##-- looks like 'probit' function
+
+  ##-- histogram
+  bin(hist($nb->log10));  ##-- looks pretty normal
+
+  ##-- q-q plot
+  qqplot($nb->log); ##-- pretty good; tails a bit long, but quite a good fit
+
+  print STDERR "$0: test_group_sizes() done -- what now?\n";
+}
+test_group_sizes();
+
 
 ##======================================================================
 ## MAIN (dummy)
