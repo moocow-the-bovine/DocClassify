@@ -190,7 +190,7 @@ sub compile {
   ##-- trim by doc "frequency"
   print STDERR ref($map)."::compile(): trim: docTermFreq(minDocFreq=>$map->{minDocFreq})\n" if ($verbose);
   delete(@{$map->{gf}}{ grep {$map->{df}{$_} < $map->{minDocFreq}} keys(%{$map->{gf}}) }) if ($map->{minDocFreq}>0);
-  delete(@{$map->{df}}{ grep {!exists($map->{gf}{$_})} keys(%{$map->{df}}) };
+  delete(@{$map->{df}}{ grep {!exists($map->{gf}{$_})} keys(%{$map->{df}}) });
 
   ##-- get cat-profiling method
   my $catProfile = $map->{catProfile};
