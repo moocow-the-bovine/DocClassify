@@ -691,8 +691,16 @@ sub test_svd {
 
 ##======================================================================
 ## test: look at error surfaces
+
+sub truncstr {
+  my ($str,$n) = @_;
+  return $str if (length($str) <= $n);
+  return substr($str,0,$n-3)."...";
+}
+
 sub test_errors {
-  my $efile = 'xcheck.cp-avg.tw-entropy.r-100.d/eval.all.xml';
+  my $efile = shift;
+  $efile = 'xcheck.cp-avg.tw-entropy.r-100.d/eval.all.xml' if (!defined($efile));
   my $eval  = DocClassify::Eval->loadFile($efile) or die("$0: load failed for '$efile': $!");
 
   ##-- enum: docs
@@ -721,7 +729,7 @@ sub test_errors {
   my $cbytes = $cp{'tp_bytes'} + $cp{'fn_bytes'};
 
   ##-- simple plots
-  usepgplot;
+  usepgplot if (0);
   our %plot = (axis=>'logx',xtitle=>'cat size (bytes)',ytitle=>'eval');
   if (0) {
     points($cbytes,$cpr,{%plot,ytitle=>'pr'});
@@ -738,13 +746,13 @@ sub test_errors {
     ($c1i,$c2i) = @{$cenum->{sym2id}}{$c1,$c2};
     #if ($c1i == $c2i) {
       $cc_docs->slice("$c1i,$c2i")++;
-      $cc_bytes->slice("$c1i,$c2i") += $docs->[0]->sizeBytes;
+      $cc_bytes->slice("$c1i,$c2i") += $docs->[0]->sizeBytes if (defined($docs->[0]->sizeBytes));
     #}
   }
   ##
   ##-- more plots
   our %iplot = (DrawWedge=>1, xtitle=>'Cat1', ytitle=>'Cat2', ztitle=>'Count');
-  if (1) {
+  if (0) {
     imag($cc_docs,{%iplot});
     imag($cc_bytes,{%iplot});
   }
@@ -763,32 +771,87 @@ sub test_errors {
   my $cc_docs_zv = $cc_docs_z->_nzvals;
   my $cc_docs_qsi = $cc_docs_zv->qsorti->slice("-1:0");
   my ($cci,$status);
-  print STDERR "\n$0: ERRORS-BY-NDOCS\n";
+  my $llen = 44;
+  print "\n${efile}: ERRORS-BY-NDOCS\n";
   foreach $cci ($cc_docs_qsi->list) {
+    local $, = '';
     ($c1i,$c2i) = $cc_docs_zw->slice(",($cci)")->list;
     ($c1,$c2)   = @{$cenum->{id2sym}}[$c1i,$c2i];
-    $status = $c1i==$c2i ? "[GOOD]" : "[BAD] ";
-    print "$status: ", sprintf("%4d",$cc_docs_zv->slice("($cci)")->sclr), ": wanted=($c1i $c1) \t-- got=($c2i $c2)\n";
+    $status = $c1i==$c2i ? "[GOOD]" : "[BAD]";
+    print sprintf("%-6s : %4d : %${llen}s=wanted : got=%-${llen}s\n",
+		  $status, $cc_docs_zv->slice("($cci)")->sclr,
+		  "(".sprintf("%2d",$c1i)." ".truncstr($c1,$llen-5).")",
+		  "(".sprintf("%2d",$c2i)." ".truncstr($c2,$llen-5).")",
+		 );
   }
-  print STDERR "$0: (report-by-ndocs done)\n";
+  print "${efile}: (report-by-ndocs done)\n";
+  exit 0;
 
   ##-- convert to CCS::Nd, sort & report (by bytes)
   my $cc_bytes_z  = PDL::CCS::Nd->newFromDense($cc_bytes);
   my $cc_bytes_zw = $cc_bytes_z->_whichND;
   my $cc_bytes_zv = $cc_bytes_z->_nzvals;
   my $cc_bytes_qsi = $cc_bytes_zv->qsorti->slice("-1:0");
-  print STDERR "\n$0: ERRORS-BY-BYTES\n";
+  print "\n${efile}: ERRORS-BY-BYTES\n";
   foreach $cci ($cc_bytes_qsi->list) {
     ($c1i,$c2i) = $cc_bytes_zw->slice(",($cci)")->list;
     ($c1,$c2)   = @{$cenum->{id2sym}}[$c1i,$c2i];
     $status = $c1i==$c2i ? "[GOOD]" : "[BAD] ";
     print "$status: ", sistr($cc_bytes_zv->slice("($cci)")->sclr,'f','3.0'), ": wanted=($c1i $c1) \t-- got=($c2i $c2)\n";
   }
-  print STDERR "$0: (report-by-bytes done)\n";
+  print STDERR "${efile}: (report-by-bytes done)\n";
+  exit(0);
 
   print STDERR "$0: test_errors() done: what now?\n";
 }
-test_errors();
+test_errors(@ARGV);
+
+##======================================================================
+## test: look at categorization ambiguity
+sub test_catambig {
+  my $cfile = shift;
+  $cfile = 'vzdata-safe.corpus.xml' if (!defined($cfile));
+
+  my $corpus = DocClassify::Corpus->loadFile($cfile)
+    or die("$0: corpus load failed from '$cfile': $!");
+
+  my %cstr2n = qw();
+  my %name2n = qw();
+  my %union2n = qw();
+  my $nuni  = 0; ##-- number of univocally (i.e. un-ambiguously) categorized documents
+  my $nuni1 = 0; ##-- number of univocally categorized documents with deg=1
+  my ($doc,$cat, $cstr);
+  foreach $doc (@{$corpus->{docs}}) {
+    foreach $cat (@{$doc->cats}) {
+      $cstr = "<$cat->{deg}> $cat->{id} $cat->{name}";
+      $cstr2n{$cstr}++;
+      $name2n{$cat->{name}}++;
+      ++$ndcats;
+    }
+    ++$nuni  if (@{$doc->{cats}}==1);
+    ++$nuni1 if (@{$doc->{cats}}==1 && $doc->{cats}[0]{deg}==1);
+    ##
+    $cstr = join(" | ", map {"(<$_->{deg}> $_->{id} $_->{name})"} @{$doc->{cats}});
+    $union2n{$cstr}++;
+  }
+  my $ndocs = @{$corpus->{docs}};
+  my $ambig = sprintf("%.2f",$ndcats / $ndocs);
+  my $unirate = sprintf("%.1f",100*$nuni/$ndocs);
+  my $uni1rate = sprintf("%.1f",100*$nuni1/$ndocs);
+
+  print "# ndocs=$ndocs, ndcats=$ndcats, ambig=$ambig; nuni=$nuni ($unirate%); nuni1=$nuni1 ($uni1rate%)\n";
+  #exit(0);
+
+  ##-- dump union
+  {
+    local $,='';
+    print map {"$union2n{$_}\t$_\n"} sort {$union2n{$b}<=>$union2n{$a}} keys(%union2n);
+    exit(0);
+  }
+
+  print STDERR "$0: test_catambig() done: what now?\n";
+}
+test_catambig(@ARGV);
 
 ##======================================================================
 ## MAIN (dummy)
