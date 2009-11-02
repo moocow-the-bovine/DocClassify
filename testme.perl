@@ -729,7 +729,7 @@ sub test_errors {
   my $cbytes = $cp{'tp_bytes'} + $cp{'fn_bytes'};
 
   ##-- simple plots
-  usepgplot if (0);
+  usepgplot if (1);
   our %plot = (axis=>'logx',xtitle=>'cat size (bytes)',ytitle=>'eval');
   if (0) {
     points($cbytes,$cpr,{%plot,ytitle=>'pr'});
@@ -785,7 +785,7 @@ sub test_errors {
 		 );
   }
   print "${efile}: (report-by-ndocs done)\n";
-  exit 0;
+  #exit 0;
 
   ##-- convert to CCS::Nd, sort & report (by bytes)
   my $cc_bytes_z  = PDL::CCS::Nd->newFromDense($cc_bytes);
