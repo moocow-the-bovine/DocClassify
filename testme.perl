@@ -768,7 +768,7 @@ sub test_errors {
     ($c1i,$c2i) = $cc_docs_zw->slice(",($cci)")->list;
     ($c1,$c2)   = @{$cenum->{id2sym}}[$c1i,$c2i];
     $status = $c1i==$c2i ? "[GOOD]" : "[BAD] ";
-    print "$status: c1=($c1i $c1) -- c2=($c2i $c2) :\t", $cc_docs_zv->slice("($cci)")->sclr, "\n";
+    print "$status: ", sprintf("%4d",$cc_docs_zv->slice("($cci)")->sclr), ": wanted=($c1i $c1) \t-- got=($c2i $c2)\n";
   }
   print STDERR "$0: (report-by-ndocs done)\n";
 
@@ -782,7 +782,7 @@ sub test_errors {
     ($c1i,$c2i) = $cc_bytes_zw->slice(",($cci)")->list;
     ($c1,$c2)   = @{$cenum->{id2sym}}[$c1i,$c2i];
     $status = $c1i==$c2i ? "[GOOD]" : "[BAD] ";
-    print "$status: c1=($c1i $c1) -- c2=($c2i $c2) :\t", $cc_bytes_zv->slice("($cci)")->sclr, "\n";
+    print "$status: ", sistr($cc_bytes_zv->slice("($cci)")->sclr,'f','3.0'), ": wanted=($c1i $c1) \t-- got=($c2i $c2)\n";
   }
   print STDERR "$0: (report-by-bytes done)\n";
 
