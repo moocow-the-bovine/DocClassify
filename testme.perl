@@ -711,7 +711,7 @@ sub test_errors {
 
   ##-- enum: cats
   my $cenum = MUDL::Enum->new();
-  $cenum->addSymbol($_) foreach (keys(%{$eval->{cat2eval}}));
+  $cenum->addSymbol($_) foreach (grep {$_ ne ''} keys(%{$eval->{cat2eval}}));
   my $NC = $cenum->size;
   my @cids = (0..($NC-1));
 
@@ -724,6 +724,11 @@ sub test_errors {
     }
   }
   my ($ctp,$cfp,$cfn, $cpr,$crc,$cF) = @cp{map {$_."_docs"} qw(tp fp fn pr rc F)};
+  ##-- sanitize
+  $cpr->where(!$ctp) .= 0;
+  $crc->where(!$ctp) .= 0;
+  $cF .= 2/($cpr**-1 + $crc**-1);
+  $cF->where(!$cF->isfinite) .= 0;
 
   ##-- cat sizes
   my $cbytes = $cp{'tp_bytes'} + $cp{'fn_bytes'};
@@ -753,8 +758,16 @@ sub test_errors {
   ##-- more plots
   our %iplot = (DrawWedge=>1, xtitle=>'Cat1', ytitle=>'Cat2', ztitle=>'Count');
   if (0) {
-    imag($cc_docs,{%iplot});
-    imag($cc_bytes,{%iplot});
+    imag($cc_docs,{%iplot, title=>'by docs'});
+    imag($cc_bytes,{%iplot, title=>'by bytes'});
+
+    my $cc_docs_p1g2 = $cc_docs/$cc_docs->sumover->slice("*1,"); ## [c1,c2] -> p(c1|c2)
+    $cc_docs_p1g2->where(!$cc_docs_p1g2->isfinite) .= 0;
+    imag( $cc_docs_p1g2, {%iplot,itf=>'log',title=>'p(c1|c2), by docs'} );
+
+    my $cc_docs_p2g1 = $cc_docs/$cc_docs->xchg(0,1)->sumover;    ## [c1,c2] -> p(c2|c1)
+    $cc_docs_p2g1->where(!$cc_docs_p2g1->isfinite) .= 0;
+    imag( $cc_docs_p2g1, {%iplot,itf=>'log',title=>'p(c2|c1), by docs'} );
   }
 
   ##-- plots w/o tp
