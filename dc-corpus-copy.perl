@@ -3,7 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
-use File::Copy 'copy';
+use File::Copy ('copy','move');
 use Cwd 'abs_path'; ##-- for abs_path()
 
 #use PDL;
@@ -138,7 +138,7 @@ foreach $doc (@{$corpus->{docs}}) {
     }
   }
   foreach $key (grep {$_ =~ /file$/i} keys(%$doc)) {
-    $doc->{$key} = copyDocFile($doc->{$key});
+    $doc->{$key} = copyDocFile($doc->{$key}) if (defined($doc->{$key}));
   }
   if ($doc->label eq $docfile) {
     $doc->label($doc->{file}); ##-- re-label

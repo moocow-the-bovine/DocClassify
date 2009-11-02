@@ -26,8 +26,8 @@ use strict;
 our @ISA = qw(DocClassify::Mapper);
 
 
-our $verbose = 2;
-#our $verbose = 3;
+#our $verbose = 2;
+our $verbose = 3;
 
 ##==============================================================================
 ## Constructors etc.
@@ -41,7 +41,7 @@ our $verbose = 2;
 ##  minFreq => $f,                   ##-- minimum global frequency f(t) for term-inclusion (default=0)
 ##  minDocFreq => $ndocs,            ##-- minimum number of docs with f(t,d)>0 for term-inclusion (default=0)
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1)
-##  unkTerm => $str,                 ##-- unknown term string (default='__UNKNOWN__')
+##  #unkTerm => $str,                 ##-- unknown term string (default='__UNKNOWN__')
 ##  svdr => $svdr,                   ##-- number of reduced dimensions (default=64)
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
@@ -79,7 +79,7 @@ sub new {
 			       minFreq =>0,
 			       minDocFreq =>0,
 			       smoothf =>1,
-			       unkTerm => '__UNKNOWN__',
+			       #unkTerm => '__UNKNOWN__',
 			       svdr => 64,
 			       dist => 'u',
 			       catProfile => 'average',
@@ -219,7 +219,8 @@ sub compile {
   print STDERR ref($map)."::compile(): enum: TERMS\n" if ($verbose);
   my $tenum = $map->{tenum};
   $tenum->clear();
-  @{$tenum->{id2sym}} = ($map->{unkTerm}, keys(%{$map->{gf}}));
+  #@{$tenum->{id2sym}} = ($map->{unkTerm}, keys(%{$map->{gf}}));
+  @{$tenum->{id2sym}} = (keys(%{$map->{gf}}));
   @{$tenum->{sym2id}}{@{$tenum->{id2sym}}} = (0..$#{$tenum->{id2sym}});
   my $NT = $tenum->size;
 
@@ -257,9 +258,10 @@ sub compile {
     $d_id = $doc->{id};
     $sig = $map->{sigs}[$d_id];
 
-    $sig_wt = pdl(long, grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})}); ##-- [$nzi]   -> $ti : f($di,$ti) defined
-    $sig_w  = $sig_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$d_id);                 ##-- [*,$nzi] -> [$ti,$di]
-    $sig_nz = pdl(double, @{$sig->{lf}}{@{$tenum->{id2sym}}[$sig_wt->list]});         ##-- [$nzi]   -> f($di,$ti)
+    $sig_wt = pdl(long, [grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})}]); ##-- [$nzi]   -> $ti : f($di,$ti) defined
+    next if ($sig_wt->isempty); ##-- sanity check
+    $sig_w  = $sig_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$d_id);                   ##-- [*,$nzi] -> [$ti,$di]
+    $sig_nz = pdl(double, [@{$sig->{lf}}{@{$tenum->{id2sym}}[$sig_wt->list]}]);         ##-- [$nzi]   -> f($di,$ti)
 
     $tdm_w  = $tdm_w->glue(1,$sig_w);
     $tdm_nz = $tdm_nz->append($sig_nz);
@@ -295,6 +297,9 @@ sub compile {
   }
   $tdm = $map->{tdm} = $tdm*$tw;
   $map->{tw} = $tw->todense; ##-- store term weights
+  if (!all($map->{tw}->isfinite)) {
+    confess(ref($map)."::compile(): infinite values in term-weight vector: something has gone horribly wrong!");
+  }
 
   ##-- clear expensive perl signature structs
   @{$map->{sigs}} = qw();
@@ -302,7 +307,7 @@ sub compile {
 
   ##-- create $map->{tcm} ($NT,$NC) : total (cat,word) frequency (for catProfile='fold-in')
   my ($tcm);
-  our $DEBUG_TCM = 1;
+  our $DEBUG_TCM = 0;
   if ($catProfile eq 'fold-in' || $DEBUG_TCM) {
     print STDERR ref($map)."::compile(): tcm: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n" if ($verbose);
     my ($tcm_w,$tcm_nz) = (null,null);
