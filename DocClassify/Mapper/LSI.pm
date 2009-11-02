@@ -26,8 +26,8 @@ use strict;
 our @ISA = qw(DocClassify::Mapper);
 
 
-#our $verbose = 2;
-our $verbose = 3;
+our $verbose = 2;
+#our $verbose = 3;
 
 ##==============================================================================
 ## Constructors etc.
@@ -290,11 +290,11 @@ sub compile {
     $tw        /= log(2);                           ##                  -> log p($di|$ti)
     $tw        *= $td_pdgt;                         ##                  -> p($di|$ti) * log p($di|$ti)
     $tw         = $tw->xchg(0,1)->sumover;          ##-- pdl: [$ti] -> -H(Doc|$ti)
-    $tw        /= log($ND)/log(2);                  ##-- pdl: [$ti] -> -H(Doc|$ti)/H(Doc)
+    $tw        /= log($ND)/log(2);                  ##-- pdl: [$ti] -> -H(Doc|$ti)/H(Doc) ##-- assumed uniform!
     $tw        += 1;
   }
   $tdm = $map->{tdm} = $tdm*$tw;
-  $map->{tw}  = $tw->decode; ##-- store term weights
+  $map->{tw} = $tw->todense; ##-- store term weights
 
   ##-- clear expensive perl signature structs
   @{$map->{sigs}} = qw();
@@ -302,7 +302,8 @@ sub compile {
 
   ##-- create $map->{tcm} ($NT,$NC) : total (cat,word) frequency (for catProfile='fold-in')
   my ($tcm);
-  if ($catProfile eq 'fold-in') {
+  our $DEBUG_TCM = 1;
+  if ($catProfile eq 'fold-in' || $DEBUG_TCM) {
     print STDERR ref($map)."::compile(): tcm: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n" if ($verbose);
     my ($tcm_w,$tcm_nz) = (null,null);
     my ($d_tf,$d_wt,$d_w,$d_nz, $c_w);
@@ -320,8 +321,8 @@ sub compile {
       }
     }
     my $tcm_dims = pdl(long,$NT,$NC);
-    $tcm = PDL::CCS::Nd->newFromWhich($tcm_w,$tcm_nz,dims=>$tcm_dims,missing=>0)->dummy(0,1)->sumover;
-    $tcm = $map->{tcm} = $tcm = ($tcm+$map->{smoothf})->inplace->log  * $tw;
+    my $tcm0 = $map->{tcm0} = PDL::CCS::Nd->newFromWhich($tcm_w,$tcm_nz,dims=>$tcm_dims,missing=>0)->dummy(0,1)->sumover;
+    $tcm = $map->{tcm} = ($tcm0+$map->{smoothf})->log  * $tw;
   }
 
   ##-- create & compute $map->{svd}
@@ -387,10 +388,11 @@ sub compiled { return defined($_[0]{xcf}); }
 ## $map = $map->clearTrainingCache()
 ##  + clears any cached data from training
 ##  + after calling this, $map may no longer be able to train
-##  + override clears training data @$map{qw(gf c2sigs)}
+##  + override clears training data @$map{qw(gf df)} #c2sigs
 sub clearTrainingCache {
   my $map = shift;
   %{$map->{gf}} = qw();
+  %{$map->{df}} = qw();
   #%{$map->{c2sigs}} = qw();
   #@{$map->{sigs}} = qw();
   #@{$map->{docs}} = qw(); ##-- still needed for category mapping?
@@ -450,7 +452,7 @@ sub svdApply {
   $fpdl = ($fpdl+$map->{smoothf})->log;
   $fpdl = $fpdl->slice(":,*1") if ($fpdl->ndims != 2);              ##-- ... someone passed in a flat term pdl...
   $fpdl *= $map->{tw} if (defined($map->{tw}));                     ##-- apply term-weights if available
-  return $map->{svd}->apply($fpdl);
+  return $map->{svd}->apply0($fpdl);                                ##-- apply SVD
 }
 
 ## $sig = $map->lemmaSignature($doc_or_sig)

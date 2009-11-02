@@ -102,7 +102,7 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 
 ##--------------------------------------------------------------
 ## Initialize: Hacks
-#$DocClassify::Mapper::LSI::verbose = 2 if ($DocClassify::Mapper::LSI::verbose > 2);
+$DocClassify::Mapper::LSI::verbose = 2 if ($DocClassify::Mapper::LSI::verbose > 2);
 
 ##--------------------------------------------------------------
 ## Initialize: output directory
@@ -156,8 +156,10 @@ foreach $i (0..$#subcorpora) {
   my $test = $subcorpora[$i]->shadow( %{$subcorpora[$i]}, label=>"TEST($i,$label0)" );
   my $train = $test->shadow( label=>"TRAIN($i,$label0)" );
   $train->addCorpus($_) foreach (@subcorpora[grep {$_ != $i} (0..$#subcorpora)]);
-  #$test->saveFile("$outdir/test.$i.xml");
-  #$train->saveFile("$outdir/train.$i.xml");
+
+  ##-- save corpora
+  $test->saveFile("$outdir/test.$i.xml");
+  $train->saveFile("$outdir/train.$i.xml");
 
   ##-- train mapper
   print STDERR "$prog: LOOP (i=$i): TRAIN\n" if ($verbose);

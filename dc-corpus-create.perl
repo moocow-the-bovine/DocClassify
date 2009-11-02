@@ -37,7 +37,7 @@ our %fcopts = (
 our %corpusOpts = ( label=>'', );
 
 our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, saveCats=>0, saveSigs=>0, );
+our %saveopts = ( mode=>undef, format=>1, saveCats=>undef, saveSigs=>undef, );
 
 our $inputCorpora = 0; ##-- where INPUTs are corpora or document files/dirs
 

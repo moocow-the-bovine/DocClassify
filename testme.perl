@@ -624,7 +624,7 @@ sub test_svd {
   my ($u0,$s0,$v0) = svd($a); ## $u0($r<=$n,$m), $s0($r<=$n), $v0($r<=$n,$n)
   my $ss0 = stretcher($s0);
   my $aa0 = $u0 x $ss0 x $v0->xchg(0,1);
-  print "a~=(u0 x ss0 x v0^t): OK\n" if (all($a->approx($aa0k)));
+  print "a~=(u0 x ss0 x v0^t): OK\n" if (all($a->approx($aa0)));
   ##
   my $u0k = $u0->slice("0:$rm1,:"); ##-- ($r<=$n,$m)
   my $s0k = $s0->slice("0:$rm1");   ##-- ($r<=$n)
@@ -687,7 +687,108 @@ sub test_svd {
 
   print STDERR "$0: test_svd() done: what now?\n";
 }
-test_svd();
+#test_svd();
+
+##======================================================================
+## test: look at error surfaces
+sub test_errors {
+  my $efile = 'xcheck.cp-avg.tw-entropy.r-100.d/eval.all.xml';
+  my $eval  = DocClassify::Eval->loadFile($efile) or die("$0: load failed for '$efile': $!");
+
+  ##-- enum: docs
+  my $denum = MUDL::Enum->new();
+  $denum->addSymbol($_) foreach (keys(%{$eval->{lab2docs}}));
+  my $ND = $denum->size;
+  my @dids = (0..($ND-1));
+
+  ##-- enum: cats
+  my $cenum = MUDL::Enum->new();
+  $cenum->addSymbol($_) foreach (keys(%{$eval->{cat2eval}}));
+  my $NC = $cenum->size;
+  my @cids = (0..($NC-1));
+
+  ##-- PDLs: by cat
+  my %cp = qw();
+  my ($which,$unit);
+  foreach $which (qw(tp fp fn pr rc F)) {
+    foreach $unit (qw(docs bytes)) {
+      $cp{"${which}_${unit}"} = pdl( map {$eval->{cat2eval}{$_}{"${which}_${unit}"}||0} @{$cenum->{id2sym}}[@cids] );
+    }
+  }
+  my ($ctp,$cfp,$cfn, $cpr,$crc,$cF) = @cp{map {$_."_docs"} qw(tp fp fn pr rc F)};
+
+  ##-- cat sizes
+  my $cbytes = $cp{'tp_bytes'} + $cp{'fn_bytes'};
+
+  ##-- simple plots
+  usepgplot;
+  our %plot = (axis=>'logx',xtitle=>'cat size (bytes)',ytitle=>'eval');
+  if (0) {
+    points($cbytes,$cpr,{%plot,ytitle=>'pr'});
+    points($cbytes,$crc,{%plot,ytitle=>'rc'});
+    points($cbytes,$cF,{%plot,ytitle=>'F'});
+  }
+
+  ##-- complex plots: get error surface
+  my $cc_docs  = zeroes($NC,$NC);
+  my $cc_bytes = zeroes($NC,$NC);
+  my ($docs, $c1,$c2, $c1i,$c2i);
+  foreach $docs (values(%{$eval->{lab2docs}})) {
+    ($c1,$c2)   = map {$_->cats->[0]{name}} @$docs;
+    ($c1i,$c2i) = @{$cenum->{sym2id}}{$c1,$c2};
+    #if ($c1i == $c2i) {
+      $cc_docs->slice("$c1i,$c2i")++;
+      $cc_bytes->slice("$c1i,$c2i") += $docs->[0]->sizeBytes;
+    #}
+  }
+  ##
+  ##-- more plots
+  our %iplot = (DrawWedge=>1, xtitle=>'Cat1', ytitle=>'Cat2', ztitle=>'Count');
+  if (1) {
+    imag($cc_docs,{%iplot});
+    imag($cc_bytes,{%iplot});
+  }
+
+  ##-- plots w/o tp
+  my $cc_docs_errs = $cc_docs->pdl; $cc_docs_errs->diagonal(0,1) .= 0;
+  my $cc_bytes_errs = $cc_bytes->pdl; $cc_bytes_errs->diagonal(0,1) .= 0;
+  if (0) {
+    imag($cc_docs_errs,{%iplot});
+    imag($cc_bytes_errs,{%iplot});
+  }
+
+  ##-- convert to CCS::Nd, sort & report (by docs)
+  my $cc_docs_z  = PDL::CCS::Nd->newFromDense($cc_docs);
+  my $cc_docs_zw = $cc_docs_z->_whichND;
+  my $cc_docs_zv = $cc_docs_z->_nzvals;
+  my $cc_docs_qsi = $cc_docs_zv->qsorti->slice("-1:0");
+  my ($cci,$status);
+  print STDERR "\n$0: ERRORS-BY-NDOCS\n";
+  foreach $cci ($cc_docs_qsi->list) {
+    ($c1i,$c2i) = $cc_docs_zw->slice(",($cci)")->list;
+    ($c1,$c2)   = @{$cenum->{id2sym}}[$c1i,$c2i];
+    $status = $c1i==$c2i ? "[GOOD]" : "[BAD] ";
+    print "$status: c1=($c1i $c1) -- c2=($c2i $c2) :\t", $cc_docs_zv->slice("($cci)")->sclr, "\n";
+  }
+  print STDERR "$0: (report-by-ndocs done)\n";
+
+  ##-- convert to CCS::Nd, sort & report (by bytes)
+  my $cc_bytes_z  = PDL::CCS::Nd->newFromDense($cc_bytes);
+  my $cc_bytes_zw = $cc_bytes_z->_whichND;
+  my $cc_bytes_zv = $cc_bytes_z->_nzvals;
+  my $cc_bytes_qsi = $cc_bytes_zv->qsorti->slice("-1:0");
+  print STDERR "\n$0: ERRORS-BY-BYTES\n";
+  foreach $cci ($cc_bytes_qsi->list) {
+    ($c1i,$c2i) = $cc_bytes_zw->slice(",($cci)")->list;
+    ($c1,$c2)   = @{$cenum->{id2sym}}[$c1i,$c2i];
+    $status = $c1i==$c2i ? "[GOOD]" : "[BAD] ";
+    print "$status: c1=($c1i $c1) -- c2=($c2i $c2) :\t", $cc_bytes_zv->slice("($cci)")->sclr, "\n";
+  }
+  print STDERR "$0: (report-by-bytes done)\n";
+
+  print STDERR "$0: test_errors() done: what now?\n";
+}
+test_errors();
 
 ##======================================================================
 ## MAIN (dummy)
