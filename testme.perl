@@ -21,6 +21,8 @@ use IO::File;
 use Encode qw(encode decode);
 use File::Basename qw(basename);
 
+use Benchmark qw(cmpthese timethese);
+
 BEGIN { $,=' '; }
 
 ##======================================================================
@@ -509,7 +511,6 @@ sub getsig_xsl {
   return $tf;
 }
 
-use Benchmark qw(cmpthese timethese);
 sub test_getsig {
   my $xfile = 'test-big.xml';
   my $xparser = libxmlParser();
@@ -811,8 +812,8 @@ sub test_errors {
   ##
   ##-- plots
   if (1) {
-    imag($dcdist,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'doc-cat similarity'})
-    imag($dcsim,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'doc-cat similarity'})
+    imag($dcdist,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'doc-cat similarity'});
+    imag($dcsim,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'doc-cat similarity'});
   }
 
   ##--------------------------------------
@@ -906,7 +907,45 @@ sub test_errors {
 
   print STDERR "$0: test_errors() done: what now?\n";
 }
-test_errors(@ARGV);
+#test_errors(@ARGV);
+
+##======================================================================
+## bench: term-doc matrix construction
+sub bench_compile_tdm0 {
+  my $cfile = 'vzdata-testset.corpus.xml';
+  #my $cfile = 'xcheck.d/split.5.xml';
+  my $corpus = DocClassify::Corpus->loadFile($cfile);
+  my $mapper = DocClassify::Mapper::LSI->new();
+  $mapper->trainCorpus($corpus);
+
+  ##-- pre-compile base data
+  DocClassify::Mapper::ByLemma::compile($mapper);
+
+  if (1) {
+    ##-- test: tcm0
+    $mapper->compile_tcm0();
+
+    ##-- bench: tcm0
+    $mapper->{verbose}=0;
+    timethese(1, {'tcm0_v1'=>sub {$mapper->compile_tcm0_v1;}, 'tcm0_v2'=>sub {$mapper->compile_tcm0;}});
+  }
+
+  if (0) {
+    ##-- test: tdm0
+    $mapper->compile_tdm0_v1();
+    my $tdm0_v1 = $mapper->{tdm0}->clone;
+
+    $mapper->compile_tdm0_v2();
+    my $tdm0_v2 = $mapper->{tdm0}->clone;
+
+    ##-- bench: tdm0
+    $mapper->{verbose}=0;
+    timethese(1, {'tdm0_v1'=>sub {$mapper->compile_tdm0_v1;}, 'tdm0_v2'=>sub {$mapper->compile_tdm0_v2;}});
+  }
+
+  print STDERR "$0: bench_compile_tdm0 done: what now?\n";
+}
+bench_compile_tdm0;
 
 ##======================================================================
 ## test: look at categorization ambiguity

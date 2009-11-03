@@ -15,6 +15,7 @@ use MUDL::Cluster::Distance::Builtin;
 
 use PDL;
 use PDL::CCS::Nd;
+use PDL::VectorValued;
 
 use IO::File;
 use Carp;
@@ -56,12 +57,15 @@ our $verbose = 3;
 ##  sigs   => \@sigs,                ##-- training sigs, indexed by local $docid
 ##  ##
 ##  ##-- data: post-compile()
-##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  byte PDL     ($ND,$NC): [$di,$ci] -> deg($di \in $ci) || 0
+##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  PDL::CCS::Nd ($ND,$NC): [$di,$ci] -> deg($di \in $ci) || 0
 ##  tdm0=> $tdm0_pdl,                ##-- raw term-doc mx: PDL::CCS::Nd ($NT,$ND): [$ti,$di] ->     f($ti,$di)
 ##  tcm0=> $tcm0_pdl,                ##-- raw term-cat mx: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] ->     f($ti,$ci)
 ##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> w($ti)
 ##  tdm => $tdm_pdl,                 ##-- term-doc matrix: PDL::CCS::Nd ($NT,$ND): [$ti,$di] -> log(f($ti,$di)+$f0)*w($ti)
 ##  tcm => $tcm_pdl,                 ##-- term-cat matrix: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] -> log(f($ti,$ci)+$f0)*w($ti)
+##  ##
+##  ##-- data: compile() caches
+##  doc_wt => \@doc_wt,              ##-- doc term indices: $di => pdl($NnzDocI) : [$nzi] -> $ti : f($ti,$di)>0
 sub new {
   my $that = shift;
   my $obj =  $that->SUPER::new(
@@ -94,6 +98,9 @@ sub new {
 			       tdm=>undef,
 			       tcm=>undef,
 
+			       ##-- data: compile caches
+			       doc_wt=>undef,
+
 			       ##-- user args
 			       @_,
 			      );
@@ -103,9 +110,9 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(gf df lcenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm)
+##  + override returns qw(gf df lcenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt)
 sub noShadowKeys {
-  return qw(gf df clenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm);
+  return qw(gf df clenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt);
 }
 
 ##==============================================================================
@@ -293,22 +300,24 @@ sub compile_dcm {
   my ($ND,$NC) = map {$_->size} @$map{qw(denum lcenum)};
 
   print STDERR ref($map)."::compile_dcm(): matrix: dcm: (ND=$ND x NC=$NC) [Doc x Cat -> Deg]\n" if ($map->{verbose});
-  my $dcm = $map->{dcm} = zeroes(byte, $ND,$NC);
+  my $dcm = zeroes(double, $ND,$NC); #+'inf';
   my ($doc,$cat);
   foreach $doc (@{$map->{docs}}) {
     foreach $cat (@{$doc->{cats}}) {
       $cat->{id} = $lcenum->{sym2id}{$cat->{name}}; ##-- re-assign category IDs !
-      $dcm->slice("($doc->{id}),($cat->{id})") .= ($cat->{deg} > 255 ? 255 : $cat->{deg});
+      $dcm->slice("($doc->{id}),($cat->{id})") .= $cat->{deg};
     }
   }
+  $map->{dcm} = PDL::CCS::Nd->newFromDense($dcm);
+  #(...,'inf')->badmissing->nanmissing;
   return $map;
 }
 
 ##----------------------------------------------
 ## $map = $map->compile_tdm0()
 ##  + compiles raw term-doc frequency matrix: $map->{tdm_raw} : [$tid,$did] => f($term[$tid],$doc[$did])
-BEGIN { *compile_tdm0 = \&compile_tdm0_v1; }
-sub compile_tdm0_v1 {
+##  + caches $map->{doc_wt}
+sub compile_tdm0 {
   my $map = shift;
 
   ##-- vars
@@ -316,30 +325,137 @@ sub compile_tdm0_v1 {
   my $NT = $tenum->size;
   my $ND = $denum->size;
 
-  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: (NT=$NT x ND=$ND) [Term x Doc -> Freq]\n" if ($map->{verbose});
-  my ($tdm_w,$tdm_nz) = (null,null);
-  my ($d_name,$d_id);
-  my ($c_name,$c_id,$c_deg);
-  my ($doc,$sig, $sig_wt,$sig_w,$sig_nz);
-  foreach $doc (grep {defined($_)} @{$map->{docs}}) {
-    $d_id = $doc->{id};
-    $sig = $map->{sigs}[$d_id];
+  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: (NT=$NT x ND=$ND) [Term x Doc -> Freq]\n"
+    if ($map->{verbose});
 
-    $sig_wt = pdl(long, [grep {defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})}]); ##-- [$nzi]   -> $ti : f($di,$ti) defined
-    next if ($sig_wt->isempty); ##-- sanity check
-    $sig_w  = $sig_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$d_id);                   ##-- [*,$nzi] -> [$ti,$di]
-    $sig_nz = pdl(double, [@{$sig->{lf}}{@{$tenum->{id2sym}}[$sig_wt->list]}]);         ##-- [$nzi]   -> f($di,$ti)
+  ##-- step 1: @$doc_wt: doc-wise term ids
+  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: doc_wt: [Doc -> Terms]\n"
+    if ($map->{verbose});
+  my $tenum_sym2id = $tenum->{sym2id};
+  my $tenum_id2sym = $tenum->{id2sym};
+  my $doc_wt = $map->{doc_wt} = []; ##-- [$docid] => pdl($nnz_doc) : [$nzi_doc] -> $ti : f($doc,$ti) defined
+  @$doc_wt = map { pdl(long, [grep {defined($_)} @$tenum_sym2id{keys %{$_->{lf}}}]) } @{$map->{sigs}};
 
-    $tdm_w  = $tdm_w->glue(1,$sig_w);
-    $tdm_nz = $tdm_nz->append($sig_nz);
+  ##-- step 2: count doc-term nnz
+  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: Nnz\n" if ($map->{verbose});
+  my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt]);
+  my $nnz       = $doc_wt_n->sum;                        ##-- sclr: nnz($d,$t)
+  my $doc_wt_i1 = $doc_wt_n->cumusumover-1;              ##-- [$di] -> sum_{$dj<=$di} nnz($dj)
+  my $doc_wt_i0 = ($doc_wt_n                             ##-- [$di] -> sum_{$dj< $di} nnz($di)
+		   ->append(0)->rotate(1)->slice("0:-2")->cumusumover);
 
-    #delete($sig->{lf});	##-- frequency data all used up
-    #$sig->unlemmatize();       ##-- lemma data all used up
+  ##-- step 3: create CCS::Nd tdm0
+  print STDERR ref($map)."::compile_tcm0(): matrix: tdm0: PDL::CCS::Nd\n" if ($map->{verbose});
+  my $sigs   = $map->{sigs};
+  my $tdm0_w = zeroes(long,2,$nnz);
+  my $tdm0_v = zeroes(double,$nnz);
+  my ($slice1);
+  foreach (0..$#$doc_wt) {
+    $slice1 = $doc_wt_i0->at($_).":".$doc_wt_i1->at($_);
+    $tdm0_w->slice("(0),$slice1") .= $doc_wt->[$_];
+    $tdm0_w->slice("(1),$slice1") .= $_;
+    $tdm0_v->slice("$slice1")     .= pdl([ @{$sigs->[$_]{lf}}{@$tenum_id2sym[$doc_wt->[$_]->list]} ]);
   }
-  my $tdm_dims = pdl(long,$tenum->size,$denum->size);
-  my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm_w,$tdm_nz,dims=>$tdm_dims,missing=>0); #->dummy(0,1)->sumover;
+  my $tdm0_dims = pdl(long,$NT,$ND);
+  my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm0_w,$tdm0_v,dims=>$tdm0_dims,missing=>0);
+  #->dummy(0,1)->sumover;
+
   return $map;
 }
+
+##----------------------------------------------
+## $map = $map->compile_tcm0()
+##  + compiles matrix $map->{tcm0}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tdm0}
+##  + requires cached $map->{tdm0}, $map->{dcm}
+sub compile_tcm0 {
+  my $map = shift;
+
+  ##-- vars
+  my ($denum,$tenum,$lcenum) = @$map{qw(denum tenum lcenum)};
+  my $NT = $tenum->size;
+  my $ND = $denum->size;
+  my $NC = $lcenum->size;
+
+  print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n"
+    if ($map->{verbose});
+
+  ##-- step 0: get sparse boolean dcmb [Doc x Cat -> Bool]
+  my $dcm    = $map->{dcm};
+  my $dcmb   = $dcm->clone;
+  $dcmb->_nzvals->slice("0:-1") .= 1;
+  my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di] -> $ncats
+  ###
+  #my $dcm_wd = $dcmb->_whichND->slice("(0),");
+  #my $dcm_wc = $dcmb->_whichND->slice("(1),");
+
+  ##-- step 1: count doc-term nnz
+  print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: Nnz\n" if ($map->{verbose});
+  my $doc_wt    = $map->{doc_wt};
+  my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt]);
+  my $doc_cat_wt_n = $doc_wt_n * $doc_nc;
+  my $nnz       = $doc_cat_wt_n->sum;                        ##-- sclr: nnz($d,$t)
+
+  ##-- step 3: create CCS::Nd
+  print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: PDL::CCS::Nd\n" if ($map->{verbose});
+  my $docs = $map->{docs};
+  my $lcenum_sym2id = $map->{lcenum}{sym2id};
+  my $tdm0 = $map->{tdm0};
+  ##
+  my $tcm0_w = zeroes(long,2,$nnz);
+  my $tcm0_v = zeroes(double,$nnz);
+  my ($di,$tdm0d,$ci,$n,$slice1);
+  my $nzi = 0;
+  foreach $di (0..$#$doc_wt) {
+    $n = $doc_wt_n->at($di);
+    next if (!$n);
+    $tdm0d = $tdm0->dice_axis(1,$di);
+    foreach $ci (@$lcenum_sym2id{map {$_->{name}} @{$docs->[$di]{cats}}}) {
+      $slice1 = $nzi.':'.($nzi+$n-1);
+      $tcm0_w->slice("(0),$slice1") .= $tdm0d->_whichND->slice("(0),");
+      $tcm0_w->slice("(1),$slice1") .= $ci;
+      $tcm0_v->slice("$slice1")     .= $tdm0d->_nzvals;
+      $nzi += $n;
+    }
+  }
+  my $tcm0_dims = pdl(long,$NT,$NC);
+  my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
+  $map->{tcm0} = $tcm0;
+
+  return $map;
+}
+
+#BEGIN { *compile_tcm0 = \&compile_tcm0_v1; }
+sub compile_tcm0_v1 {
+  my $map = shift;
+
+  ##-- vars
+  my ($NT,$NC) = map {$map->{$_}->size} qw(tenum lcenum);
+  my $lc_sym2id = $map->{lcenum}{sym2id};
+
+  ##-- guts
+  print STDERR ref($map)."::compile(): tcm: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n" if ($map->{verbose});
+  my ($doc,$d_id, $cat,$c_id);
+  my ($tcm_w,$tcm_nz) = (null,null);
+  my ($d_tf,$d_wt,$d_w,$d_nz, $c_w);
+  foreach $doc (@{$map->{docs}}) {
+    $d_id = $doc->{id};
+    $d_tf = $map->{tdm0}->dice_axis(1,pdl(long,$d_id));
+    $d_wt = $d_tf->_whichND->slice("(0),");
+    $d_nz = $d_tf->_nzvals;
+    foreach $cat (@{$doc->{cats}}) {
+      $c_id = $lc_sym2id->{$cat->{name}};
+      $c_w  = $d_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$c_id); ##-- [*,$nzi] -> [$ti,$ci]
+      ##
+      $tcm_w  = $tcm_w->glue(1,$c_w);
+      $tcm_nz = $tcm_nz->append($d_nz);
+    }
+  }
+  my $tcm_dims = pdl(long,$NT,$NC);
+  my $tcm0 = $map->{tcm0} = PDL::CCS::Nd->newFromWhich($tcm_w,$tcm_nz,dims=>$tcm_dims,missing=>0)->dummy(0,1)->sumover;
+
+  return $map;
+}
+
 
 ##----------------------------------------------
 ## $map = $map->compile_tdm_log()
@@ -414,40 +530,6 @@ sub compile_tw {
   if (!all($map->{tw}->isfinite)) {
     confess(ref($map)."::compile_tw(): infinite values in term-weight vector: something has gone horribly wrong!");
   }
-
-  return $map;
-}
-
-## $map = $map->compile_tcm0()
-##  + compiles matrix $map->{tcm0}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tdm0}
-BEGIN { *compile_tcm0 = \&compile_tcm0_v1; }
-sub compile_tcm0_v1 {
-  my $map = shift;
-
-  ##-- vars
-  my ($NT,$NC) = map {$map->{$_}->size} qw(tenum lcenum);
-  my $lc_sym2id = $map->{lcenum}{sym2id};
-
-  ##-- guts
-  print STDERR ref($map)."::compile(): tcm: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n" if ($map->{verbose});
-  my ($doc,$d_id, $cat,$c_id);
-  my ($tcm_w,$tcm_nz) = (null,null);
-  my ($d_tf,$d_wt,$d_w,$d_nz, $c_w);
-  foreach $doc (@{$map->{docs}}) {
-    $d_id = $doc->{id};
-    $d_tf = $map->{tdm0}->dice_axis(1,pdl(long,$d_id));
-    $d_wt = $d_tf->_whichND->slice("(0),");
-    $d_nz = $d_tf->_nzvals;
-    foreach $cat (@{$doc->{cats}}) {
-      $c_id = $lc_sym2id->{$cat->{name}};
-      $c_w  = $d_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$c_id); ##-- [*,$nzi] -> [$ti,$ci]
-      ##
-      $tcm_w  = $tcm_w->glue(1,$c_w);
-      $tcm_nz = $tcm_nz->append($d_nz);
-    }
-  }
-  my $tcm_dims = pdl(long,$NT,$NC);
-  my $tcm0 = $map->{tcm0} = PDL::CCS::Nd->newFromWhich($tcm_w,$tcm_nz,dims=>$tcm_dims,missing=>0)->dummy(0,1)->sumover;
 
   return $map;
 }
