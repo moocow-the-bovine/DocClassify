@@ -230,8 +230,9 @@ sub clearTrainingCache {
   %{$map->{df}} = qw();
   @{$map->{sigs}} = qw();
   #@{$map->{docs}} = qw(); ##-- still needed for category mapping?
-  delete($map->{tdm0});   ##-- still useful for debugging
-  delete($map->{tcm0});   ##-- still useful for debugging
+  delete($map->{tdm0});   ##-- useful for debugging, but recoverable from $map->{tdm}
+  delete($map->{tcm0});   ##-- useful for debugging, but recoverable from $map->{tcm}
+  delete($map->{doc_wt});
   return $map;
 }
 

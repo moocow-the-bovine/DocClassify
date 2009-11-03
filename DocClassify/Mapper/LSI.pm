@@ -72,7 +72,7 @@ our $verbose = 3;
 ##  sigs   => \@sigs,                ##-- training sigs, indexed by local $docid
 ##  ##
 ##  ##-- data: post-compile()
-##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  PDL::CCS::Nd ($ND,$NC): [$di,$ci] -> deg($di \in $ci)
+##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  PDL::CCS::Nd ($ND,$NC): [$di,$ci] -> deg($di \in $ci)||0
 ##  tdm0=> $tdm0_pdl,                ##-- raw term-doc mx: PDL::CCS::Nd ($NT,$ND): [$ti,$di] ->     f($ti,$di)
 ##  tcm0=> $tcm0_pdl,                ##-- raw term-cat mx: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] ->     f($ti,$ci)
 ##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> w($ti)
@@ -170,6 +170,7 @@ sub compile {
     $map->{xcm} = $svd->apply($map->{tcm}->decode);
   }
   elsif ($catProfile eq 'average' || $catProfile eq 'weighted-average') {
+    ##-- TODO: use MUDL::Cluster::Method::d2c_*() methods here!
     my $lc_sym2id = $map->{lcenum}{sym2id};
     my $xcm = $map->{xcm} = zeroes(double, $map->{svdr},$NC);
     my $doc_weight = $catProfile eq 'average' ? ones($ND) : $map->{tdm0}->sumover->decode;
