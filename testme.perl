@@ -7,6 +7,8 @@ use DocClassify::Utils qw(:all);
 
 use MUDL;
 use MUDL::SVD;
+use MUDL::PDL::Stats;
+use MUDL::PDL::Smooth;
 use MUDL::Cluster::Tree;
 
 use PDL;
@@ -699,18 +701,25 @@ sub truncstr {
 }
 
 sub test_errors {
+  ##-- eval file
   my $efile = shift;
   $efile = 'xcheck.cp-avg.tw-entropy.r-100.d/eval.all.xml' if (!defined($efile));
   my $eval  = DocClassify::Eval->loadFile($efile) or die("$0: load failed for '$efile': $!");
 
   ##-- enum: docs
   my $denum = MUDL::Enum->new();
-  $denum->addSymbol($_) foreach (keys(%{$eval->{lab2docs}}));
+  @{$denum->{id2sym}} = keys(%{$eval->{lab2docs}});
+  @{$denum->{sym2id}}{@{$denum->{id2sym}}} = (0..$#{$denum->{id2sym}});
   my $ND = $denum->size;
   my @dids = (0..($ND-1));
+  my @docs = @{$eval->{lab2docs}}{@{$denum->{id2sym}}[@dids]};
 
-  ##-- enum: cats
+  ##-- enum: cats (load from file)
   my $cenum = MUDL::Enum->new();
+  my $cefile = 'sample_classes.enum';
+  if (defined($cefile)) {
+    $cenum = $cenum->loadFile($cefile,iolayers=>[':utf8']) or die("$0: Enum->loadFile($cefile) failed: $!");
+  }
   $cenum->addSymbol($_) foreach (grep {$_ ne ''} keys(%{$eval->{cat2eval}}));
   my $NC = $cenum->size;
   my @cids = (0..($NC-1));
@@ -731,8 +740,9 @@ sub test_errors {
   $cF->where(!$cF->isfinite) .= 0;
 
   ##-- cat sizes
-  my $cbytes = $cp{'tp_bytes'} + $cp{'fn_bytes'};
+  my $cbytes = $cp{'tp_bytes'} + $cp{'fn_bytes'}; ##-- for cat1
 
+  ##--------------------------------------
   ##-- simple plots
   usepgplot if (1);
   our %plot = (axis=>'logx',xtitle=>'cat size (bytes)',ytitle=>'eval');
@@ -742,7 +752,8 @@ sub test_errors {
     points($cbytes,$cF,{%plot,ytitle=>'F'});
   }
 
-  ##-- complex plots: get error surface
+  ##--------------------------------------
+  ##-- 3d category plots
   my $cc_docs  = zeroes($NC,$NC);
   my $cc_bytes = zeroes($NC,$NC);
   my ($docs, $c1,$c2, $c1i,$c2i);
@@ -754,23 +765,25 @@ sub test_errors {
       $cc_bytes->slice("$c1i,$c2i") += $docs->[0]->sizeBytes if (defined($docs->[0]->sizeBytes));
     #}
   }
-  ##
-  ##-- more plots
-  our %iplot = (DrawWedge=>1, xtitle=>'Cat1', ytitle=>'Cat2', ztitle=>'Count');
+
+  ##--------------------------------------
+  ##-- 3d cat plots: p(c1|c2), p(c2|c1)
+  our %iplot = (DrawWedge=>1, itf=>'sqrt', xtitle=>'c1', ytitle=>'c2', ztitle=>'Count');
   if (0) {
-    imag($cc_docs,{%iplot, title=>'by docs'});
-    imag($cc_bytes,{%iplot, title=>'by bytes'});
+    imag($cc_docs,{%iplot, itf=>'log', title=>'n_docs(Wanted=c1,Got=c2)'});
+    imag($cc_bytes,{%iplot, itf=>'log', title=>'n_bytes(Wanted=c2,Got=c2)'});
 
-    my $cc_docs_p1g2 = $cc_docs/$cc_docs->sumover->slice("*1,"); ## [c1,c2] -> p(c1|c2)
-    $cc_docs_p1g2->where(!$cc_docs_p1g2->isfinite) .= 0;
-    imag( $cc_docs_p1g2, {%iplot,itf=>'log',title=>'p(c1|c2), by docs'} );
+    ##-- p1g2: [c1,c2] -> p(c1|c2)
+    my $cc_docs_p1g2 = $cc_docs/$cc_docs->sumover->slice("*1,"); $cc_docs_p1g2->where(!$cc_docs_p1g2->isfinite) .= 0;
+    imag( $cc_docs_p1g2, {%iplot,itf=>'sqrt',title=>'p(Wanted=c1|Got=c2) by n_docs'} );
 
-    my $cc_docs_p2g1 = $cc_docs/$cc_docs->xchg(0,1)->sumover;    ## [c1,c2] -> p(c2|c1)
-    $cc_docs_p2g1->where(!$cc_docs_p2g1->isfinite) .= 0;
-    imag( $cc_docs_p2g1, {%iplot,itf=>'log',title=>'p(c2|c1), by docs'} );
+    ##-- p2g1: [c1,c2] -> p(c1|c2)
+    my $cc_docs_p2g1 = $cc_docs/$cc_docs->xchg(0,1)->sumover; $cc_docs_p2g1->where(!$cc_docs_p2g1->isfinite) .= 0;
+    imag( $cc_docs_p2g1, {%iplot,itf=>'sqrt',title=>'p(Got=c2|Wanted=c1) by n_docs'} );
   }
 
-  ##-- plots w/o tp
+  ##--------------------------------------
+  ##-- cat plots: errors only (no tp)
   my $cc_docs_errs = $cc_docs->pdl; $cc_docs_errs->diagonal(0,1) .= 0;
   my $cc_bytes_errs = $cc_bytes->pdl; $cc_bytes_errs->diagonal(0,1) .= 0;
   if (0) {
@@ -778,6 +791,82 @@ sub test_errors {
     imag($cc_bytes_errs,{%iplot});
   }
 
+  ##--------------------------------------
+  ## doc-catWanted pdls
+  my @dcname  = map {$_->[0]{cats}[0]{name}} @docs;         ##-- [$did] -> $catNameWanted
+  my $dc      = pdl(long,[@{$cenum->{sym2id}}{@dcname}]);   ##-- [$did] -> $cid_wanted
+  my ($dc_v,$dc_vc) = $dc->valcounts;
+  my $cnd     = zeroes(long,$NC); $cnd->index($dc_v) .= $dc_vc; ##-- [$cid] -> $ndocs_wanted
+  ##
+  my $dcdist = zeroes($ND,$NC);  ##-- [$did,$cid_got] -> $dist
+  my ($dcats2, @dcids,@dcdist);
+  foreach $did (@dids) {
+    $dcats2  = $docs[$did][1]{cats};
+    @dcids  = @{$cenum->{sym2id}}{map {$_->{name}} @$dcats2};
+    @dcdist = map {$_->{dist}} @$dcats2;
+    $dcdist->slice("($did),")->index(pdl(long,\@dcids)) .= pdl(\@dcdist);
+  }
+  ##
+  my $dcsim = 2**(-$dcdist); ##-- [$did,$cid] -> sim($did,$cid)
+  ##
+  ##-- plots
+  if (1) {
+    imag($dcdist,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'doc-cat similarity'})
+    imag($dcsim,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'doc-cat similarity'})
+  }
+
+  ##--------------------------------------
+  ## catWanted average distance (by member docs)
+  my ($dc1dist); ##-- CCS: [$did,$cid_wanted] -> dist($cid_wanted,$did : cat1($did)==$cid_wanted)
+  my $dc1dist_w = sequence($ND)->cat($dc)->xchg(0,1);
+  my $dc1dist_v = $dcdist->indexND($dc1dist_w);
+  $dc1dist = PDL::CCS::Nd->newFromWhich($dc1dist_w,$dc1dist_v);
+  ##
+  my $c1dist_mu = $dc1dist->average_nz->decode; ##-- dense: [$cid1] -> avg d($cid1,$doc : cat1($doc)==$cid1)
+  my $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt; ##-- dense: [$cid1] -> stddev d($cid1,$doc : cat1($doc)==$cid1)
+
+  ##--------------------------------------
+  ## doc-cat: "adjusted" distance (std-normal (Z) values), pdf, cdf
+  my $dcdistz   = ($dcdist-$c1dist_mu->slice("*1,"))/$c1dist_sd->slice("*1,"); ##-- [$ci,$di] -> Z_{$ci}(d($ci,$di))
+  my $dcdist_pdf = gausspdf($dcdistz, 0,1);                                    ##-- [$ci,$di] -> pdf_{$ci}(d($ci,$di))
+  my $dcdist_cdf = gausscdf($dcdistz, 0,1);                                    ##-- [$ci,$di] -> cdf_{$ci}(d($ci,$di))
+  if (1) {
+    imag($dcdistz,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'Z_{cat1}(d(doc,cat))'});
+    imag($dcdist_pdf,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'pdf_{cat1}(d(doc,cat))'});
+    imag($dcdist_cdf,{%iplot,itf=>'linear',xtitle=>'doc',ytitle=>'cat',title=>'cdf_{cat1}(d(doc,cat))'});
+  }
+
+  ##--------------------------------------
+  ## doc-catWanted Z, cdf
+  my ($dc1distz); ##-- CCS: [$did,$cid_wanted] -> Z(d($cid_wanted,$did : cat1($did)==$cid_wanted))
+  $dc1distz = PDL::CCS::Nd->newFromWhich($dc1dist_w,$dcdistz->indexND($dc1dist_w),missing=>-10)->decode;
+  my ($dc1dist_cdf); ##-- CCS: [$did,$cid_wanted] -> cdf_{$cid1}(d($cid_wanted,$did : cat1($did)==$cid_wanted))
+  $dc1dist_cdf = PDL::CCS::Nd->newFromWhich($dc1dist_w,$dcdist_cdf->indexND($dc1dist_w))->decode;
+
+  ##--------------------------------------
+  ## cat1-cat2 distance (average by cat1)
+  my $ccdist = zeroes($NC,$NC); ##-- [$c1,$c2] -> avg d($c1,$c2)
+  my ($dcat1,$cid);
+  foreach $did (@dids) {
+    $dcat1 = $docs[$did][0]{cats}[0];
+    $cid   = $cenum->{sym2id}{$dcat1->{name}};
+    $ccdist->slice("($cid),") += $dcdist->slice("($did)");
+  }
+  $ccdist /= $cnd->double;
+  ##
+  ##-- cat-cat dist Z, cdf, pdf
+  my $ccdistz   = ($ccdist-$c1dist_mu->slice("*1,"))/$c1dist_sd->slice("*1,"); ##-- [$c1,$c2] -> Z_{$c1}(avg d($c1,$c2))
+  my $ccdist_pdf = gausspdf($ccdistz, 0,1);                                    ##-- [$c1,$c2] -> pdf_{$c1}(avg d($c1,$c2))
+  my $ccdist_cdf = gausscdf($ccdistz, 0,1);                                    ##-- [$c1,$c2] -> cdf_{$c1}(avg d($c1,$c2))
+  if (1) {
+    imag($ccdistz,{%iplot,itf=>'linear',xtitle=>'c1',ytitle=>'c2',title=>'Z_{c1}(d(c1,c2))'});
+    imag($ccdist_pdf,{%iplot,itf=>'linear',xtitle=>'c1',ytitle=>'c2',title=>'pdf_{c1}(d(c1,c2))'});
+    imag($ccdist_cdf,{%iplot,itf=>'linear',xtitle=>'c1',ytitle=>'c2',title=>'cdf_{c1}(d(c1,c2))'});
+  }
+
+
+
+  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   ##-- convert to CCS::Nd, sort & report (by docs)
   my $cc_docs_z  = PDL::CCS::Nd->newFromDense($cc_docs);
   my $cc_docs_zw = $cc_docs_z->_whichND;

@@ -283,7 +283,8 @@ sub false_positive {
 ##  + treats 0/0 == 1
 sub frac {
   my ($num,$denom) = @_;
-  return $denom!=0 ? ($num/$denom) : ($num==0 ? 1 : 0);
+  #return $denom!=0 ? ($num/$denom) : ($num==0 ? 1 : 0);
+  return $denom!=0 ? ($num/$denom) : 0;
 }
 
 ## $pr = PACKAGE::precision(\%catEvalHash,$units)

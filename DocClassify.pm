@@ -13,6 +13,7 @@ use DocClassify::Corpus;
 use DocClassify::Signature;
 
 use DocClassify::Mapper;
+use DocClassify::Mapper::ByLemma;
 use DocClassify::Mapper::LSI;
 
 use DocClassify::Eval;
