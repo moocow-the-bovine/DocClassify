@@ -32,13 +32,14 @@ our %mapopts = (
 		class=>'LSI',    ##-- mapper class
 		label=>undef,    ##-- default label
 		lemmatize=>{},   ##-- see $DocClassify::Signature::LEMMA_XYZ variables for defaults
-		svdr => 64,      ##-- svd dimensions
+		svdr => 128,     ##-- svd dimensions
 		minFreq =>0,     ##-- minimum global term-frequency f(t) for term-inclusion
 		minDocFreq =>0,  ##-- minimum #/docs with f(t,d)>0 for term-inclusion
 		smoothf =>1,     ##-- smoothing frequency (undef for NTypes/NTokens)
 		trainExclusive=>1, ##-- exclusive-mode training?
 		catProfile => 'average',   ##-- how to do category profiling
 		termWeight => 'entropy',   ##-- how to do term weighting
+		xn => 10,                  ##-- number of splits for parameter-fitting cross-check
 	       ),
 
 our %loadopts_corpus = ( mode=>undef, );
@@ -66,6 +67,7 @@ GetOptions(##-- General
 	   'cat-profile|catProfile|profile|cp=s' => \$mapopts{catProfile},
 	   'term-weight|termWeight|tw|w=s'       => \$mapopts{termWeight},
 	   'mapper-option|mo=s' => \%mapopts,
+	   'cross-check-n|xcheck-n|xn=i' => \$mapopts{xn},
 	   'compile|c!' => \$compileMap,
 
 	   ##-- I/O
@@ -133,9 +135,10 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
-  -svd-dims DIMS         # set max SVD dimensions (default=64)
+  -svd-dims DIMS         # set max SVD dimensions (default=128)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
+  -xcheck-n XN           # set number of cross-check splits for param-fitting (default=10)
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
   -mapper-option OPT=VAL # set generic (class-specific) mapper option

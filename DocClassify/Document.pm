@@ -180,6 +180,7 @@ sub cats {
   @{$doc->{cats}} =
     sort {($a->{deg}<=>$b->{deg}
 	   || ($a->{dist}||0) <=> ($b->{dist}||0)
+	   || ($a->{dist_raw}||0) <=> ($b->{dist_raw}||0)
 	   || $a->{id}<=>$b->{id}
 	   || $a->{name} cmp $b->{name})
 	 } @{$doc->{cats}};

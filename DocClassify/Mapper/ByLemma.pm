@@ -49,6 +49,7 @@ our $verbose = 3;
 ##  gcenum => $localCatEnum,         ##-- global cat enum         ($NC=$catEnum->size())
 ##  tenum => $termEnum,              ##-- term (lemma) enum       ($NT=$termEnum->size())
 ##  denum => $docEnum,               ##-- document (label) enum   ($ND=$docEnum->size()=scalar(@docs))
+##  docids => $docIdPdl,             ##-- document id subset: pdl($ND_local): [$doc_pdl_index] -> $docid_denum
 ##  ##
 ##  ##-- data: training
 ##  gf => \%global_tf,               ##-- global term-frequency hash: ($term=>$freq, ...)
@@ -346,12 +347,12 @@ sub compile_tdm0 {
 		   ->append(0)->rotate(1)->slice("0:-2")->cumusumover);
 
   ##-- step 3: create CCS::Nd tdm0
-  print STDERR ref($map)."::compile_tcm0(): matrix: tdm0: PDL::CCS::Nd\n" if ($map->{verbose});
+  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: PDL::CCS::Nd\n" if ($map->{verbose});
   my $sigs   = $map->{sigs};
   my $tdm0_w = zeroes(long,2,$nnz);
   my $tdm0_v = zeroes(double,$nnz);
   my ($slice1);
-  foreach (0..$#$doc_wt) {
+  foreach ($doc_wt_n->which->list) {
     $slice1 = $doc_wt_i0->at($_).":".$doc_wt_i1->at($_);
     $tdm0_w->slice("(0),$slice1") .= $doc_wt->[$_];
     $tdm0_w->slice("(1),$slice1") .= $_;
@@ -365,6 +366,16 @@ sub compile_tdm0 {
 }
 
 ##----------------------------------------------
+## $docIdPdl = $map->docIdPdl()
+##  + returns size of local doc subset (docids) or sequence($map->{denum}->size)
+##  + returned pdl is ($NDocsLocal) : [$docid_local] -> $docid_global
+sub docIdPdl {
+  my $map = shift;
+  return $map->{docids} if (defined($map->{docids}));
+  return sequence(long,$map->{denum}->size);
+}
+
+##----------------------------------------------
 ## $map = $map->compile_tcm0()
 ##  + compiles matrix $map->{tcm0}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tdm0}
 ##  + requires cached $map->{tdm0}, $map->{dcm}
@@ -373,8 +384,9 @@ sub compile_tcm0 {
 
   ##-- vars
   my ($denum,$tenum,$lcenum) = @$map{qw(denum tenum lcenum)};
+  my $docids = $map->docIdPdl;
   my $NT = $tenum->size;
-  my $ND = $denum->size;
+  my $ND = $docids->nelem;
   my $NC = $lcenum->size;
 
   print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n"
@@ -384,7 +396,7 @@ sub compile_tcm0 {
   my $dcm    = $map->{dcm};
   my $dcmb   = $dcm->clone;
   $dcmb->_nzvals->slice("0:-1") .= 1;
-  my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di] -> $ncats
+  my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di_local] -> $ncats
   ###
   #my $dcm_wd = $dcmb->_whichND->slice("(0),");
   #my $dcm_wc = $dcmb->_whichND->slice("(1),");
@@ -392,7 +404,7 @@ sub compile_tcm0 {
   ##-- step 1: count doc-term nnz
   print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: Nnz\n" if ($map->{verbose});
   my $doc_wt    = $map->{doc_wt};
-  my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt]);
+  my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt])->index($docids);
   my $doc_cat_wt_n = $doc_wt_n * $doc_nc;
   my $nnz       = $doc_cat_wt_n->sum;                        ##-- sclr: nnz($d,$t)
 
@@ -404,13 +416,14 @@ sub compile_tcm0 {
   ##
   my $tcm0_w = zeroes(long,2,$nnz);
   my $tcm0_v = zeroes(double,$nnz);
-  my ($di,$tdm0d,$ci,$n,$slice1);
+  my ($di_local,$di_global,$tdm0d,$ci,$n,$slice1);
   my $nzi = 0;
-  foreach $di (0..$#$doc_wt) {
-    $n = $doc_wt_n->at($di);
+  foreach $di_local (0..($ND-1)) {
+    $di_global = $docids->at($di_local);
+    $n = $doc_wt_n->at($di_local);
     next if (!$n);
-    $tdm0d = $tdm0->dice_axis(1,$di);
-    foreach $ci (@$lcenum_sym2id{map {$_->{name}} @{$docs->[$di]{cats}}}) {
+    $tdm0d = $tdm0->dice_axis(1,$di_local);
+    foreach $ci (@$lcenum_sym2id{map {$_->{name}} @{$docs->[$di_global]{cats}}}) {
       $slice1 = $nzi.':'.($nzi+$n-1);
       $tcm0_w->slice("(0),$slice1") .= $tdm0d->_whichND->slice("(0),");
       $tcm0_w->slice("(1),$slice1") .= $ci;
@@ -425,34 +438,16 @@ sub compile_tcm0 {
   return $map;
 }
 
-#BEGIN { *compile_tcm0 = \&compile_tcm0_v1; }
-sub compile_tcm0_v1 {
+##----------------------------------------------
+## $map = $map->compile_tcm()
+##  + compiles matrix $map->{tcm}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tcm0}
+sub compile_tcm {
   my $map = shift;
 
-  ##-- vars
-  my ($NT,$NC) = map {$map->{$_}->size} qw(tenum lcenum);
-  my $lc_sym2id = $map->{lcenum}{sym2id};
-
-  ##-- guts
-  print STDERR ref($map)."::compile(): tcm: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n" if ($map->{verbose});
-  my ($doc,$d_id, $cat,$c_id);
-  my ($tcm_w,$tcm_nz) = (null,null);
-  my ($d_tf,$d_wt,$d_w,$d_nz, $c_w);
-  foreach $doc (@{$map->{docs}}) {
-    $d_id = $doc->{id};
-    $d_tf = $map->{tdm0}->dice_axis(1,pdl(long,$d_id));
-    $d_wt = $d_tf->_whichND->slice("(0),");
-    $d_nz = $d_tf->_nzvals;
-    foreach $cat (@{$doc->{cats}}) {
-      $c_id = $lc_sym2id->{$cat->{name}};
-      $c_w  = $d_wt->slice("*1,")->glue(0, zeroes(long,1,1)+$c_id); ##-- [*,$nzi] -> [$ti,$ci]
-      ##
-      $tcm_w  = $tcm_w->glue(1,$c_w);
-      $tcm_nz = $tcm_nz->append($d_nz);
-    }
-  }
-  my $tcm_dims = pdl(long,$NT,$NC);
-  my $tcm0 = $map->{tcm0} = PDL::CCS::Nd->newFromWhich($tcm_w,$tcm_nz,dims=>$tcm_dims,missing=>0)->dummy(0,1)->sumover;
+  my ($NT,$NC) = $map->{tcm0}->dims;
+  print STDERR ref($map)."::compile_tcm(): matrix: tcm: (NT=$NT x NC=$NC) [Term x Cat -> WeightedLogFreq]\n"
+    if ($map->{verbose});
+  $map->{tcm} = $map->logwm($map->{tcm0});
 
   return $map;
 }
@@ -535,6 +530,7 @@ sub compile_tw {
   return $map;
 }
 
+##----------------------------------------------
 ## $tXm = $map->logwm($tXm0)
 ##  + compiles log-transformed, term-weighted matrix $tXm ($NT,$NX) from raw frequency matrix $tXm0 ($NT,$NX)
 ##  + $tXm0 may be either a dense PDL or a PDL::CCS::Nd
@@ -543,6 +539,8 @@ sub logwm {
   $txm0 = $txm0->dummy(1,1) if ($txm0->ndims==0); ##-- someone passed in a flat term matrix
   return ($txm0+$map->{smoothf})->inplace->log->inplace->mult($map->{tw},0);
 }
+
+
 
 ##==============================================================================
 ## Methods: API: Classification

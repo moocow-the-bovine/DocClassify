@@ -945,7 +945,66 @@ sub bench_compile_tdm0 {
 
   print STDERR "$0: bench_compile_tdm0 done: what now?\n";
 }
-bench_compile_tdm0;
+#bench_compile_tdm0;
+
+##======================================================================
+## test: compile
+sub test_compile {
+  my ($cfile,$mfile) = @_;
+
+  ##-- load: corpus
+  #$cfile = 'vzdata-safe.u1.corpus.xml' if (!defined($cfile));
+  $cfile = 'xcheck.d/split.0.xml';
+  my $corpus = DocClassify::Corpus->loadFile($cfile);
+
+  ##-- load: mapper
+  my $map = DocClassify::Mapper::LSI->new();
+  $mfile = "$cfile.test_compile.bin" if (!$mfile);
+  if (-r $mfile) {
+    $map = $map->loadFile($mfile) or die("$0: Mapper->loadFile($mfile) failed: $!");
+  } else {
+    ##-- train mapper & save file
+    $map->trainCorpus($corpus);
+    $map->saveFile($mfile) or die("$0: Mapper->saveFile($mfile) failed: $!");
+  }
+  $map->{seed} = 0;
+  #$map->{catProfile} = 'fold-in';
+  $map->compile();
+
+  print STDERR "$0: test_compile() done: what now?\n";
+}
+#test_compile(@ARGV);
+
+##======================================================================
+## test: p-value mapping bug
+sub test_pval_map {
+  my ($mfile,$cfile) = @_;
+  $mfile = 'tmp1.bin' if (!defined($mfile));
+  $cfile = 'vzdata-testset.corpus.xml' if (!defined($cfile));
+
+  my $map = DocClassify::Mapper->loadFile($mfile) or die("$0: Mapper->loadFile($mfile) failed: $!");
+  my $corpus = DocClassify::Corpus->loadFile($cfile) or die("$0: Corpus->loadFile($cfile) failed: $!");
+
+  $map->mapCorpus($corpus);
+  $corpus->saveFile("$mfile.xml") or die("$0: Corpus->saveFile($mfile.xml) failed: $!");
+
+  print STDERR "$0: test_pval_map done: what now?\n";
+}
+test_pval_map(@ARGV);
+
+
+##======================================================================
+## test: pdl ccs buglet
+sub test_ccs_dice {
+  my $p = pdl([[0,0,0],[0,1,0],[2,0,0],[0,0,0]]);
+  my $pc = $p->toccs;
+  my $pd = $p->dice_axis(1,0);
+  my $pcd = $pc->dice_axis(1,0);
+
+  print STDERR "$0: test_ccs_dice() done -- what now?\n";
+}
+#test_ccs_dice();
+
 
 ##======================================================================
 ## test: look at categorization ambiguity
