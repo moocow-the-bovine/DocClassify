@@ -39,7 +39,7 @@ our %mapopts = (
 		trainExclusive=>1, ##-- exclusive-mode training?
 		catProfile => 'average',   ##-- how to do category profiling
 		termWeight => 'entropy',   ##-- how to do term weighting
-		xn => 10,                  ##-- number of splits for parameter-fitting cross-check
+		xn => 3,                   ##-- number of splits for parameter-fitting cross-check
 	       ),
 
 our %loadopts_corpus = ( mode=>undef, );
@@ -138,7 +138,7 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -svd-dims DIMS         # set max SVD dimensions (default=128)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
-  -xcheck-n XN           # set number of cross-check splits for param-fitting (default=10)
+  -xcheck-n XN           # set number of cross-check splits for param-fitting (default=3)
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
   -mapper-option OPT=VAL # set generic (class-specific) mapper option

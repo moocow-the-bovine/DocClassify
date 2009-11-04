@@ -44,7 +44,7 @@ our $verbose = 3;
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
 ##  catProfile => $how,              ##-- cate profiling method ('fold-in','average', 'weighted-average'...): default='average'
-##  xn => $xn,                       ##-- number of splits for compile-time cross-check (default=2)
+##  xn => $xn,                       ##-- number of splits for compile-time cross-check (0 for none; default=3)
 ##  seed => $seed,                   ##-- random seed for corpus splitting (undef (default) for none)
 ##  ##
 ##  ##-- data: post-compile()
@@ -92,7 +92,7 @@ sub new {
 			       dist => 'u',
 			       catProfile => 'average',
 			       termWeight  => 'entropy',
-			       xn => 2,
+			       xn => 3,
 			       seed => undef,
 
 			       ##-- data: post-compile
@@ -186,7 +186,11 @@ sub clearTrainingCache {
 ##  + does cross-checking and parameter extraction for training data
 sub compileCrossCheck {
   my $map = shift;
-  my $xcn = $map->{xn} = ($map->{xn} && $map->{xn} >= 2 ? $map->{xn} : 2);
+  my $xcn = $map->{xn};
+  if (!$xcn || $xcn<3) {
+    warn(ref($map)."::compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")");
+    return $map;
+  }
 
   ##-- cross-check: generate test corpora
   my $corpus = DocClassify::Corpus->new(docs=>$map->{docs});
