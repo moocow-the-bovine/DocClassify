@@ -29,7 +29,9 @@ our ($help);
 our %corpusOpts = ( label=>'', );
 our %loadopts = ( mode=>undef, );
 our %saveopts = ( mode=>undef, format=>1, saveCats=>1, saveSigs=>1, );
-our $catListFile = undef;
+our $catListFile = '';
+our $maxDeg = 0;
+our $maxCats = 0;
 our $outfile = '-';
 
 ##------------------------------------------------------------------------------
@@ -42,6 +44,8 @@ GetOptions(##-- General
 	   ##-- Misc
 	   'label|l=s' => \$corpusOpts{label},
 	   'category-list|cat-list|cats|cat-file|cf|c=s' => \$catListFile,
+	   'max-cats|maxcats|mc=i' => \$maxCats,
+	   'max-degree|max-deg|maxdeg|md=i' =>\$maxDeg,
 
 	   ##-- I/O
 	   'output-file|outfile|out|of|o=s'=> \$outfile,
@@ -81,9 +85,7 @@ sub loadCatList {
 our $corpus = undef;
 
 ##-- load good-cat list file
-pod2usage({-exitval=>1, -verbose=>0, -msg=>'No category list file specified!'})
-  if (!defined($catListFile));
-loadCatList($catListFile);
+loadCatList($catListFile) if ($catListFile);
 
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);
@@ -94,8 +96,22 @@ foreach (@ARGV) {
   $corpus->addCorpus($c2);
 }
 
-##-- prune
-@{$corpus->{docs}} = grep {exists($goodCats{$_->cats->[0]{name}})} @{$corpus->{docs}};
+##-- prune: by cats
+if ($catListFile) {
+  print STDERR "$prog: prune: by categories (catListFile=$catListFile)\n" if ($verbose);
+  @{$corpus->{docs}} = grep {exists($goodCats{$_->cats->[0]{name}})} @{$corpus->{docs}};
+}
+if ($maxCats) {
+  print STDERR "$prog: prune: by max ambiguity (maxCats=$maxCats)\n" if ($verbose);
+  @{$corpus->{docs}} = grep {scalar($_->cats)<=$maxCats} @{$corpus->{docs}};
+}
+if ($maxDeg) {
+  print STDERR "$prog: prune: by max degree (maxDeg=$maxDeg)\n" if ($verbose);
+  foreach (@{$corpus->{docs}}) {
+    @{$_->{cats}} = grep {$_->{deg} <= $maxDeg} @{$_->cats};
+  }
+  @{$corpus->{docs}} = grep {scalar(@{$_->{cats}}) > 0} @{$corpus->{docs}};
+}
 
 print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
 $corpus->saveFile($outfile, %saveopts);
@@ -114,7 +130,9 @@ dc-corpus-select.perl - select sub-corpus by document category
   -help                  # this help message
   -verbose LEVEL         # verbosity level
   -label LABEL           # set output corpus label
-  -cat-file FILE         # file containing list of "good" categories
+  -cat-file FILE         # file containing list of "good" categories (undef for none)
+  -max-cats N            # maximum number of categories to allow in documents (0 ~ no limie)
+  -max-deg N             # maximum degree to allow in documents (0 ~ no limit)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output corpus (default=guess)
   -output-file FILE      # set corpus output file (default=-)
