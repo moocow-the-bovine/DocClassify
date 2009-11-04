@@ -103,7 +103,7 @@ if ($catListFile) {
 }
 if ($maxCats) {
   print STDERR "$prog: prune: by max ambiguity (maxCats=$maxCats)\n" if ($verbose);
-  @{$corpus->{docs}} = grep {scalar($_->cats)<=$maxCats} @{$corpus->{docs}};
+  @{$corpus->{docs}} = grep {scalar(@{$_->cats}) <= $maxCats} @{$corpus->{docs}};
 }
 if ($maxDeg) {
   print STDERR "$prog: prune: by max degree (maxDeg=$maxDeg)\n" if ($verbose);
