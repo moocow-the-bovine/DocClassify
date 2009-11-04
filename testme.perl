@@ -826,6 +826,8 @@ sub test_errors {
   my $c1dist_mu = $dc1dist->average_nz->decode; ##-- dense: [$cid1] -> avg d($cid1,$doc : cat1($doc)==$cid1)
   my $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt; ##-- dense: [$cid1] -> stddev d($cid1,$doc : cat1($doc)==$cid1)
 
+  ##--BUGHUNT
+
   ##--------------------------------------
   ## doc-cat: "adjusted" distance (std-normal (Z) values), pdf, cdf
   my $dcdistz   = ($dcdist-$c1dist_mu->slice("*1,"))/$c1dist_sd->slice("*1,"); ##-- [$ci,$di] -> Z_{$ci}(d($ci,$di))
@@ -853,7 +855,8 @@ sub test_errors {
     $cid   = $cenum->{sym2id}{$dcat1->{name}};
     $ccdist->slice("($cid),") += $dcdist->slice("($did)");
   }
-  $ccdist /= $cnd->double;
+  my $ccdist2 = $ccdist / $cnd->double->slice("*1,"); ##-- average by $c2
+  $ccdist /= $cnd->double;                            ##-- average by $c1
   ##
   ##-- cat-cat dist Z, cdf, pdf
   my $ccdistz   = ($ccdist-$c1dist_mu->slice("*1,"))/$c1dist_sd->slice("*1,"); ##-- [$c1,$c2] -> Z_{$c1}(avg d($c1,$c2))
@@ -990,8 +993,82 @@ sub test_pval_map {
 
   print STDERR "$0: test_pval_map done: what now?\n";
 }
-test_pval_map(@ARGV);
+#test_pval_map(@ARGV);
 
+sub test_compile_xcheck {
+  my $mfile = shift;
+  $mfile = 'vzdata-safe.u1.train0.bin' if (!defined($mfile));
+  $mfile = "$mfile.xcheck.bin" if (-r "$mfile.xcheck.bin"); ##-- pre-xcheckd
+  print STDERR "$0: load($mfile)\n";
+  my $map = DocClassify::Mapper::LSI->loadFile("$mfile")
+    or die("$0: Mapper->loadFile($mfile) failed: $!");
+
+  if (!defined($map->{dc_dist})) {
+    ##-- run cross-check
+    $map->{xn} = 3;
+    $map->compileCrossCheck();
+    $map->saveFile("$mfile.xcheck.bin")
+      or die("$0: Mapper->saveFile($mfile.xcheck.bin) failed: $!");
+  }
+
+  ##-- cross-check env
+  my $NC     = $map->{lcenum}->size;
+  my $ND     = $map->{denum}->size;
+  my $dcm_z = $map->{dcm}->missing->sclr;
+  my $d2c   = $map->{dcm}->xchg(0,1)->_missing('inf')->minimum_ind->decode;  ##-- [$di] -> $ci_best
+  $map->{dcm}->missing($dcm_z);
+
+  my $dc_dist = $map->{dc_dist};
+
+  ##-- get positive evidence
+  my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
+  my $dc_mask   = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
+  $dc_mask->indexND($dc_which1) .= 1;
+  my $dc_which0 = whichND(!$dc_mask);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
+  #my $d_dist1   = $dc_dist->indexND($dc_which1);        ##-- [$di]     ->     dist($di,$ci) : $di \in $ci
+  #my $d_dist0   =                                       ##-- [$di]     -> avg dist($di,$ci) : $di \not\in $ci
+  #  PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0))->xchg(0,1)->average_nz->decode;
+
+  ##-- from testme.perl test_errors(), above
+  ##
+  ## $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \in $ci
+  ## $c1dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ## $c1dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
+  my $c1dist_mu = $dc1dist->average_nz->decode;
+  my $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  #my $c1dist_sd_eps = $c1dist_sd->where($c1dist_sd->isfinite)->minimum/2;
+  my $c1dist_sd_eps = 0.01;
+  $c1dist_mu->where(!$c1dist_sd->isfinite) .= 0;
+  $c1dist_sd->where(!$c1dist_sd->isfinite) .= $c1dist_sd_eps;
+
+  ## $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
+  ## $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
+  ## $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
+  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
+  my $c0dist_mu = $dc0dist->average_nz->decode;
+  my $c0dist_sd = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  #my $c0dist_sd_eps = $c0dist_sd->where($c0dist_sd->isfinite)->minimum/2;
+  #my $c0dist_sd_eps = $c0dist_sd->where($c0dist_sd->isfinite)->average;
+  #my $c0dist_sd_eps = 0.01;
+  my $c0dist_sd_eps = 0.1;
+  $c0dist_mu->where(!$c0dist_sd->isfinite) .= 0;
+  $c0dist_sd->where(!$c0dist_sd->isfinite) .= $c0dist_sd_eps;
+
+  ##-- BUGHUNT
+  my $dc1_cdf = gausscdf($dc_dist, $c1dist_mu->slice("*1,"), $c1dist_sd->slice("*1,"));
+  my $dc0_cdf = gausscdf($dc_dist, $c0dist_mu->slice("*1,"), $c0dist_sd->slice("*1,"));
+
+  our %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1', ytitle=>'c2', ztitle=>'?');
+  imag($dc0_cdf*(1-$dc1_cdf)*1,       {%iplot,itf=>'linear'});
+  imag($dc0_cdf*(1-$dc1_cdf)*$dc_mask,{%iplot,itf=>'log'});
+  imag(1-$dc1_cdf*(1-$dc0_cdf),{%iplot,itf=>'linear'});
+
+  ##-- IDEA: give target pr,rc p-values, implement cutoff with gaussian width tradeoff ?!
+
+  print STDERR "$0: test_compile_xcheck() done: what now?\n";
+}
+test_compile_xcheck();
 
 ##======================================================================
 ## test: pdl ccs buglet

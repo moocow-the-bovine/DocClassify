@@ -187,6 +187,7 @@ sub clearTrainingCache {
 sub compileCrossCheck {
   my $map = shift;
   my $xcn = $map->{xn};
+
   if (!$xcn || $xcn<3) {
     warn(ref($map)."::compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")");
     return $map;
@@ -209,13 +210,10 @@ sub compileCrossCheck {
   $map->{dcm}->missing($dcm_z);
 
   ##-- cross-check: train & map
-  my $d_dist = zeroes(double,$ND);       ##-- [$di] -> dist($doc,bestcat($doc))
-  #my $c_n     = zeroes(double,$NC);       ##-- [$ci] -> |{d : bestcat(d)==c}|
-  #my ($c_v,$c_vc) = valcounts($d2c);
-  #$c_n->index($c_v) .= $c_vc;
+  my $dc_dist = zeroes(double,$ND,$NC);       ##-- [$di,$ci] -> dist($di,$ci)
   ##
   my ($xci,$xclabel, $map2, $docids_local,$docids_other);
-  my ($od_did,$od_tdm,$od_xdm,$od_cdmat, $od_c);
+  my ($od_did,$od_tdm,$od_xdm,$od_cdmat);
   foreach $xci (1..$xcn) {
     ##-- create & compile subset mapper
     $xclabel = "XCHECK ($xci/$xcn)";
@@ -237,11 +235,27 @@ sub compileCrossCheck {
       $od_tdm = $map->{tdm}->dice_axis(1,$od_did);
       $od_xdm = $map2->svdApply($od_tdm);
       $od_cdmat = $map2->{disto}->clusterDistanceMatrix(data=>$od_xdm,cdata=>$map2->{xcm});
-      $od_c   = $d2c->at($od_did);
-      $d_dist->index($od_did) .= $od_cdmat->slice("$od_c,0");
+      $dc_dist->slice("($od_did),") .= $od_cdmat->flat;
     }
   }
 
+  ##-- DEBUG
+  $map->{dc_dist} = $dc_dist;
+
+  ##-- get positive evidence
+  my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
+  my $dc_mask   = $dc_dist->zeroes->byte;               ##-- [$di,$ci] -> 1($di \in     $ci)
+  $dc_mask->indexND($dc_which1) .= 1;
+  my $dc_which0 = whichND(!$dc_mask);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
+  my $d_dist1   = $dc_dist->indexND($dc_which1);        ##-- [$di]     ->     dist($di,$ci) : $di \in $ci
+  my $d_dist0   =                                       ##-- [$di]     -> avg dist($di,$ci) : $di \not\in $ci
+    PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0))->xchg(0,1)->average_nz->decode;
+
+  return $map;
+}
+
+sub argh {
+  no strict;
   ##-- get normal fit parameters
   print STDERR ref($map)."::compileCrossCheck(): FIT\n" if ($map->{verbose});
   my $dcdist_w = sequence($ND)->cat($d2c)->xchg(0,1); ##-- [$di,$ci] -> dist($ci,$di) : $di \in $ci
@@ -262,6 +276,7 @@ sub compileCrossCheck {
   }
 
   ##-- store fit parameters
+  $map->{dcdist}   = $dcdist;   ##-- DEBUG
   $map->{cdist_mu} = $cdist_mu;
   $map->{cdist_sd} = $cdist_sd;
 
@@ -325,10 +340,10 @@ sub compile_svd {
   print STDERR ref($map)."::compile_svd() [$label]: SVD (svdr=>$map->{svdr})\n" if ($map->{verbose});
   my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr});
   $svd->computeccs_nd($map->{tdm});
-  if ($opts{shrink}) {
+  if ($opts{svdShrink}) {
     $svd->shrink();
     print STDERR ref($map)."::compile_svd() [$label]: SVD: auto-shrunk to r=$svd->{r}\n" if ($map->{verbose});
-    #$map->{svdr} = $svd->{r}; ##-- don't override here
+    $map->{svdr} = $svd->{r};
   }
   return $map;
 }
