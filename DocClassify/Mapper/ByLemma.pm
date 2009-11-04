@@ -207,10 +207,10 @@ sub compile {
   #@{$map->{docs}} = qw();
 
   ##-- matrix: $map->{tcm0}: ($NT,$NC) : CCS::Nd: [Term x Cat -> Freq]
-  $map->compile_tcm0();
+  #$map->compile_tcm0(); ##-- not by default
 
   ##-- matrix: $map->{tcm}: ($NT,$NC) : CCS::Nd: [Term x Cat -> WeightedLogFreq]
-  $map->{tcm} = ($map->{tcm0}+$map->{smoothf})->inplace->log*$map->{tw};
+  #$map->{tcm} = ($map->{tcm0}+$map->{smoothf})->inplace->log*$map->{tw};
 
   return $map;
 }
@@ -535,6 +535,14 @@ sub compile_tw {
   return $map;
 }
 
+## $tXm = $map->logwm($tXm0)
+##  + compiles log-transformed, term-weighted matrix $tXm ($NT,$NX) from raw frequency matrix $tXm0 ($NT,$NX)
+##  + $tXm0 may be either a dense PDL or a PDL::CCS::Nd
+sub logwm {
+  my ($map,$txm0) = @_;
+  $txm0 = $txm0->dummy(1,1) if ($txm0->ndims==0); ##-- someone passed in a flat term matrix
+  return ($txm0+$map->{smoothf})->inplace->log->inplace->mult($map->{tw},0);
+}
 
 ##==============================================================================
 ## Methods: API: Classification

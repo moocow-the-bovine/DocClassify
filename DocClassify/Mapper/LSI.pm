@@ -138,57 +138,16 @@ sub compile {
   #@{$map->{docs}} = qw();
 
   ##-- create & compute $map->{svd}
-  print STDERR ref($map)."::compile(): SVD (svdr=>$map->{svdr})\n" if ($map->{verbose});
-  my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr});
-  $svd->computeccs_nd($map->{tdm});
-  $svd->shrink();
-  print STDERR ref($map)."::compile(): SVD: auto-shrunk to r=$svd->{r}\n" if ($map->{verbose});
-  $map->{svdr} = $svd->{r};
+  $map->compile_svd();
 
-  ##-- create $map->{xdm} ~= $map->{svd}->apply($map->{tdm})
-  my ($xdm);
-  my ($NC,$ND) = map {$map->{$_}->size} qw(lcenum denum);
-  print STDERR ref($map)."::compile(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($map->{verbose});
-  $xdm = $map->{xdm} = $svd->{u};         ##-- we've already computed the bugger (duh!)
+  ##-- matrix: $map->{xdm}: (R=$map->{svdr} x ND) [R x Doc -> X]
+  $map->compile_xdm();
 
-  ##-- get cat-profiling method
-  my $catProfile = $map->{catProfile};
-  $catProfile = 'average' if (!defined($catProfile));
-  if ($catProfile =~ /^fold/) { $catProfile = 'fold-in'; }
-  elsif ($catProfile =~ /^a/) { $catProfile = 'average'; }
-  elsif ($catProfile =~ /^w/) { $catProfile = 'weighted-average'; }
-  else {
-    confess(ref($map)."::compile(): unknown category-profiling method '$catProfile'");
-    return undef;
-  }
-
-  ##-- create $map->{xcm} ~= $map->{svd}->apply($map->{tcm})
-  print STDERR ref($map)."::compile(): matrix: xcm: (r=$map->{svdr} x NC=$NC) [R x Cat -> Sv] : prof=$catProfile\n"
-    if ($map->{verbose});
-
-  if ($catProfile eq 'fold-in') {
-    $map->{xcm} = $svd->apply($map->{tcm}->decode);
-  }
-  elsif ($catProfile eq 'average' || $catProfile eq 'weighted-average') {
-    ##-- TODO: use MUDL::Cluster::Method::d2c_*() methods here!
-    my $lc_sym2id = $map->{lcenum}{sym2id};
-    my $xcm = $map->{xcm} = zeroes(double, $map->{svdr},$NC);
-    my $doc_weight = $catProfile eq 'average' ? ones($ND) : $map->{tdm0}->sumover->decode;
-    $doc_weight  /= $doc_weight->sumover;
-    my ($doc,$d_id,$d_x,$c_id,$cat);
-    foreach $doc (@{$map->{docs}}) {
-      $d_id = $doc->{id};
-      $d_x  = $doc_weight->index($d_id) * $xdm->slice(",$d_id");       ##-- [0,$di] -> $x
-      foreach $cat (@{$doc->{cats}}) {
-	$c_id = $lc_sym2id->{$cat->{name}};
-	$xcm->slice(",$c_id") += $d_x;
-      }
-    }
-  }
+  ##-- matrix: $map->{xcm}: (R=$map->{svdr} x NC=$NC) [R x Cat -> Sv]
+  $map->compile_xcm();
 
   ##-- create distance object
-  print STDERR ref($map)."::compile(): disto: dist=$map->{dist}\n" if ($map->{verbose});
-  $map->{disto} = MUDL::Cluster::Distance->new(class=>$map->{dist});
+  $map->compile_disto();
 
   return $map;
 }
@@ -214,6 +173,101 @@ sub clearTrainingCache {
   return $map;
 }
 
+##--------------------------------------------------------------
+## Methods: Compilation: Utils
+##  + see also Mapper::ByLemma
+
+## $map = $map->compile_svd()
+##  + compiles $map->{svd} from $map->{tdm}
+sub compile_svd {
+  my $map = shift;
+
+  print STDERR ref($map)."::compile_svd(): SVD (svdr=>$map->{svdr})\n" if ($map->{verbose});
+  my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr});
+  $svd->computeccs_nd($map->{tdm});
+  $svd->shrink();
+  print STDERR ref($map)."::compile_svd(): SVD: auto-shrunk to r=$svd->{r}\n" if ($map->{verbose});
+  $map->{svdr} = $svd->{r};
+  return $map;
+}
+
+## $map = $map->compile_xdm()
+##  + compiles $map->{xdm}: (R=$map->{svdr} x ND) [R x Doc -> X]
+##  + really just a wrapper for $map->{xdm}=$map->{svd}{u}
+sub compile_xdm {
+  my $map = shift;
+  my $ND = $map->{denum}->size;
+  print STDERR ref($map)."::compile_xdm(): matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n" if ($map->{verbose});
+  $map->{xdm} = $map->{svd}{u};         ##-- we've already computed the bugger (duh!)
+  return $map;
+}
+
+## $cpMethod = $map->catProfileMethod()
+##  + gets $map->{catProfile}, does some sanity checks & canonicalization (caches)
+sub catProfileMethod {
+  my $map = shift;
+  my $catProfile = $map->{catProfile};
+  $catProfile = 'average' if (!defined($catProfile));
+  if ($catProfile =~ /^fold/) { $catProfile = 'fold-in'; }
+  elsif ($catProfile =~ /^a/) { $catProfile = 'average'; }
+  elsif ($catProfile =~ /^w/) { $catProfile = 'weighted-average'; }
+  else {
+    confess(ref($map)."::catProfileMethod(): unknown category-profiling method option '$catProfile'");
+    return undef;
+  }
+  return $map->{catProfile} = $catProfile;
+}
+
+## $map = $map->compile_xcm()
+##  + compiles dense matrix $map->{xcm}: (r=$map->{svdr} x NC=$NC) [R x Cat -> Sv]
+##  + calls $map->catProfileMethod()
+##  + requires $map->{svd}
+##  + may require $map->{tdm0}, $map->{tcm0}, $map->{xdm}
+sub compile_xcm {
+  my $map = shift;
+
+  ##-- vars: common
+  my $catProfile = $map->catProfileMethod();
+  my ($NC,$ND) = map {$map->{$_}->size} qw(lcenum denum);
+
+  ##-- guts
+  print STDERR ref($map)."::compile_xcm(): matrix: xcm: (r=$map->{svdr} x NC=$NC) [R x Cat -> Sv] : prof=$catProfile\n";
+  if ($catProfile eq 'fold-in') {
+    ##-- fold-in
+    $map->compile_tcm0() if (!defined($map->{tcm0}));
+    $map->compile_tcm()  if (!defined($map->{tcm}));
+    $map->{xcm} = $map->{svd}->apply($map->{tcm}->decode);
+  }
+  elsif ($catProfile eq 'average' || $catProfile eq 'weighted-average') {
+    ##-- TODO: use MUDL::Cluster::Method::d2c_*() methods here!
+    my $lc_sym2id = $map->{lcenum}{sym2id};
+    my $xdm = $map->{xdm};
+    my $xcm = zeroes(double, $map->{svdr},$NC);
+    my $doc_weight = $catProfile eq 'average' ? ones($ND) : $map->{tdm0}->sumover->decode;
+    $doc_weight  /= $doc_weight->sumover;
+    my ($doc,$d_id,$d_x,$c_id,$cat);
+    foreach $doc (@{$map->{docs}}) {
+      $d_id = $doc->{id};
+      $d_x  = $doc_weight->index($d_id) * $xdm->slice(",$d_id"); ##-- [0,$di] -> $x
+      foreach $cat (@{$doc->{cats}}) {
+	$c_id = $lc_sym2id->{$cat->{name}};
+	$xcm->slice(",$c_id") += $d_x;
+      }
+    }
+    $map->{xcm} = $xcm;
+  }
+
+  return $map;
+}
+
+## $map = $map->compile_disto()
+##  + compiles distance object $map->{disto} from symbolic spec $map->{dist}
+sub compile_disto {
+  my $map = shift;
+  print STDERR ref($map)."::compile_disto(): disto: dist=$map->{dist}\n" if ($map->{verbose});
+  $map->{disto} = MUDL::Cluster::Distance->new(class=>$map->{dist});
+  return $map;
+}
 
 ##==============================================================================
 ## Methods: API: Classification
