@@ -453,13 +453,13 @@ sub mapDocument {
   ##-- compute distance to each centroid
   my $xdm   = $map->svdApply($tdm);
   my $cdmat = $map->{disto}->clusterDistanceMatrix(data=>$xdm,cdata=>$map->{xcm});
-  my $cdmat_cdf = gausscdf($cdmat, $map->{cdist_mu}, $map->{cdist_sd});
+  my $cdmat_cdf = defined($map->{cdist_mu}) ? gausscdf($cdmat, $map->{cdist_mu}, $map->{cdist_sd}) : $cdmat;
 
   ##-- dump distances to $doc->{cats}
   my $cname;
   @{$doc->{cats}} = map {
     $cname = $map->{lcenum}{id2sym}[$_];
-    {id=>$map->{gcenum}{sym2id}{$cname}, name=>$cname, dist=>$cdmat_cdf->at($_,0), dist_raw=>$cdmat->at($_,0)} #deg=>99
+    {id=>$map->{gcenum}{sym2id}{$cname}, name=>$cname, dist=>$cdmat_cdf->at($_,0), dist_raw=>$cdmat->at($_,0)}
   } $cdmat_cdf->flat->qsorti->list;
   #$doc->{cats}[0]{deg} = 1;
   $doc->{cats}[$_]{deg} = $_+1 foreach (0..$#{$doc->{cats}});
