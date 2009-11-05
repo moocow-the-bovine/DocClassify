@@ -267,7 +267,7 @@ sub argh {
   my $cdist_mu = $dcdist->average_nz->decode;
   my $cdist_sd = (($dcdist - $cdist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
   my $sd_eps   = 1e-30;
-  $cdist_sd->where( (!$cdist_sd->isfinite) | ($cdist_sd==0) ) .= $sd_eps;
+  #$cdist_sd->where( (!$cdist_sd->isfinite) | ($cdist_sd==0) ) .= $sd_eps; ##-- ARGH!
   if ($map->{verbose}) {
     print STDERR
       (ref($map)."compileCrossCheck(): c_mu = $cdist_mu\n",

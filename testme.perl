@@ -1009,15 +1009,17 @@ sub test_compile_xcheck {
     $map->compileCrossCheck();
     $map->saveFile("$mfile.xcheck.bin")
       or die("$0: Mapper->saveFile($mfile.xcheck.bin) failed: $!");
+    exit(0);
   }
 
   ##-- cross-check env
+  my $lcenum = $map->{lcenum};
   my $NC     = $map->{lcenum}->size;
   my $ND     = $map->{denum}->size;
-  my $dcm_z = $map->{dcm}->missing->sclr;
-  my $d2c   = $map->{dcm}->xchg(0,1)->_missing('inf')->minimum_ind->decode;  ##-- [$di] -> $ci_best
-  $map->{dcm}->missing($dcm_z);
-
+  my $dcm   = $map->{dcm};
+  my $dcm_z = $dcm->missing->sclr;
+  my $d2c   = $dcm->xchg(0,1)->_missing('inf')->minimum_ind->decode;  ##-- [$di] -> $ci_best
+  $dcm->missing($dcm_z);
   my $dc_dist = $map->{dc_dist};
 
   ##-- get positive evidence
@@ -1028,47 +1030,142 @@ sub test_compile_xcheck {
   #my $d_dist1   = $dc_dist->indexND($dc_which1);        ##-- [$di]     ->     dist($di,$ci) : $di \in $ci
   #my $d_dist0   =                                       ##-- [$di]     -> avg dist($di,$ci) : $di \not\in $ci
   #  PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0))->xchg(0,1)->average_nz->decode;
+  my $nc  = $dc_mask->long->sumover->double;             ##-- [$ci] -> |{ $di : $di \in     $ci }|
+  my $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
 
   ##-- from testme.perl test_errors(), above
-  ##
+  ## $dcdist_mu = global avg    dist($ci,$di)
+  ## $dcdist_sd = global stddev dist($ci,$di)
+  my $dcdist_mu = $dc_dist->flat->average;
+  my $dcdist_sd = (($dc_dist - $dcdist_mu)**2)->flat->average->sqrt;
+
+  my $nc_min = 10; ##-- minimum #/cats to use fit
+
   ## $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \in $ci
   ## $c1dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
   ## $c1dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
-  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
-  my $c1dist_mu = $dc1dist->average_nz->decode;
-  my $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
-  #my $c1dist_sd_eps = $c1dist_sd->where($c1dist_sd->isfinite)->minimum/2;
-  my $c1dist_sd_eps = 0.01;
-  $c1dist_mu->where(!$c1dist_sd->isfinite) .= 0;
-  $c1dist_sd->where(!$c1dist_sd->isfinite) .= $c1dist_sd_eps;
+  ## $c1dist_mu0, $c1dist_sd0: global fit parameters
+  my ($dc1dist,$c1dist_mu,$c1dist_sd,$c1dist_isgood,$c1dist_sd_eps);
+  $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
+  $c1dist_mu0 = $dc1dist->_nzvals->average;
+  $c1dist_sd0 = (($dc1dist->_nzvals-$c1dist_mu0)**2)->average->sqrt;
+  $c1dist_mu = $dc1dist->average_nz->decode;
+  $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  $c1dist_isgood = (($c1dist_sd->isfinite) & ($nc >= $nc_min));
+  ##
+  #$c1dist_sd_eps = $c1dist_sd->where($c1dist_sd->isfinite)->maximum*2;
+  #$c1dist_sd_eps = $c1dist_sd->where($c1dist_sd->isfinite)->minimum/2;
+  #$c1dist_sd_eps = 0.01;
+  $c1dist_sd_eps = $c1dist_sd0;
+  ##
+  #$c1dist_mu->where(!$c1dist_sd->isfinite) .= 0;
+  #$c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu->where($c1dist_isgood)->minimum/2;
+  $c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu0;
+  $c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd_eps;
 
   ## $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
   ## $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
   ## $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
-  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
-  my $c0dist_mu = $dc0dist->average_nz->decode;
-  my $c0dist_sd = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
-  #my $c0dist_sd_eps = $c0dist_sd->where($c0dist_sd->isfinite)->minimum/2;
-  #my $c0dist_sd_eps = $c0dist_sd->where($c0dist_sd->isfinite)->average;
-  #my $c0dist_sd_eps = 0.01;
-  my $c0dist_sd_eps = 0.1;
-  $c0dist_mu->where(!$c0dist_sd->isfinite) .= 0;
-  $c0dist_sd->where(!$c0dist_sd->isfinite) .= $c0dist_sd_eps;
+  ## $c0dist_mu0, $c0dist_sd0: global fit parameters
+  my ($dc0dist,$c0dist_mu,$c0dist_sd, $c0dist_isgood, $c0dist_sd_eps);
+  my ($c0dist_mu0,$c0dist_sd0);
+  $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
+  $c0dist_mu0 = $dc0dist->_nzvals->average;
+  $c0dist_sd0 = (($dc0dist->_nzvals-$c0dist_mu0)**2)->average->sqrt;
+  $c0dist_mu = $dc0dist->average_nz->decode;
+  $c0dist_sd = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  $c0dist_isgood = (($c0dist_sd->isfinite) & ($nc >= $nc_min));
+  ##
+  #$c0dist_sd_eps = $c0dist_sd->where($c0dist_isgood)->minimum/2;
+  #$c0dist_sd_eps = $c0dist_sd->where($c0dist_isgood)->average;
+  #$c0dist_sd_eps = $c0dist_sd->where($c0dist_isgood)->maximum*2;
+  #$c0dist_sd_eps = 0.01;
+  #$c0dist_sd_eps = 0.1;
+  $c0dist_sd_eps = $c0dist_sd0;
+  ##
+  #$c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu->where($c0dist_isgood)->minimum/2;
+  #$c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu->where($c0dist_isgood)->maximum*2;
+  $c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu0;
+  $c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd_eps;
+
 
   ##-- BUGHUNT
   my $dc1_cdf = gausscdf($dc_dist, $c1dist_mu->slice("*1,"), $c1dist_sd->slice("*1,"));
   my $dc0_cdf = gausscdf($dc_dist, $c0dist_mu->slice("*1,"), $c0dist_sd->slice("*1,"));
+
+  my $dc1_cdf0 = gausscdf($dc_dist, $c1dist_mu0, $c1dist_sd0);
+  my $dc0_cdf0 = gausscdf($dc_dist, $c0dist_mu0, $c0dist_sd0);
+
+  my @cdf_lam = (1e-5,undef);
+  $cdf_lam[1] = 1-$cdf_lam[0];
+  my $dc1_scdf = ($cdf_lam[1]*$dc1_cdf+$cdf_lam[0]);
+  my $dc0_scdf = ($cdf_lam[1]*$dc0_cdf+$cdf_lam[0]);
+  my $dc_cdflF = (2.0/($dc1_cdfl**-1 + $dc0_cdfl**-1));
+  #my $dc_cdflF1 = (2.0/($dc1_cdfl**-1 + (1-$dc0_cdfl)**-1));
+  #my $dc_cdflF1b = (1/(.25*$dc1_cdfl**-1 + .75*(1-$dc0_cdfl)**-1));
+
+  my $dc1_scdf0 = ($cdf_lam[1]*$dc1_cdf1+$cdf_lam[0]);
+  my $dc0_scdf0 = ($cdf_lam[1]*$dc0_cdf1+$cdf_lam[0]);
 
   our %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1', ytitle=>'c2', ztitle=>'?');
   imag($dc0_cdf*(1-$dc1_cdf)*1,       {%iplot,itf=>'linear'});
   imag($dc0_cdf*(1-$dc1_cdf)*$dc_mask,{%iplot,itf=>'log'});
   imag(1-$dc1_cdf*(1-$dc0_cdf),{%iplot,itf=>'linear'});
 
+  ##-- baseline
+  my $accbase = ($dc_dist->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .542
+
+  ##-- stupid p-value base
+  my $dnewp = ($dc1_scdf);
+  my $accp  = ($dnewp->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .506
+
+  my $dnewp0 = ($dc0_scdf);
+  my $accp0  = ($dnewp0->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .501
+
+  ##-- try this
+  my $dnew0 = $dc1_scdf**($nc/$ND)->slice("*1,");
+  my $acc0  = ($dnew0->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .583 [best so far]
+
+  ##-- ... or this?
+  my $dnew1 = $dc1_scdf0**($nc/$ND)->slice("*1,");
+  my $acc1  = ($dnew1->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .569
+
+  ##-- ... or this?
+  my $dnew2 = $dc1_scdf0**($nc/$ND)->slice("*1,") + $dc0_scdf0**($nnc/$ND)->slice("*1,");
+  my $acc2  = ($dnew2->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .575
+
+  ##-- ... or this?
+  my $dnew3 = $dc1_scdf**($nc/$ND)->slice("*1,") + $dc0_scdf**($nnc/$ND)->slice("*1,");
+  my $acc3  = ($dnew3->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .560
+
+  ##-- or this?
+  my $dnew4 = $dc1_scdf**($nc/$ND)->slice("*1,") * ($dc0_scdf)**($nnc/$ND)->slice("*1,");
+  my $acc4  = ($dnew4->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .479
+
   ##-- IDEA: give target pr,rc p-values, implement cutoff with gaussian width tradeoff ?!
 
   print STDERR "$0: test_compile_xcheck() done: what now?\n";
 }
 test_compile_xcheck();
+
+
+##-- test doc freeze-thaw
+sub test_freeze_thaw {
+  my $dfile = 'test-small.xml';
+  my $doc = DocClassify::Document->new(file=>$dfile);
+  $doc->xmlDoc();
+
+  my $frz  = $doc->saveBinString();
+  my $doc2 = ref($doc)->loadBinString($frz);
+  undef $doc2;
+
+  $doc2 = Storable::dclone($doc);
+  undef $doc2;
+
+  print STDERR "test_freeze_thaw() done -- what now?\n";
+  exit 0;
+}
+test_freeze_thaw();
 
 ##======================================================================
 ## test: pdl ccs buglet

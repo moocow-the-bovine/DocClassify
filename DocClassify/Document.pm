@@ -400,15 +400,19 @@ sub loadXmlDoc {
 ## ($serialized,$ref1,...) = STORABLE_freeze($obj,$is_cloning)
 sub STORABLE_freeze {
   my ($obj,$is_cloning) = @_;
-  my $fobj = $obj->shadow(%$obj,xdoc=>undef);
-  return ($fobj, ($is_cloning ? $obj->{xdoc} : qw()));
+  my $fobj = {%$obj,xdoc=>undef};
+  return ('', $fobj, ($is_cloning ? $obj->{xdoc} : qw()));
 }
 
 
 ## undef = STORABLE_thaw($obj,$is_cloning,$serialized,$ref1,...)
 sub STORABLE_thaw {
-  my ($obj,$is_cloning,$fobj,$xdoc) = @_;
-  %$obj = (%$fobj, xdoc=>$xdoc);
+  my ($obj,$is_cloning,$ser,$fobj,$xdoc) = @_;
+  if (!UNIVERSAL::isa($fobj,'HASH')) {
+    %$obj = %{ref($obj)->new(label=>$ser)}; ##-- bug in 1st implementation: workaround here returns empty doc for debugging purposes
+  } else {
+    %$obj = (%$fobj, ($is_cloning ? (xdoc=>$xdoc) : qw()));
+  }
   return;
 }
 

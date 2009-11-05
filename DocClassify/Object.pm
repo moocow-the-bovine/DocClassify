@@ -175,12 +175,14 @@ sub loadString {
 ##--------------------------------------------------------------
 ## Methods: I/O: Binary: save
 
-## $bool = $obj->saveBinFile($filename_or_fh)
+## $bool = $obj->saveBinFile($filename_or_fh,%opts)
+##  + %opts:
+##     netorder => $bool,  ##-- store in network order? (default=0)
 sub saveBinFile {
-  my ($obj,$file) = @_;
+  my ($obj,$file,%opts) = @_;
   my $fh = ref($file) ? $file : IO::File->new(">$file");
   confess(ref($obj)."::saveBinFile(): open failed for '$file': $!") if (!defined($fh));
-  my $rc = Storable::store_fd($obj,$fh);
+  my $rc = $opts{netorder} ? Storable::nsture_fd($obj,$fh) : Storable::store_fd($obj,$fh);
   $fh->close() if (!ref($file));
   return $rc;
 }
@@ -189,7 +191,7 @@ sub saveBinFile {
 sub saveBinString {
   my $obj = shift;
   my ($fh,$ref) = stringfh('>');
-  $obj->saveBinFile($fh);
+  $obj->saveBinFile($fh,@_);
   $fh->close();
   return $$ref;
 }
