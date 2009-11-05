@@ -598,8 +598,9 @@ sub test_eval_io {
 ##======================================================================
 ## test: group sizes
 
-use MUDL::PDL::Plot;
+#use MUDL::PDL::Plot;
 sub test_group_sizes {
+  require MUDL::PDL::Plot;
   my $nbfile = 'plots/nbytes.dat';
   my $nb = rcols($nbfile);
   usepgplot();
@@ -997,7 +998,8 @@ sub test_pval_map {
 
 sub test_compile_xcheck {
   my $mfile = shift;
-  $mfile = 'vzdata-safe.u1.train0.bin' if (!defined($mfile));
+  #$mfile = 'vzdata-safe.u1.train0.bin' if (!defined($mfile)); ##-- carrot,uhura
+  $mfile = 'vzdata-all.train0.bin' if (!defined($mfile)); ##-- lal
   $mfile = "$mfile.xcheck.bin" if (-r "$mfile.xcheck.bin"); ##-- pre-xcheckd
   print STDERR "$0: load($mfile)\n";
   my $map = DocClassify::Mapper::LSI->loadFile("$mfile")
@@ -1005,7 +1007,9 @@ sub test_compile_xcheck {
 
   if (!defined($map->{dc_dist})) {
     ##-- run cross-check
-    $map->{xn} = 3;
+    #$map->{xn} = 3;
+    $map->{xn} = 10;
+    print STDERR "$0: cross-check\n";
     $map->compileCrossCheck();
     $map->saveFile("$mfile.xcheck.bin")
       or die("$0: Mapper->saveFile($mfile.xcheck.bin) failed: $!");
@@ -1108,7 +1112,7 @@ sub test_compile_xcheck {
 			($c1dist_mu+$c1dist_sd_nan0)->append($c0dist_mu+$c0dist_sd_nan0)->max);
     $eplot{yrange} = [$ymin-($ymax-$ymin)*.02, $ymax+($ymax-$ymin)*.02];
     errb($gcids, $cdist_mu,$cdist_sd, {%eplot});
-    hold; errb($gcids-.2, $c1dist_mu,$c1dist_sd_nan0, {%eplot,color=>'blue'});
+    hold(); errb($gcids-.2, $c1dist_mu,$c1dist_sd_nan0, {%eplot,color=>'blue'});
     hold(); errb($gcids+.2, $c0dist_mu,$c0dist_sd_nan0, {%eplot,color=>'red'});
     hold(); errb($gcids->average->rint+.5, $dcdist_mu,$dcdist_sd, {%eplot,sym=>'plus',color=>'green',lineWidth=>5,charsize=>2});
     release();
@@ -1201,7 +1205,7 @@ sub test_compile_xcheck {
 
   print STDERR "$0: test_compile_xcheck() done: what now?\n";
 }
-test_compile_xcheck();
+test_compile_xcheck(@ARGV);
 
 
 ##-- test doc freeze-thaw
