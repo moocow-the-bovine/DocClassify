@@ -1014,6 +1014,8 @@ sub test_compile_xcheck {
 
   ##-- cross-check env
   my $lcenum = $map->{lcenum};
+  my $gcenum = $map->{gcenum};
+  my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);
   my $NC     = $map->{lcenum}->size;
   my $ND     = $map->{denum}->size;
   my $dcm   = $map->{dcm};
@@ -1034,25 +1036,91 @@ sub test_compile_xcheck {
   my $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
 
   ##-- from testme.perl test_errors(), above
-  ## $dcdist_mu = global avg    dist($ci,$di)
-  ## $dcdist_sd = global stddev dist($ci,$di)
+  ## $dcdist_mu = pdl(1): global avg    dist($ci,$di)
+  ## $dcdist_sd = pdl(1): global stddev dist($ci,$di)
   my $dcdist_mu = $dc_dist->flat->average;
   my $dcdist_sd = (($dc_dist - $dcdist_mu)**2)->flat->average->sqrt;
 
   my $nc_min = 10; ##-- minimum #/cats to use fit
 
+  ## $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ## $cdist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  my ($cdist_mu,$cdist_sd,$cdist_isgood);
+  $cdist_mu = $dc_dist->average;
+  $cdist_sd = (($dc_dist - $cdist_mu->slice("*1,"))**2)->average->sqrt;
+  $cdist_isgood = ($cdist_sd->isfinite)&($cdist_sd>0);
+
+  ##-- plots
+  our (%eplot);
+  if (1) {
+    usepgplot;
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu,sigma: dist(cat,doc)',title=>'Normal Fit Paramters by Category (Global)');
+    errb($gcids, $cdist_mu,$cdist_sd, {%eplot,xr=>[$gcids->min-1,$gcids->max+1],yr=>[($cdist_mu-$cdist_sd)->min*.99,($cdist_mu+$cdist_sd)->max*1.01]});
+    hold(); errb($gcids->average->rint+.5, $dcdist_mu,$dcdist_sd, {symbol=>'star',color=>'blue'});
+    release();
+  }
+
   ## $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \in $ci
   ## $c1dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
   ## $c1dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
   ## $c1dist_mu0, $c1dist_sd0: global fit parameters
-  my ($dc1dist,$c1dist_mu,$c1dist_sd,$c1dist_isgood,$c1dist_sd_eps);
+  my ($dc1dist,$c1dist_mu,$c1dist_sd,$c1dist_sd_nan0,$c1dist_sd_bad0,$c1dist_isgood,$c1dist_sd_eps);
   $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
   $c1dist_mu0 = $dc1dist->_nzvals->average;
   $c1dist_sd0 = (($dc1dist->_nzvals-$c1dist_mu0)**2)->average->sqrt;
   $c1dist_mu = $dc1dist->average_nz->decode;
   $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
   $c1dist_isgood = (($c1dist_sd->isfinite) & ($nc >= $nc_min));
-  ##
+  ($c1dist_sd_nan0 = $c1dist_sd->pdl)->where(!$c1dist_sd->isfinite) .= 0;
+  ($c1dist_sd_bad0 = $c1dist_sd->pdl)->where(!$c1dist_isgood) .= 0;
+
+  ## $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
+  ## $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
+  ## $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
+  ## $c0dist_mu0, $c0dist_sd0: global fit parameters
+  my ($dc0dist,$c0dist_mu,$c0dist_sd,$c0dist_sd_nan0,$c0dist_sd_bad0, $c0dist_isgood, $c0dist_sd_eps);
+  my ($c0dist_mu0,$c0dist_sd0);
+  $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
+  $c0dist_mu0 = $dc0dist->_nzvals->average;
+  $c0dist_sd0 = (($dc0dist->_nzvals-$c0dist_mu0)**2)->average->sqrt;
+  $c0dist_mu = $dc0dist->average_nz->decode;
+  $c0dist_sd = $c0dist_sd_raw = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  $c0dist_isgood = (($c0dist_sd->isfinite) & ($nc >= $nc_min));
+  ($c0dist_sd_nan0 = $c0dist_sd->pdl)->where(!$c0dist_sd->isfinite) .= 0;
+  ($c0dist_sd_bad0 = $c0dist_sd->pdl)->where(!$c0dist_isgood) .= 0;
+
+  ##-- plots
+  if (1) {
+    usepgplot;
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    $eplot{title} = 'Normal Fit by Category (Positives & Global)';
+    $eplot{xrange}= [$gcids->min-1,$gcids->max+1];
+    $eplot{yrange}[0] = ($cdist_mu-$cdist_sd)->append($c1dist_mu-$c1dist_sd_nan0)->min*.99;
+    $eplot{yrange}[1] = ($cdist_mu+$cdist_sd)->append($c1dist_mu+$c1dist_sd_nan0)->max*1.01;
+    ##
+    errb($gcids-.1, $c1dist_mu,$c1dist_sd_nan0, {%eplot,color=>'green'});
+    hold(); errb($gcids, $cdist_mu,$cdist_sd, {%eplot});
+    hold(); errb($gcids->average->rint+.5, $dcdist_mu,$dcdist_sd, {%eplot,symbol=>'star',color=>'blue'});
+    release();
+    ##
+    $eplot{title} = 'Normal Fit by Category (Global, Positives:blue & Negatives:red)';
+    my ($ymin,$ymax) = (($c1dist_mu-$c1dist_sd_nan0)->append($c0dist_mu-$c0dist_sd_nan0)->min,
+			($c1dist_mu+$c1dist_sd_nan0)->append($c0dist_mu+$c0dist_sd_nan0)->max);
+    $eplot{yrange} = [$ymin-($ymax-$ymin)*.02, $ymax+($ymax-$ymin)*.02];
+    errb($gcids, $cdist_mu,$cdist_sd, {%eplot});
+    hold; errb($gcids-.2, $c1dist_mu,$c1dist_sd_nan0, {%eplot,color=>'blue'});
+    hold(); errb($gcids+.2, $c0dist_mu,$c0dist_sd_nan0, {%eplot,color=>'red'});
+    hold(); errb($gcids->average->rint+.5, $dcdist_mu,$dcdist_sd, {%eplot,sym=>'plus',color=>'green',lineWidth=>5,charsize=>2});
+    release();
+    ##
+    $eplot{title} = 'Normal Fit by Category (Positives:black, & Negatives:red)';
+    errb($gcids-.1, $c1dist_mu,$c1dist_sd_nan0, {%eplot});
+    hold(); errb($gcids+.1, $c0dist_mu,$c0dist_sd_nan0, {%eplot,color=>'red'});
+    release();
+  }
+
+
+  ##-- Adjust mu, sd
   #$c1dist_sd_eps = $c1dist_sd->where($c1dist_sd->isfinite)->maximum*2;
   #$c1dist_sd_eps = $c1dist_sd->where($c1dist_sd->isfinite)->minimum/2;
   #$c1dist_sd_eps = 0.01;
@@ -1063,19 +1131,6 @@ sub test_compile_xcheck {
   $c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu0;
   $c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd_eps;
 
-  ## $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
-  ## $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
-  ## $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
-  ## $c0dist_mu0, $c0dist_sd0: global fit parameters
-  my ($dc0dist,$c0dist_mu,$c0dist_sd, $c0dist_isgood, $c0dist_sd_eps);
-  my ($c0dist_mu0,$c0dist_sd0);
-  $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
-  $c0dist_mu0 = $dc0dist->_nzvals->average;
-  $c0dist_sd0 = (($dc0dist->_nzvals-$c0dist_mu0)**2)->average->sqrt;
-  $c0dist_mu = $dc0dist->average_nz->decode;
-  $c0dist_sd = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
-  $c0dist_isgood = (($c0dist_sd->isfinite) & ($nc >= $nc_min));
-  ##
   #$c0dist_sd_eps = $c0dist_sd->where($c0dist_isgood)->minimum/2;
   #$c0dist_sd_eps = $c0dist_sd->where($c0dist_isgood)->average;
   #$c0dist_sd_eps = $c0dist_sd->where($c0dist_isgood)->maximum*2;
@@ -1100,12 +1155,12 @@ sub test_compile_xcheck {
   $cdf_lam[1] = 1-$cdf_lam[0];
   my $dc1_scdf = ($cdf_lam[1]*$dc1_cdf+$cdf_lam[0]);
   my $dc0_scdf = ($cdf_lam[1]*$dc0_cdf+$cdf_lam[0]);
-  my $dc_cdflF = (2.0/($dc1_cdfl**-1 + $dc0_cdfl**-1));
+  my $dc_cdflF = (2.0/($dc1_scdf**-1 + $dc0_scdf**-1));
   #my $dc_cdflF1 = (2.0/($dc1_cdfl**-1 + (1-$dc0_cdfl)**-1));
   #my $dc_cdflF1b = (1/(.25*$dc1_cdfl**-1 + .75*(1-$dc0_cdfl)**-1));
 
-  my $dc1_scdf0 = ($cdf_lam[1]*$dc1_cdf1+$cdf_lam[0]);
-  my $dc0_scdf0 = ($cdf_lam[1]*$dc0_cdf1+$cdf_lam[0]);
+  my $dc1_scdf0 = ($cdf_lam[1]*$dc1_cdf0+$cdf_lam[0]);
+  my $dc0_scdf0 = ($cdf_lam[1]*$dc0_cdf0+$cdf_lam[0]);
 
   our %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1', ytitle=>'c2', ztitle=>'?');
   imag($dc0_cdf*(1-$dc1_cdf)*1,       {%iplot,itf=>'linear'});
