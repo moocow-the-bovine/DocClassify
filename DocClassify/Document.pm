@@ -394,6 +394,24 @@ sub loadXmlDoc {
   return $doc->{xdoc};
 }
 
+##--------------------------------------------------------------
+## Methods: I/O: Binary
+
+## ($serialized,$ref1,...) = STORABLE_freeze($obj,$is_cloning)
+sub STORABLE_freeze {
+  my ($obj,$is_cloning) = @_;
+  my $fobj = $obj->shadow(%$obj,xdoc=>undef);
+  return ($fobj, ($is_cloning ? $obj->{xdoc} : qw()));
+}
+
+
+## undef = STORABLE_thaw($obj,$is_cloning,$serialized,$ref1,...)
+sub STORABLE_thaw {
+  my ($obj,$is_cloning,$fobj,$xdoc) = @_;
+  %$obj = (%$fobj, xdoc=>$xdoc);
+  return;
+}
+
 
 
 ##==============================================================================
