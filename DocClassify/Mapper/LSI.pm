@@ -343,7 +343,7 @@ sub compile_svd {
   if ($opts{svdShrink}) {
     $svd->shrink();
     print STDERR ref($map)."::compile_svd() [$label]: SVD: auto-shrunk to r=$svd->{r}\n" if ($map->{verbose});
-    $map->{svdr} = $svd->{r};
+    $map->{svdr} = $svd->{r}; ##-- NOT HERE ?!
   }
   return $map;
 }

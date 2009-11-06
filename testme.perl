@@ -1009,6 +1009,7 @@ sub test_compile_xcheck {
     ##-- run cross-check
     #$map->{xn} = 3;
     $map->{xn} = 10;
+    $map->{svdr} = 128 if ($map->{svdr} < 128);
     print STDERR "$0: cross-check\n";
     $map->compileCrossCheck();
     $map->saveFile("$mfile.xcheck.bin")
