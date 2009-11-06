@@ -7,12 +7,12 @@ use Getopt::Long;
 
 our $ifile = '-';
 our $ofile = '-';
-our $netorder = 0;
+our $netorder = 1;
 
 GetOptions(
   'output|out|o=s' => \$ofile,
   'network-order|netorder|net|n!' => \$netorder,
-  'machine-order|machorder|m!'    => sub { $netorder=!$_[1]; },
+  'local-order|machine-order|machorder|l|m!'    => sub { $netorder=!$_[1]; },
   );
 
 $ifile = shift if (@ARGV);
