@@ -1032,9 +1032,10 @@ sub ploterrs {
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+
 sub test_compile_xcheck {
   my $mfile = shift;
-  $mfile  = 'vzdata-testset.train0.bin' if (!defined($mfile)); ##-- carrot:small
-  #$mfile = 'vzdata-safe.u1.train0.bin' if (!defined($mfile)); ##-- carrot,uhura
-  #$mfile = 'vzdata-all.train0.bin' if (!defined($mfile)); ##-- lal
+  #$mfile  = 'vzdata-testset.train0.bin' if (!defined($mfile)); ##-- carrot:small
+  #$mfile = 'vzdata-safe.u1.train0.bin' if (!defined($mfile)); ##-- carrot,uhura:bigger
+  $mfile = 'vzdata-all.train0.bin' if (!defined($mfile)); ##-- lal:big
+
   $mfile = "$mfile.xcheck.bin" if (-r "$mfile.xcheck.bin"); ##-- pre-xcheckd
   print STDERR "$0: load($mfile)\n";
   my $map = DocClassify::Mapper::LSI->loadFile("$mfile")
@@ -1086,7 +1087,7 @@ sub test_compile_xcheck {
   my $dcdist_mu = $dc_dist->flat->average;
   my $dcdist_sd = (($dc_dist - $dcdist_mu)**2)->flat->average->sqrt;
 
-  my $nc_min = 50; #3; #10; ##-- minimum #/cats to use fit
+  my $nc_min = 3;#50; #3; #10; ##-- minimum #/cats to use fit
 
   ## $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
   ## $cdist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
@@ -1165,14 +1166,15 @@ sub test_compile_xcheck {
   }
 
 
-  ##-- Adjust mu, sd
+  ##-- hack mu, sd
   #$c1dist_mu->where(!$c1dist_sd->isfinite) .= 0;
   $c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu->where($c1dist_isgood)->minimum;
   #$c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu->where($c1dist_isgood)->minimum/2;
   #$c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu0;
   ##
   #$c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd0;
-  $c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd->where($c1dist_sd->isfinite)->minimum/2;
+  #$c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd->where($c1dist_sd->isfinite)->minimum/2;
+  $c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd->where($c1dist_isgood)->minimum/2;
 
   #$c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu->where($c0dist_isgood)->minimum/2;
   #$c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu->where($c0dist_isgood)->maximum*2;
@@ -1184,9 +1186,36 @@ sub test_compile_xcheck {
   #$c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd->where($c0dist_isgood)->average;
   #$c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd0;
 
+  ##-- plot: hacked mu,sd
+  if (1) {
+    usepgplot;
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ploterrs({%eplot,title=>'Normal Fit by Category: Hacked (+:black, -:red)'},
+	     [$gcids-.1, $c1dist_mu_raw,$c1dist_sd_nan0, {symbol=>'plus',linestyle=>'dotted'}],
+	     [$gcids+.1, $c0dist_mu_raw,$c0dist_sd_nan0, {symbol=>'plus',linestyle=>'dotted',color=>'red'}],
+	     [$gcids-.1, $c1dist_mu,    $c1dist_sd,      {}],
+	     [$gcids+.1, $c0dist_mu,    $c0dist_sd,      {color=>'red'}],
+	     [$gcids,    $nc/$nc->max,$nc->zeroes,       {color=>'yellow',charsize=>2}]
+	    );
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
+    ##
+    ploterrs({%eplot,title=>'Normal Fit by Category: Hacked (+:black, -:red)'},
+	     [$gcids-.1, $c1dist_mu_raw,$nc->zeroes, {symbol=>'plus',linestyle=>'dotted'}],
+	     [$gcids+.1, $c0dist_mu_raw,$nc->zeroes, {symbol=>'plus',linestyle=>'dotted',color=>'red'}],
+	     [$gcids-.1, $c1dist_mu,    $c1dist_sd,  {}],
+	     [$gcids+.1, $c0dist_mu,    $c0dist_sd,  {color=>'red'}],
+	    );
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
+  }
+
+
   ##-- heuristically shovel around fit parameters ($d1)
   my ($conf_nofp,$conf_nofn);
-  ($conf_nofp,$conf_nofn) = (.67,.99); ##-- acc=.566
+  #($conf_nofp,$conf_nofn) = (.67,.99); ##-- acc=.566
   #($conf_nofp,$conf_nofn) = (.9,.95); ##-- acc=.560
   #($conf_nofp,$conf_nofn) = (.67,.95); ##-- acc=.558
   #($conf_nofp,$conf_nofn) = (.85,.95); ##-- acc=.558
@@ -1195,118 +1224,193 @@ sub test_compile_xcheck {
   #($conf_nofp,$conf_nofn) = (.85,.85); ##-- acc=.55297
   #($conf_nofp,$conf_nofn) = (.85,.67); ##-- acc=.541
   #($conf_nofp,$conf_nofn) = (.95,.5);   ##-- acc=.526
-  my ($cutoff_nofp,$cutoff_nofn,$cutoff_avg,$cutoff_wavg,$cutoff_ok,$c1dist_mu_adj,$c0dist_mu_adj);
-  $cutoff_nofp = $c0dist_mu - scalar(gausswidth($conf_nofp, $c0dist_mu,$c0dist_sd));
-  $cutoff_nofn = $c1dist_mu + scalar(gausswidth($conf_nofn, $c1dist_mu,$c1dist_sd));
-  $cutoff_avg  = ($cutoff_nofp + $cutoff_nofn)/2;
-  $cutoff_wavg = $nnc/$ND*$cutoff_nofp + $nc/$ND*$cutoff_nofn;
-  $cutoff_ok   = ($cutoff_nofn < $cutoff_wavg) & ($cutoff_nofp > $cutoff_wavg);
-  our $c1dist_mu_save = $c1dist_mu->pdl;
-  $c1dist_mu_adj = $c1dist_mu->pdl;
-  $c0dist_mu_adj = $c0dist_mu->pdl;
-  if (any(!$cutoff_ok)) {
+  ##--
+  #($conf_nofp,$conf_nofn) = (.67,.67);
+  #($conf_nofp,$conf_nofn) = (.75,.75);
+  #($conf_nofp,$conf_nofn) = (.8,.5);
+  #($conf_nofp,$conf_nofn) = (.5,.8);
+  #($conf_nofp,$conf_nofn) = (.5,.95);
+  #($conf_nofp,$conf_nofn) = (.9,.9);
+  ($conf_nofp,$conf_nofn) = (.95,.95); ##-- best w/ safe.u1:
+  ## : safe.u1.c95-95.log:0.671262699564586	acc:max	Fb((1-$dc1_scdf_adj),(1-$dc0_scdf_adj),(1-($nc/$ND))->slice("*1,"))
+  ## : all.c95-95.log    :0.596383121232418	acc:max	F1((1-$dc1_scdf_adj),(1-$dc0_scdf_adj))
+  #($conf_nofp,$conf_nofn) = (.90,.95);
+  #($conf_nofp,$conf_nofn) = (.95,.90);
+  #($conf_nofp,$conf_nofn) = (.99,.99);
+  my ($cutoff_avg,$cutoff_wavg,$cutoff_ok,$c1dist_mu_adj,$c0dist_mu_adj);
+  #my $cutoff_w1 = ($nc/$ND);
+  my $cutoff_w1 = ($nc/$nc->max);
+  my $compute_cutoffs = sub {
+    print STDERR "compute_cutoffs(): conf_nofp=$conf_nofp; conf_nofn=$conf_nofn\n";
+    $cutoff_nofp = $c0dist_mu - scalar(gausswidth($conf_nofp, $c0dist_mu,$c0dist_sd));
+    $cutoff_nofn = $c1dist_mu + scalar(gausswidth($conf_nofn, $c1dist_mu,$c1dist_sd));
+    $cutoff_avg  = ($cutoff_nofp + $cutoff_nofn)/2;
+    $cutoff_wavg = (1-$cutoff_w1)*$cutoff_nofp + $cutoff_w1*$cutoff_nofn;
+    #$cutoff_wavg = $nnc/$ND*$cutoff_nofp + $nc/$ND*$cutoff_nofn;
+    $cutoff_ok   = ($cutoff_nofn < $cutoff_wavg) & ($cutoff_nofp > $cutoff_wavg);
+    our $c1dist_mu_save = $c1dist_mu->pdl;
+    $c1dist_mu_adj = $c1dist_mu->pdl;
+    $c0dist_mu_adj = $c0dist_mu->pdl;
     $c1dist_mu_adj->where(!$cutoff_ok) .= ($cutoff_wavg - scalar(gausswidth($conf_nofn, $c1dist_mu,$c1dist_sd)))->where(!$cutoff_ok);
+  };
+  $compute_cutoffs->();
+
+  ##-- plot: hacked & adjusted mu,sd
+  if (1) {
+    usepgplot;
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ploterrs({%eplot,title=>"Normal Fit by Category: Hacked & Adjusted (+:black, -:red) [conf=($conf_nofn,$conf_nofp)]"},
+	     [$gcids-.2, $c1dist_mu_raw,$c1dist_sd_nan0, {symbol=>'plus',linestyle=>'dotted'}],
+	     [$gcids+.2, $c0dist_mu_raw,$c0dist_sd_nan0, {symbol=>'plus',linestyle=>'dotted',color=>'red'}],
+	     [$gcids-.1, $c1dist_mu_adj,$c1dist_sd,      {}],
+	     [$gcids+.1, $c0dist_mu_adj,$c0dist_sd,      {color=>'red'}],
+	     [$gcids,    $nc/$nc->max,$nc->zeroes,       {color=>'yellow',charsize=>2}],
+	     [$gcids-.1, $cutoff_nofn,  $nc->zeroes,     {symbol=>'square'}],
+	     [$gcids+.1, $cutoff_nofp,  $nc->zeroes,     {symbol=>'square',color=>'red'}],
+	     [$gcids+.1, $cutoff_wavg,  $nc->zeroes,     {symbol=>'cross',color=>'green'}]);
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
   }
 
+
+
   ##-- BUGHUNT
-  my $dc_cdf = gausscdf($dc_dist, $cdist_mu->slice("*1,"), $cdist_sd->slice("*1,"));
+  my ($dc1_cdf0,$dc0_cdf0, $dc1_scdf0,$dc0_scdf0);
+  my ($dc_cdf,$dc1_cdf,$dc0_scdf,$dc1_scdf);
+  my ($dc_cdf_adj,$dc1_cdf_adj,$dc0_scdf_adj,$dc1_scdf_adj);
+  my ($dc_F1);
+  my $compute_cdfs = sub {
+    $dc_cdf = gausscdf($dc_dist, $cdist_mu->slice("*1,"), $cdist_sd->slice("*1,"));
 
-  my $dc1_cdf = gausscdf($dc_dist, $c1dist_mu->slice("*1,"), $c1dist_sd->slice("*1,"));
-  my $dc0_cdf = gausscdf($dc_dist, $c0dist_mu->slice("*1,"), $c0dist_sd->slice("*1,"));
-  my $dc1_scdf = li1($dc1_cdf,1e-5);
-  my $dc0_scdf = li1($dc0_cdf,1e-5);
+    $dc1_cdf = gausscdf($dc_dist, $c1dist_mu->slice("*1,"), $c1dist_sd->slice("*1,"));
+    $dc0_cdf = gausscdf($dc_dist, $c0dist_mu->slice("*1,"), $c0dist_sd->slice("*1,"));
+    $dc1_scdf = li1($dc1_cdf,1e-5);
+    $dc0_scdf = li1($dc0_cdf,1e-5);
 
-  my $dc1_cdf_adj = gausscdf($dc_dist, $c1dist_mu_adj->slice("*1,"), $c1dist_sd->slice("*1,"));
-  my $dc0_cdf_adj = gausscdf($dc_dist, $c0dist_mu_adj->slice("*1,"), $c0dist_sd->slice("*1,"));
-  my $dc1_scdf_adj = li1($dc1_cdf_adj);
-  my $dc0_scdf_adj = li1($dc0_cdf_adj);
+    $dc1_cdf_adj = gausscdf($dc_dist, $c1dist_mu_adj->slice("*1,"), $c1dist_sd->slice("*1,"));
+    $dc0_cdf_adj = gausscdf($dc_dist, $c0dist_mu_adj->slice("*1,"), $c0dist_sd->slice("*1,"));
+    $dc1_scdf_adj = li1($dc1_cdf_adj);
+    $dc0_scdf_adj = li1($dc0_cdf_adj);
 
-  my $dc1_cdf0 = gausscdf($dc_dist, $c1dist_mu0, $c1dist_sd0);
-  my $dc0_cdf0 = gausscdf($dc_dist, $c0dist_mu0, $c0dist_sd0);
+    $dc1_cdf0 = gausscdf($dc_dist, $c1dist_mu0, $c1dist_sd0);
+    $dc0_cdf0 = gausscdf($dc_dist, $c0dist_mu0, $c0dist_sd0);
+    $dc1_scdf0 = li1($dc1_cdf0,1e-5);
+    $dc0_scdf0 = li1($dc0_cdf0,1e-5);
 
-  my $dc_F1    = F1($dc1_cdf, $dc0_cdf, 1e-5);
-
-  my $dc1_scdf0 = li1($dc1_cdf0,1e-5);
-  my $dc0_scdf0 = li1($dc0_cdf0,1e-5);
+    $dc_F1    = F1($dc1_cdf, $dc0_cdf, 1e-5);
+  };
+  $compute_cdfs->();
 
   our %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1', ytitle=>'c2');
-  imag($dc0_cdf*(1-$dc1_cdf)*1,       {%iplot,itf=>'linear'});
-  imag($dc0_cdf*(1-$dc1_cdf)*$dc_mask,{%iplot,itf=>'log'});
-  imag(1-$dc1_cdf*(1-$dc0_cdf),{%iplot,itf=>'linear'});
+  if (0) {
+    imag($dc0_cdf*(1-$dc1_cdf)*1,       {%iplot,itf=>'linear'});
+    imag($dc0_cdf*(1-$dc1_cdf)*$dc_mask,{%iplot,itf=>'log'});
+    imag(1-$dc1_cdf*(1-$dc0_cdf),{%iplot,itf=>'linear'});
+  }
+
+  ##-- accuracies
+  my $acc = sub {
+    my ($expr,$minmax) = @_;
+    my $dc = eval $expr;
+    $minmax = 'min' if (!defined($minmax));
+    my $cats = $minmax eq 'max' ? $dc->xchg(0,1)->maximum_ind : $dc->xchg(0,1)->minimum_ind;
+    my $acc = ($cats == $d2c)->nnz / $ND;
+    print "$acc\tacc:${minmax}\t$expr\n";
+    return $acc;
+  };
 
   ##-- baseline
-  my $accbase = ($dc_dist->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .542
+  $acc->('$dc_dist'); ##-- .615
 
-  ##-- stupid p-value base
-  my $dnewp = ($dc1_scdf);
-  my $accp  = ($dnewp->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .506; now .595
+  ##-- stupid p-value tests
+  $acc->('$dc_cdf','min'); ##-- .547
+  $acc->('$dc1_scdf'); ##-- .428
+  $acc->('$dc1_scdf_adj'); ##-- .597, all=.592
+  $acc->('F1((1-$dc1_scdf_adj),(1-$dc0_scdf_adj))', 'max'); ##-- .597, all=.591 ##-- USE THIS!
+  if (1) {
+    our $dc_raw_l = 2-$dc_dist; #-- sim=2-d; d=2-1-cos; -> d=2-sim -> sim=1+cos
+    our $dc_raw = zeroes($ND,$NCg)+$dc_raw_l->min;
+    $dc_raw->dice_axis(1,$gcids) .= $dc_raw_l;
+    ##
+    %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'doc', ytitle=>'cat');
+    imag($dc_raw,{%iplot,title=>'Raw Similarity: 1+cos(LSI(doc),LSI(cat))'});
+    imag($dc_raw,{%iplot,title=>'Raw Similarity: 1+cos(LSI(doc),LSI(cat)) [log-scale]',itf=>'log'});
+    ##
+    our $dc_sim_l = F1((1-$dc1_scdf_adj),(1-$dc0_scdf_adj)); ##-- USE THIS!
+    our $dc_sim = zeroes($ND,$NCg)+$dc_sim_l->min;
+    $dc_sim->dice_axis(1,$gcids) .= $dc_sim_l;
+    imag($dc_sim,{%iplot,title=>'F-Similarity: F1(1-cdf(doc~cat), 1-cdf(doc!~cat))'});
+    imag($dc_sim,{%iplot,title=>'F-Similarity: F1(1-cdf(doc~cat), 1-cdf(doc!~cat)) [log-scale]', itf=>'log'});
+    ##
+    our $cc_which1 = $d2c->cat($dc_which1->slice("(1),"))->xchg(0,1);
+    our $asim1_l = PDL::CCS::Nd->newFromWhich($cc_which1,$dc_sim->indexND($dc_which1))->dummy(0,1)->average_nz->_missing(0)->decode;
+    our $cc_which0 = $d2c->index($dc_which0->slice("(0)"))->cat($dc_which0->slice("(1),"))->xchg(0,1);
+    our $asim0_l = PDL::CCS::Nd->newFromWhich($cc_which0,$dc_sim->indexND($dc_which0))->dummy(0,1)->average_nz->_missing(0)->decode;
+    our $asim_l  = ($asim1_l+$asim0_l);
+    our $asim = zeroes($NCg,$NCg)+$asim_l->min;
+    $asim->dice_axis(0,$gcids)->dice_axis(1,$gcids) .= $asim_l;
+    %iplot = (%iplot,xtitle=>'c1 : wanted',ytitle=>'c2 : predicted');
+    imag($asim,{%iplot,title=>'Avg Adjusted Similarity'});
+    imag($asim,{%iplot,title=>'Avg Adjusted Similarity [sqrt-scale]',itf=>'sqrt'});
+    imag($asim,{%iplot,title=>'Avg Adjusted Similarity [log-scale]',itf=>'log'});
+    imag(1-$asim,{%iplot,title=>'Avg Adjusted Distance'});
+    imag(1-$asim,{%iplot,title=>'Avg Adjusted Distance [log-scale]',itf=>'log'});
+    ##
+    our $asim_mask1 = ($asim->maximum_ind->slice("*1,")==$asim->xvals);
+    imag($asim*$asim_mask1,{%iplot,title=>'Best c1 by c2 ~ Precision'});
+    imag($asim*$asim_mask1,{%iplot,title=>'Best c1 by c2 ~ Precision [log-scale]',itf=>'log'});
+    ##
+    our $asim_mask2 = ($asim->xchg(0,1)->maximum_ind==$asim->yvals);
+    imag($asim*$asim_mask2,{%iplot,title=>'Best c2 by c1 ~ Recall'});
+    imag($asim*$asim_mask2,{%iplot,title=>'Best c2 by c1 ~ Recall [log-scale]',itf=>'log'});
 
-  my $dnew_adj = $dc1_scdf_adj;
-  my $acc_adj = ($dnew_adj->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .5609
-
-  my $snew_adj_F = F1((1-$dc1_scdf_adj),(1-$dc0_scdf_adj));
-  my $acc_adj_F = ($snew_adj_F->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5609
+    our $asimx = $asim->pdl;
+    our $badc = pdl(long,[0,29,30]);
+    $asimx->dice_axis(0,$badc) .= 0 if (all($badc<$asimx->dim(0)));
+    $asimx->dice_axis(1,$badc) .= 0 if (all($badc<$asimx->dim(1)));
+    imag($asimx,{%iplot,title=>'Avg Adjusted Similarity [safe]'});
+    imag($asimx,{%iplot,title=>'Avg Adjusted Similarity [safe,log-scale]',itf=>'log'});
+    ##
+    our $asimx_mask1 = ($asimx->maximum_ind->slice("*1,")==$asimx->xvals);
+    imag($asimx*$asimx_mask1,{%iplot,title=>'Best c1 by c2 ~ Precision [safe]'});
+    imag($asimx*$asimx_mask1,{%iplot,title=>'Best c1 by c2 ~ Precision [safe,log-scale]',itf=>'log'});
+    ##
+    our $asimx_mask2 = ($asimx->xchg(0,1)->maximum_ind==$asimx->yvals);
+    imag($asimx*$asimx_mask2,{%iplot,title=>'Best c2 by c1 ~ Recall [safe]'});
+    imag($asimx*$asimx_mask2,{%iplot,title=>'Best c2 by c1 ~ Recall [safe,log-scale]',itf=>'log'});
+  }
 
   ##-- misc
-  my $dnewp0 = ($dc0_scdf);
-  my $accp0  = ($dnewp0->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .5355
-
-  my $snewF1 = F1((1-$dc1_cdf),(1-$dc0_cdf),1e-5);
-  my $accF1  = ($snewF1->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5936
-
-  my $snewFbNc = Fb((1-$dc1_scdf),(1-$dc0_scdf),$nc->slice("*1,"));
-  my $accFbNc  = ($snewFbNc->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .558
-
-  my $snewFbNcp = Fb((1-$dc1_scdf),(1-$dc0_scdf),($nc/$ND)->slice("*1,"));
-  my $accFbNcp  = ($snewFbNcp->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5943
-
-  my $snewFbNcp1 = Fb((1-$dc1_scdf),(1-$dc0_scdf),(1-($nc/$ND))->slice("*1,"));
-  my $accFbNcp1  = ($snewFbNcp1->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5957 !
-
-  my $snewFbNcp1_adj = Fb((1-$dc1_scdf_adj),(1-$dc0_scdf_adj),(1-($nc/$ND))->slice("*1,"));
-  my $accFbNcp1_adj  = ($snewFbNcp1_adj->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5616
-
-  my $snewFbNcp2 = Fb((1-$dc1_scdf),(1-$dc0_scdf),(1-($nnc/$ND))->slice("*1,"));
-  my $accFbNcp2  = ($snewFbNcp2->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5943
-
-  my $snewFbNcp3 = Fb((1-$dc1_scdf),(1-$dc0_scdf),(2-($nnc/$ND))->slice("*1,"));
-  my $accFbNcp3  = ($snewFbNcp3->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5936
-
-  my $snewFbNcp4 = Fb((1-$dc1_scdf),(1-$dc0_scdf),(1+($nc/$ND))->slice("*1,"));
-  my $accFbNcp4  = ($snewFbNcp4->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5936
-
-  my $snewFbNcp5 = Fb((1-$dc1_scdf),(1-$dc0_scdf),(exp(-$nc/$ND))->slice("*1,"));
-  my $accFbNcp5  = ($snewFbNcp5->xchg(0,1)->maximum_ind == $d2c)->nnz / $ND;  ##-- .5943
-
-  my $dnew_cdf = $dc_cdf;
-  my $acc_cdf  = ($dnew_cdf->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .503
+  $acc->('$dc0_scdf'); ##-- .600
+  $acc->('F1((1-$dc1_cdf),(1-$dc0_cdf),1e-5)','max'); ##-- .470
+  $acc->('Fb((1-$dc1_scdf),(1-$dc0_scdf),$nc->slice("*1,"))','max'); ##-- .626
+  $acc->('Fb((1-$dc1_scdf),(1-$dc0_scdf),($nc/$ND)->slice("*1,"))','max'); ##-- .430
+  $acc->('Fb((1-$dc1_scdf),(1-$dc0_scdf),(1-($nc/$ND))->slice("*1,"))','max'); ##-- .460
+  $acc->('Fb((1-$dc1_scdf_adj),(1-$dc0_scdf_adj),(1-($nc/$ND))->slice("*1,"))','max'); ##-- .592, all=.5824
+  $acc->('Fb((1-$dc1_scdf),(1-$dc0_scdf),(1-($nnc/$ND))->slice("*1,"))','max'); ##-- .430
+  $acc->('Fb((1-$dc1_scdf),(1-$dc0_scdf),(2-($nnc/$ND))->slice("*1,"))','max'); ##-- .478
+  $acc->('Fb((1-$dc1_scdf),(1-$dc0_scdf),(1+($nc/$ND))->slice("*1,"))','max');  ##-- .478
+  $acc->('Fb((1-$dc1_scdf),(1-$dc0_scdf),(exp(-$nc/$ND))->slice("*1,"))','max'); ##-- .460
 
   ##-- try this
-  my $dnew0 = $dc1_scdf**($nc/$ND)->slice("*1,");
-  my $acc0  = ($dnew0->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- WAS: .5827, IS: .5653
-
-  my $dnew0_adj = $dc1_scdf_adj**($nc/$ND)->slice("*1,");
-  my $acc0_adj  = ($dnew0_adj->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND;  ##-- .5761
+  $acc->('$dc1_scdf**($nc/$ND)->slice("*1,")'); ##-- .630, all=.5832
+  $acc->('$dc1_scdf_adj**($nc/$ND)->slice("*1,")'); ##-- .6589
 
   ##-- ... or this?
-  my $dnew1 = $dc1_scdf0**($nc/$ND)->slice("*1,");
-  my $acc1  = ($dnew1->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .5696
+  $acc->('$dc1_scdf0**($nc/$ND)->slice("*1,")'); ##-- .6719 all=.5248  ##-- BEST for safe.u1
+  $acc->('$dc1_scdf0**($nc/$nc->max)->slice("*1,")'); ##-- .670
+  $acc->('$dc0_scdf0**($nc/$ND)->slice("*1,")'); ##-- .642
+  $acc->('$dc0_scdf0**($nc/$nc->max)->slice("*1,")'); ##-- .642
 
-  ##-- ... or this?
-  my $dnew2 = $dc1_scdf0**($nc/$ND)->slice("*1,") + $dc0_scdf0**($nnc/$ND)->slice("*1,");
-  my $acc2  = ($dnew2->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .575
+  ##-- ... or these?
+  $acc->('$dc1_scdf0**($nc/$ND)->slice("*1,") + $dc0_scdf0**($nnc/$ND)->slice("*1,")'); ##-- .671
+  $acc->('$dc1_scdf**($nc/$ND)->slice("*1,") + $dc0_scdf**($nnc/$ND)->slice("*1,")'); ##-- .640
+  $acc->('$dc1_scdf**($nc/$ND)->slice("*1,") * ($dc0_scdf)**($nnc/$ND)->slice("*1,")'); ##-- .584
 
-  ##-- ... or this?
-  my $dnew3 = $dc1_scdf**($nc/$ND)->slice("*1,") + $dc0_scdf**($nnc/$ND)->slice("*1,");
-  my $acc3  = ($dnew3->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .5537
-
-  ##-- or this?
-  my $dnew4 = $dc1_scdf**($nc/$ND)->slice("*1,") * ($dc0_scdf)**($nnc/$ND)->slice("*1,");
-  my $acc4  = ($dnew4->xchg(0,1)->minimum_ind == $d2c)->nnz / $ND; ##-- .523
-
-  ##-- IDEA: give target pr,rc p-values, implement cutoff with gaussian width tradeoff ?!
 
   print STDERR "$0: test_compile_xcheck() done: what now?\n";
+  exit 0;
 }
 test_compile_xcheck(@ARGV);
 
