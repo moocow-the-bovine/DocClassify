@@ -1045,12 +1045,15 @@ sub test_compile_xcheck {
     #$map->{xn} = 3;
     $map->{xn} = 10;
     $map->{svdr} = 128 if ($map->{svdr} < 128);
-    print STDERR "$0: cross-check\n";
+    my $date = `date -R`; chomp($date);
+    print STDERR "$0: cross-check: BEGIN: $date\n";
     $map->compileCrossCheck();
     print STDERR "$0: saveFile($mfile.check.bin)\n";
     $map->saveFile("$mfile.xcheck.bin")
       or die("$0: Mapper->saveFile($mfile.xcheck.bin) failed: $!");
-    print STDERR "$0: done: x-check run & saved to '$mfile.xcheck.bin'\n";
+    print STDERR "$0: x-check run & saved to '$mfile.xcheck.bin'\n";
+    $date = `date -R`; chomp($date);
+    print STDERR "$0: DONE: $date\n";
     exit(0);
   }
 
