@@ -213,6 +213,9 @@ sub compile {
   ##-- matrix: $map->{tcm}: ($NT,$NC) : CCS::Nd: [Term x Cat -> WeightedLogFreq]
   #$map->{tcm} = ($map->{tcm0}+$map->{smoothf})->inplace->log*$map->{tw};
 
+  ##-- clear training cache (done by dc-mapper-train.perl)
+  #$map->clearTrainingCache();
+
   return $map;
 }
 
@@ -230,7 +233,7 @@ sub clearTrainingCache {
   %{$map->{gf}} = qw();
   %{$map->{df}} = qw();
   @{$map->{sigs}} = qw();
-  #@{$map->{docs}} = qw(); ##-- still needed for category mapping?
+  @{$map->{docs}} = qw(); ##-- still needed for category mapping?
   delete($map->{tdm0});   ##-- useful for debugging, but recoverable from $map->{tdm}
   delete($map->{tcm0});   ##-- useful for debugging, but recoverable from $map->{tcm}
   delete($map->{doc_wt});

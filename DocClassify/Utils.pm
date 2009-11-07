@@ -29,7 +29,7 @@ our @ISA = qw(Exporter);
 our %EXPORT_TAGS =
   (
    si=>[qw(sistr)],
-   fit=>[qw(ylinfit ylogfit)],
+   fit=>[qw(ylinfit ylogfit li1 F1 Fb)],
    norm=>[qw(_gausscdf _gausswidth)],
    cmp=>[qw(min2 max2)],
    io=>[qw(slurpFile slurpLines stringfh)],
@@ -232,6 +232,39 @@ sub max2 { return $_[0] > $_[1] ? $_[0] : $_[1]; }
 ##==============================================================================
 ## Functions: PDL utils
 ##  + mostly lifted from MUDL::PDL::Smooth
+
+##--
+## $psmooth = li1($p,$eps)
+##  + linear-interpolated smoothed (1-$eps)*$p + $eps;
+sub li1 {
+  my ($p,$eps) = @_;
+  $eps = 1e-5 if (!defined($eps));
+  return (1-$eps)*$p + $eps;
+}
+
+##--
+## $F1 = F1($pr,$rc,$eps)
+##  + balanced F-score
+sub F1 {
+  my ($pr,$rc,$eps) = @_;
+  #return Fb($pr,$rc,0.5,$eps);
+  my ($pr1,$rc1) = (li1($pr,$eps),li1($rc,$eps));
+  #return 2*$pr*$rc / ($pr+$rc);
+  return 2/($pr1**-1 + $rc1**-1);
+}
+
+##--
+## $F_beta = Fb($pr,$rc,$beta,$eps)
+##  + beta-weighted F-score (see wikipedia / "F-score")
+##     $beta = 2.0 --> weight $rc twice as heavily as $pr
+##     $beta = 0.5 --> weight $rc half as heavily as $pr
+sub Fb {
+  my ($pr,$rc,$beta,$eps)=@_;
+  $beta = 0.5 if (!defined($beta));
+  my ($pr1,$rc1) = (li1($pr,$eps),li1($rc,$eps));
+  my $Fb = (1+$beta**2) * ($pr1*$rc1) / ($beta**2 * $pr1 + $rc1);
+}
+
 
 ## $coefs         = ylinfit($y,$x) ##-- scalar context
 ## ($yfit,$coefs) = ylinfit($y,$x) ##-- array context

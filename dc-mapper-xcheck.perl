@@ -45,6 +45,7 @@ our %mapopts = (
 		trainExclusive=>1, ##-- exclusive-mode training?
 		catProfile => 'average',   ##-- how to do category profiling
 		termWeight => 'entropy',   ##-- how to do term weighting
+		xn => 3, ##-- training-internal cross-checking iterations
 	       ),
 
 our %evalopts = qw();
@@ -78,6 +79,7 @@ GetOptions(##-- General
 	   'exclusive|x!' => sub { $splitopts{exclusive}=$mapopts{trainExclusive}=$_[1]; },
 	   'cat-profile|catProfile|profile|cp=s' => \$mapopts{catProfile},
 	   'term-weight|termWeight|tw|w=s'       => \$mapopts{termWeight},
+	   'train-xcheck-n|txn|xn=i' => \$mapopts{xn},
 	   'mapper-option|mo=s' => \%mapopts,
 
 	   ##-- I/O
@@ -166,6 +168,7 @@ foreach $i (0..$#subcorpora) {
   my $mapper = $mapper0->clone  or die("$0: Mapper->clone() failed for i=$i: $!");
   $mapper->trainCorpus($train)  or die("$0: Mapper->train() failed for i=$i: $!");
   $mapper->compile() or die("$0: Mapper->compile() failed for i=$i: $!");
+  $mapper->clearTrainingCache();
 
   ##-- apply mapper to test corpus
   print STDERR "$prog: LOOP (i=$i): MAP\n" if ($verbose);
@@ -225,6 +228,7 @@ dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swe
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
+  -txn N                 # number of training-internal cross-check iterations (default=3)
   -mapper-option OPT=VAL # set generic (class-specific) mapper option
 
  I/O Options:

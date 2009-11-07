@@ -40,6 +40,8 @@ our %mapopts = (
 		catProfile => 'average',   ##-- how to do category profiling
 		termWeight => 'entropy',   ##-- how to do term weighting
 		xn => 3,                   ##-- number of splits for parameter-fitting cross-check
+		##-- local options
+		clearCache => 1,
 	       ),
 
 our %loadopts_corpus = ( mode=>undef, );
@@ -69,6 +71,7 @@ GetOptions(##-- General
 	   'mapper-option|mo=s' => \%mapopts,
 	   'cross-check-n|xcheck-n|xn=i' => \$mapopts{xn},
 	   'compile|c!' => \$compileMap,
+	   'clear-training-cache|clear-cache|clear!' => \$mapopts{clearCache},
 
 	   ##-- I/O
 	   'corpus-input-mode|input-mode|cim|im=s' => \$loadopts_corpus{mode},
@@ -108,7 +111,7 @@ if ($compileMap) {
   print STDERR "$prog: compile()\n" if ($verbose);
   $mapper->compile()
     or die("$0: Mapper::compile() failed, class=$mapopts{class}: $!");
-  $mapper->clearTrainingCache();
+  $mapper->clearTrainingCache() if ($mapopts{clearCache});
 }
 
 print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
@@ -141,6 +144,7 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -xcheck-n XN           # set number of cross-check splits for param-fitting (default=3)
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
+  -clear     , -noclear  # do/don't clear training cache before saving (default=do)
   -mapper-option OPT=VAL # set generic (class-specific) mapper option
 
  I/O Options:

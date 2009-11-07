@@ -179,6 +179,7 @@ sub cats {
   $_->{deg} = 1 foreach (grep {!defined($_->{deg})} @{$doc->{cats}});
   @{$doc->{cats}} =
     sort {($a->{deg}<=>$b->{deg}
+	   || ($b->{sim}||0) <=> ($a->{sim}||0)
 	   || ($a->{dist}||0) <=> ($b->{dist}||0)
 	   || ($a->{dist_raw}||0) <=> ($b->{dist_raw}||0)
 	   || $a->{id}<=>$b->{id}
@@ -401,17 +402,17 @@ sub loadXmlDoc {
 sub STORABLE_freeze {
   my ($obj,$is_cloning) = @_;
   my $fobj = {%$obj,xdoc=>undef};
-  return ('', $fobj, ($is_cloning ? $obj->{xdoc} : qw()));
+  return ('', $fobj, ($is_cloning ? \$obj->{xdoc} : qw()));
 }
 
 
 ## undef = STORABLE_thaw($obj,$is_cloning,$serialized,$ref1,...)
 sub STORABLE_thaw {
-  my ($obj,$is_cloning,$ser,$fobj,$xdoc) = @_;
+  my ($obj,$is_cloning,$ser,$fobj,$xdocr) = @_;
   if (!UNIVERSAL::isa($fobj,'HASH')) {
     %$obj = %{ref($obj)->new(label=>$ser)}; ##-- bug in 1st implementation: workaround here returns empty doc for debugging purposes
   } else {
-    %$obj = (%$fobj, ($is_cloning ? (xdoc=>$xdoc) : qw()));
+    %$obj = (%$fobj, ($is_cloning ? (xdoc=>$$xdocr) : qw()));
   }
   return;
 }
