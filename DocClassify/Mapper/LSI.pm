@@ -217,18 +217,19 @@ sub compileCrossCheck {
   foreach $xci (1..$xcn) {
     ##-- create & compile subset mapper
     $xclabel = "XCHECK ($xci/$xcn)";
-    print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: TRAIN\n" if ($map->{verbose});
     ($docids_other,$docids_local) = which_both($d2subc==($xci-1));
     if ($docids_local->isempty || $docids_other->isempty) {
       warn(ref($map)."::compileCrossCheck(): [$xclabel]: TRAIN: empty subcorpus: skipping!\n");
       next;
     }
+    print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: TRAIN: ND=".($docids_local->nelem)."\n"
+      if ($map->{verbose});
     $map2   = $map->docSubset($docids_local);
     $map2->compileLocal(label=>$xclabel);
 
     ##-- map left-out ("other") documents
-    #$map2->{verbose} = 0;
-    print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: MAP\n" if ($map->{verbose});
+    #$map2->{verbose} = 0; 
+   print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: MAP\n" if ($map->{verbose});
     foreach $od_did ($docids_other->list) {
       print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: MAP: DOC(".$map->{docs}[$od_did]{label}.")\n"
 	if ($map->{verbose}>=2);
