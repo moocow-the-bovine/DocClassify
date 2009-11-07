@@ -218,8 +218,8 @@ sub compileCrossCheck {
     ##-- create & compile subset mapper
     $xclabel = "XCHECK ($xci/$xcn)";
     print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: TRAIN\n" if ($map->{verbose});
-    ($docids_local,$docids_other) = which_both($d2subc==($xci-1));
-    if ($docids_local->isempty) {
+    ($docids_other,$docids_local) = which_both($d2subc==($xci-1));
+    if ($docids_local->isempty || $docids_other->isempty) {
       warn(ref($map)."::compileCrossCheck(): [$xclabel]: TRAIN: empty subcorpus: skipping!\n");
       next;
     }

@@ -1032,8 +1032,9 @@ sub ploterrs {
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+
 sub test_compile_xcheck {
   my $mfile = shift;
+  $mfile  = 'vzdata-testset.train0.bin' if (!defined($mfile)); ##-- carrot:small
   #$mfile = 'vzdata-safe.u1.train0.bin' if (!defined($mfile)); ##-- carrot,uhura
-  $mfile = 'vzdata-all.train0.bin' if (!defined($mfile)); ##-- lal
+  #$mfile = 'vzdata-all.train0.bin' if (!defined($mfile)); ##-- lal
   $mfile = "$mfile.xcheck.bin" if (-r "$mfile.xcheck.bin"); ##-- pre-xcheckd
   print STDERR "$0: load($mfile)\n";
   my $map = DocClassify::Mapper::LSI->loadFile("$mfile")
@@ -1046,8 +1047,10 @@ sub test_compile_xcheck {
     $map->{svdr} = 128 if ($map->{svdr} < 128);
     print STDERR "$0: cross-check\n";
     $map->compileCrossCheck();
+    print STDERR "$0: saveFile($mfile.check.bin)\n";
     $map->saveFile("$mfile.xcheck.bin")
       or die("$0: Mapper->saveFile($mfile.xcheck.bin) failed: $!");
+    print STDERR "$0: done: x-check run & saved to '$mfile.xcheck.bin'\n";
     exit(0);
   }
 
