@@ -199,6 +199,8 @@ print STDERR "$prog: FINAL: EVAL ($outdir/eval.all.xml)\n" if ($verbose);
 $eval0->compile();
 $eval0->saveFile("$outdir/eval.all.xml", %saveopts_eval)
   or die("$0: Eval->saveFile($outdir/eval.all.xml) failed: $!");
+$eval0->saveFile("$outdir/eval.summary.xml", %saveopts_eval, saveDocs=>0)
+  or die("$0: Eval->saveFile($outdir/eval.summary.xml) failed: $!");
 
 $eval0->saveTextFile(\*STDERR) if ($verbose);
 
