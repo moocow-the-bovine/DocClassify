@@ -233,7 +233,7 @@ sub compileFit {
   ## $dcdist_sd = pdl(1): global stddev dist($ci,$di)
   my $dcdist_mu = $dc_dist->flat->average;
   my $dcdist_sd = (($dc_dist - $dcdist_mu)**2)->flat->average->sqrt;
-  my $nc_min = 3;#50; #3; #10; ##-- minimum #/cats to use fit
+  my $nc_min = 10;#50; #3; #10; ##-- minimum #/cats to use fit
 
   ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   ## $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
