@@ -162,9 +162,8 @@ sub compile {
   $map->compileFit();
 
   ##-- local compilation (final)
-  $map->compileLocal(label=>'FINAL', svdShrink=>1);
+  $map->compileLocal(label=>'FINAL', svdShrink=>1, svdCache=>1);
   $map->{svdr} = $map->{svd}{r};
-  $map->{svd}->isigmaVt(); ##-- cache $svd->{isigmaVt_} for $svd->apply0()
 
   return $map;
 }
@@ -413,6 +412,7 @@ sub docSubset {
 ##  + %opts: passed to compile_(svd|xdm|xcm|disto), e.g.
 ##     label     => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
 ##     svdShrink => $bool,   ##-- whether to auto-shrink svd (default=false)
+##     svdCache  => $bool,   ##-- whether to auto-cache $svd->isigmaVt_() (default=true)
 sub compileLocal {
   my ($map,%opts) = @_;
 
@@ -445,6 +445,7 @@ sub labelString {
 ##  + %opts:
 ##     label     => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
 ##     svdShrink => $bool,   ##-- whether to auto-shrink svd (default=false)
+##     svdCache  => $bool,   ##-- whether to auto-cache $svd->isigmaVt_() (default=true)
 sub compile_svd {
   my ($map,%opts) = @_;
   my $label = $map->labelString(%opts);
@@ -456,6 +457,10 @@ sub compile_svd {
     $svd->shrink();
     print STDERR ref($map)."::compile_svd() [$label]: SVD: auto-shrunk to r=$svd->{r}\n" if ($map->{verbose});
     $map->{svdr} = $svd->{r}; ##-- NOT HERE ?!
+  }
+  if ($opts{svdCache} || !defined($opts{svdCache})) {
+    print STDERR ref($map)."::compile_svd() [$label]: SVD: cache: isigmaVt_()\n" if ($map->{verbose});
+    $map->{svd}->isigmaVt(); ##-- cache $svd->{isigmaVt_} for $svd->apply0()
   }
   return $map;
 }
