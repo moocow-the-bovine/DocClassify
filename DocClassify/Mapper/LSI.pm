@@ -210,7 +210,8 @@ sub compileFit {
   #my $gcenum = $map->{gcenum};
   #my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);
   #my $NCg    = $gcids->max+1;
-  my $ND     = $map->{denum}->size;
+  #my $ND     = $map->{denum}->size;
+  my $ND     = $map->{dc_dist}->dim(0); ##-- allow external cross-check loaded from eval data
   my $dcm    = $map->{dcm};
   my $dcm_z  = $dcm->missing->sclr;
   my $d2c    = $dcm->xchg(0,1)->_missing('inf')->minimum_ind->decode;  ##-- [$di] -> $ci_best
@@ -327,6 +328,42 @@ sub compileFit {
   $map->{c0dist_mu} = $c0dist_mu_adj;
   $map->{c0dist_sd} = $c0dist_sd;
 
+  return $map;
+}
+
+## $map = $map->loadCrossCheckEval($eval)
+##  + populates $map->{dc_dist} from a DocClassify::Eval object
+##  + cross-check data should have been created on a subset of the corpus used to train this mapper!
+sub loadCrossCheckEval {
+  my ($map,$eval) = @_;
+  print STDERR ref($map)."::loadCrossCheckEval(): ".($eval->{label}||'')."\n" if ($map->{verbose});
+
+  ##-- vars
+  my $lcenum = $map->{lcenum};
+  my $denum = $map->{denum};
+  my $ND = $map->{denum}->size;
+  my $NC = $lcenum->size;
+  my $lc_sym2id = $lcenum->{sym2id};
+  my $d_sym2id  = $denum->{sym2id};
+  my $lab2docs  = $eval->{lab2docs};
+
+  ##-- get dc_dist
+  my $dc_dist = zeroes($ND,$NC)+2; ##-- initialize to a meaningful maximum
+  my ($lab,$d12,$dcats2,@dci,@dcdist);
+  my $di = 0;
+  while (($lab,$d12)=each(%{$eval->{lab2docs}})) {
+    if (!defined($di = $d_sym2id->{$lab})) {
+      warn(ref($map)."::loadCrossCheckEval(): no internal ID for doc label '$lab' -- skipping");
+      next;
+    }
+    $dcats2 = $d12->[1]{cats};
+    @dci    = grep {defined($lc_sym2id->{$dcats2->[$_]{name}})} (0..$#$dcats2);
+    @dcdist = map {$dcats2->[$_]{dist_raw}} @dci;
+    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{map {$dcats2->[$_]{name}} @dci}])) .= pdl(\@dcdist);
+  }
+
+  ##-- cache dc_dist
+  $map->{dc_dist} = $dc_dist;
   return $map;
 }
 
@@ -590,7 +627,9 @@ sub mapDocument {
   my ($cd_sim);
   if (!defined($map->{c1dist_mu})) {
     ##-- just invert $cdmat
-    $cd_sim = $cd_dist->max-$cd_dist;
+    #$cd_sim = $cd_dist->max-$cd_dist;
+    #$cd_sim  = 2-$cd_dist;
+    $cd_sim = $cd_dist**-1;
   } else {
     ##-- use fit parameters to estimate similarity
     my $cd_cdf1 = gausscdf($cd_dist, $map->{c1dist_mu}, $map->{c1dist_sd});
