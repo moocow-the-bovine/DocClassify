@@ -40,7 +40,7 @@ our $verbose = 3;
 ##  ##
 ##  ##==== NEW in Mapper::LSI
 ##  ##-- options
-##  svdr => $svdr,                   ##-- number of reduced dimensions (default=128)
+##  svdr => $svdr,                   ##-- number of reduced dimensions (default=256)
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
 ##  catProfile => $how,              ##-- cate profiling method ('fold-in','average', 'weighted-average'...): default='average'
@@ -92,7 +92,7 @@ sub new {
   my $that = shift;
   my $obj =  $that->SUPER::new(
 			       ##-- options
-			       svdr => 128,
+			       svdr => 256,
 			       dist => 'u',
 			       catProfile => 'average',
 			       termWeight  => 'entropy',
@@ -450,7 +450,7 @@ sub compile_svd {
   my $label = $map->labelString(%opts);
 
   print STDERR ref($map)."::compile_svd() [$label]: SVD (svdr=>$map->{svdr})\n" if ($map->{verbose});
-  my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr});
+  my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr}, maxiters=>0); #$maxiters=>(2*$map->{svdr})
   $svd->computeccs_nd($map->{tdm});
   if ($opts{svdShrink}) {
     $svd->shrink();

@@ -70,6 +70,7 @@ our $mapfile = shift(@ARGV);
 print STDERR "$prog: Mapper->load($mapfile)\n" if ($verbose);
 our $mapper = DocClassify::Mapper->loadFile($mapfile, %loadopts_map )
   or die("$0: Mapper->load() failed for '$mapfile': $!");
+$mapper->{verbose} = $verbose;
 
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);

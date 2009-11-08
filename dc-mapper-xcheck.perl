@@ -38,9 +38,10 @@ our %mapopts = (
 		class=>'LSI',    ##-- mapper class
 		label=>undef,    ##-- default label
 		lemmatize=>{},   ##-- see $DocClassify::Signature::LEMMA_XYZ variables for defaults
-		svdr => 64,      ##-- svd dimensions
+		svdr => 256,     ##-- svd dimensions
+		maxTermsPerDoc=>0, ##-- maximum #/terms per doc
 		minFreq =>0,     ##-- minimum frequency
-		minDocFreq =>2,  ##-- minimum #/docs with f(t,d)>0 for term-inclusion
+		minDocFreq =>0,  ##-- minimum #/docs with f(t,d)>0 for term-inclusion
 		smoothf =>1,     ##-- smoothing frequency (undef for NTypes/NTokens)
 		trainExclusive=>1, ##-- exclusive-mode training?
 		catProfile => 'average',   ##-- how to do category profiling
@@ -72,6 +73,7 @@ GetOptions(##-- General
 	   'mapper-class|mapclass|class|mapc|mc=s' => \$mapopts{class},
 	   'label|l=s' => sub { $evalopts{label}=$mapopts{label}=$corpusopts{label}=$_[1]; },
 	   'lemmatize-option|lemma-option|lemma|L=s%' => $mapopts{lemmatize},
+	   'max-terms-per-doc|max-tpd|maxtpd|mtpd|tpd=f' => \$mapopts{maxTermsPerDoc},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
 	   'min-doc-frequency|min-docs|mdf|md=f' => \$mapopts{minDocFreq},
 	   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$mapopts{smoothf},
@@ -104,7 +106,8 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 
 ##--------------------------------------------------------------
 ## Initialize: Hacks
-$DocClassify::Mapper::LSI::verbose = 2 if ($DocClassify::Mapper::LSI::verbose > 2);
+#$DocClassify::Mapper::LSI::verbose = 2 if ($DocClassify::Mapper::LSI::verbose > 2);
+$mapopts{verbose} = $verbose;
 
 ##--------------------------------------------------------------
 ## Initialize: output directory
@@ -168,6 +171,7 @@ foreach $i (0..$#subcorpora) {
   my $mapper = $mapper0->clone  or die("$0: Mapper->clone() failed for i=$i: $!");
   $mapper->trainCorpus($train)  or die("$0: Mapper->train() failed for i=$i: $!");
   $mapper->compile() or die("$0: Mapper->compile() failed for i=$i: $!");
+  print STDERR "$prog: LOOP (i=$i): CLEAR_CACHE\n" if ($verbose);
   $mapper->clearTrainingCache();
 
   ##-- apply mapper to test corpus
@@ -220,10 +224,11 @@ dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swe
   -mapper-class CLASS    # set mapper class (default='LSI')
   -label LABEL           # set global mapper label
   -lemma OPT=VALUE       # set lemmatization option
+  -max-tpd NTERMS        # set maximum #/terms per doc (default=0 [no limit])
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
-  -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=2)
+  -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
-  -svd-dims DIMS         # set max SVD dimensions (default=64)
+  -svd-dims DIMS         # set max SVD dimensions (default=256)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)

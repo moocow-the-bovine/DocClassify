@@ -32,7 +32,8 @@ our %mapopts = (
 		class=>'LSI',    ##-- mapper class
 		label=>undef,    ##-- default label
 		lemmatize=>{},   ##-- see $DocClassify::Signature::LEMMA_XYZ variables for defaults
-		svdr => 128,     ##-- svd dimensions
+		svdr => 256,     ##-- svd dimensions (see DocClassify::Mapper::LSI defaults)
+		maxTermsPerDoc=>0, ##-- maximum #/terms per doc
 		minFreq =>0,     ##-- minimum global term-frequency f(t) for term-inclusion
 		minDocFreq =>0,  ##-- minimum #/docs with f(t,d)>0 for term-inclusion
 		smoothf =>1,     ##-- smoothing frequency (undef for NTypes/NTokens)
@@ -40,6 +41,7 @@ our %mapopts = (
 		catProfile => 'average',   ##-- how to do category profiling
 		termWeight => 'entropy',   ##-- how to do term weighting
 		xn => 3,                   ##-- number of splits for parameter-fitting cross-check
+		seed =>0,        ##-- random seed for x-check
 		##-- local options
 		clearCache => 1,
 	       ),
@@ -61,6 +63,7 @@ GetOptions(##-- General
 	   'mapper-class|mapclass|class|mapc|mc=s' => \$mapopts{class},
 	   'label|l=s' => \$mapopts{label},
 	   'lemmatize-option|lemma-option|lemma|L=s%' => $mapopts{lemmatize},
+	   'max-terms-per-doc|max-tpd|maxtpd|mtpd|tpd=f' => \$mapopts{maxTermsPerDoc},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
 	   'min-doc-frequency|min-docs|mdf|md=f' => \$mapopts{minDocFreq},
 	   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$mapopts{smoothf},
@@ -70,6 +73,7 @@ GetOptions(##-- General
 	   'term-weight|termWeight|tw|w=s'       => \$mapopts{termWeight},
 	   'mapper-option|mo=s' => \%mapopts,
 	   'cross-check-n|xcheck-n|xn=i' => \$mapopts{xn},
+	   'random-seed|seed|rs=i' => \$mapopts{seed},
 	   'compile|c!' => \$compileMap,
 	   'clear-training-cache|clear-cache|clear!' => \$mapopts{clearCache},
 
@@ -94,6 +98,7 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 ##-- vars
+$mapopts{verbose} = $verbose;
 our $mapper = DocClassify::Mapper->new( %mapopts )
   or die("$0: Mapper::new(class=>'$mapopts{class}') failed: $!");
 
@@ -103,6 +108,7 @@ foreach (@ARGV) {
   print STDERR "$prog: loadCorpus($_)\n" if ($verbose);
   my $corpus = DocClassify::Corpus->new(%corpusopts)->loadFile($_,%loadopts_corpus)
     or die("$0: Corpus::loadFile() failed for '$_': $!");
+  print STDERR "$prog: trainCorpus()\n" if ($verbose);
   $mapper->trainCorpus($corpus)
     or die("$0: Mapper::trainCorpus() failed for '$_': $!");
 }
@@ -111,6 +117,7 @@ if ($compileMap) {
   print STDERR "$prog: compile()\n" if ($verbose);
   $mapper->compile()
     or die("$0: Mapper::compile() failed, class=$mapopts{class}: $!");
+  print STDERR "$prog: clearTrainingCache()\n" if ($verbose);
   $mapper->clearTrainingCache() if ($mapopts{clearCache});
 }
 
@@ -135,10 +142,11 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -mapper-class CLASS    # set mapper class (default='LSI')
   -label LABEL           # set global mapper label
   -lemma OPT=VALUE       # set lemmatization option
+  -max-tpd NTERMS        # set maximum #/terms per doc (default=0 [no limit])
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
-  -svd-dims DIMS         # set max SVD dimensions (default=128)
+  -svd-dims DIMS         # set max SVD dimensions (default=256)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
   -xcheck-n XN           # set number of cross-check splits for param-fitting (default=3)

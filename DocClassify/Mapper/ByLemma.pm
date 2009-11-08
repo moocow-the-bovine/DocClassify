@@ -41,8 +41,14 @@ our $verbose = 3;
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
 ##  minFreq => $f,                   ##-- minimum global frequency f(t) for term-inclusion (default=0)
 ##  minDocFreq => $ndocs,            ##-- minimum number of docs with f(t,d)>0 for term-inclusion (default=0)
+##  maxTermsPerDoc => $nterms,       ##-- maximum number of terms per document (0~no max (default))
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1)
-##  termWeight => $how,              ##-- term "weighting" method ('uniform', 'entropy'): default='entropy'
+##  termWeight => $how,              ##-- term "weighting" method: one of:
+##                                   ##    'uniform'                ##-- w($t) = 1
+##                                   ##    'max-entropy-quotient'   ##-- w($t) = 1 - H(Doc|T=$t) / H_max(Doc)
+##                                   ##    'entropy-quotient'       ##-- w($t) = H(Doc|T=$t) / H(Doc)
+##                                   ##    'conditional-entropy'    ##-- w($t) = H(Doc|T=$t)
+##                                   ##    'entropy'                ##-- alias for 'max-entropy-quotient' (default)
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -76,6 +82,7 @@ sub new {
 			       trainExclusive => 1,
 			       minFreq =>0,
 			       minDocFreq =>0,
+			       maxTermsPerDoc =>0,
 			       smoothf =>1,
 			       termWeight  => 'entropy',
 
@@ -248,6 +255,22 @@ sub clearTrainingCache {
 ##  + trims @$map{qw(gf df)} by specified freqs
 sub compileTrim {
   my $map = shift;
+
+  ##-- trim by max terms per doc
+  print STDERR ref($map)."::compileTrim(): by #/terms per doc: maxTermsPerDoc=$map->{maxTermsPerDoc}\n"
+    if ($map->{verbose});
+  if ($map->{maxTermsPerDoc} && $map->{maxTermsPerDoc}>0) {
+    my $maxtpd = $map->{maxTermsPerDoc};
+    my $gf  = $map->{gf};
+    %$gf = qw();
+    my ($sig,$tf,@tk,$ti);
+    foreach $sig (@{$map->{sigs}}) {
+      $tf = pdl([values(%{$sig->{lf}})]);
+      @tk = keys(%{$sig->{lf}});
+      $ti = $tf->nelem <= $maxtpd ? $tf->xvals : $tf->qsorti->slice("-1:-$maxtpd");
+      $gf->{$tk[$_]} += $tf->at($_) foreach ($ti->list);
+    }
+  }
 
   ##-- trim by global term frequency
   print STDERR ref($map)."::compileTrim(): by global term freqency: minFreq=$map->{minFreq}\n" if ($map->{verbose});
@@ -482,8 +505,14 @@ sub termWeightMethod {
   if ($termWeight =~ /^u/ || $termWeight =~ /^no/ || $termWeight =~ /^id/) {
     $termWeight='uniform';
   }
-  elsif ($termWeight =~ /^ent/ || $termWeight eq 'H') {
-    $termWeight='entropy';
+  elsif ($termWeight =~ /^entropy.q/ || $termWeight eq 'Hq') {
+    $termWeight='entropy-quotient';
+  }
+  elsif ($termWeight =~ /^cond/ || $termWeight eq 'Hc') {
+    $termWeight='conditional-entropy';
+  }
+  elsif ($termWeight =~ /^max/ || $termWeight =~ /^H/ || $termWeight eq 'entropy') {
+    $termWeight='max-entropy-quotient';
   }
   else {
     confess(ref($map)."::compile(): unknown term-weighting method '$termWeight'");
@@ -505,22 +534,60 @@ sub compile_tw {
   my $ND = $map->{denum}->size;
 
   ##-- guts
-  print STDERR ref($map)."::compile_tw(): vector: tw: ($NT): [Term -> Weight]\n" if ($map->{verbose});
+  print STDERR ref($map)."::compile_tw(): vector: tw: ($NT): [Term -> Weight] : tw=$termWeight\n" if ($map->{verbose});
   my ($tw);
   if ($termWeight eq 'uniform') {
     $tw = ones($NT);                                ##-- identity weighting
   }
-  elsif ($termWeight eq 'entropy') {
-    ##-- weight terms by doc entropy (see e.g. Berry(1995); Nakov, Popova, & Mateev (2001))
+  elsif ($termWeight eq 'max-entropy-quotient') {
+    ##-- weight terms by doc max-entropy (see e.g. Berry(1995); Nakov, Popova, & Mateev (2001))
     my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
     my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
     my $td_pdgt = ($tdm0 / $t_f)->_missing(0);      ##-- ccs: [$ti,$di] -> p($di|$ti)
-    $tw         = $td_pdgt->log->_missing(0);       ##-- ccs: [$ti,$ti] -> ln p($di|$ti)
+    $tw         = $td_pdgt->log->_missing(0);       ##-- ccs: [$ti,$di] -> ln p($di|$ti)
     $tw        /= log(2);                           ##                  -> log p($di|$ti)
     $tw        *= $td_pdgt;                         ##                  -> p($di|$ti) * log p($di|$ti)
-    $tw         = $tw->xchg(0,1)->sumover;          ##-- pdl: [$ti] -> -H(Doc|$ti)
-    $tw        /= log($ND)/log(2);                  ##-- pdl: [$ti] -> -H(Doc|$ti)/H(Doc) ##-- assumed uniform!
-    $tw        += 1;
+    $tw         = $tw->xchg(0,1)->sumover;          ##-- pdl: [$ti] ->  -H(Doc|T=$ti)
+    $tw        /= log($ND)/log(2);                  ##-- pdl: [$ti] ->  -H(Doc|T=$ti)/Hmax(Doc) ##-- uniform!
+    $tw        += 1;                                ##-- pdl: [$ti] -> 1-H(Doc|T=$ti)/Hmax(Doc)
+  }
+  elsif ($termWeight eq 'entropy-quotient') {
+    ##-- weight terms by relative doc entropy: tw(t) = 1 - (H(Doc|t) / H(Doc))
+    my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
+    my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
+    my $td_pdgt = ($tdm0 / $t_f)->_missing(0);      ##-- ccs: [$ti,$di] -> p($di|$ti)
+    my $td_pdt  = ($tdm0 / $t_f->sum)->_missing(0); ##-- ccs: [$ti,$di] -> p($di,$ti)
+    ##
+    my $d_f     = $tdm0->sumover->todense;          ##-- dense: [$di] -> f($di);
+    my $d_p     = $d_f / $d_f->sum;                 ##-- dense: [$di] -> p($di)
+    $d_p        = li1($d_p,$d_p->where($d_p)->minimum/2);            #-> p~($di)
+    my $d_h     = log($d_p);                        ##-- dense: [$di] ->            ln p($di)
+    $d_h       /= log(2);                           ##                ->           log p($di)
+    $d_h       *= $d_p;                             ##                ->  p($di) * log p($di)
+    my $d_H     = -($d_h->sum);                     ##-- sclr:  []    -> H(Doc)
+    ##
+    $tw         = $td_pdgt->log->_missing(0);       ##-- ccs: [$ti,$di] -> ln p($di|$ti)
+    $tw        /= log(2);                           ##                  -> log p($di|$ti)
+    #$tw        *= $td_pdt;                          ##                  -> p($di,$ti) * log p($di|$ti) ~h($di|$ti)
+    $tw        *= $td_pdgt;                         ##                  -> p($di|$ti) * log p($di|$ti) ~h($di|T=$di)
+    $tw         = $tw->xchg(0,1)->sumover;          ##-- pdl: [$ti] -> -H(Doc|T=$ti)
+    $tw        /= $d_H;                             ##              -> -H(Doc|T=$ti)/H(Doc)
+    $tw        += 1;                                ##              -> 1 - H(Doc|T=$ti)/H(Doc)
+  }
+  elsif ($termWeight eq 'conditional-entropy') {
+    ##-- weight terms by conditional doc|term subdistribution entropy: tw(t) = H(Doc|t)
+    my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
+    my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
+    my $td_pdgt = ($tdm0 / $t_f)->_missing(0);      ##-- ccs: [$ti,$di] -> p($di|$ti)
+    ##
+    $tw         = $td_pdgt->log->_missing(0);       ##-- ccs: [$ti,$di] -> ln p($di|$ti)
+    $tw        *= $td_pdgt;                         ##                  -> p($di|$ti) * ln p($di|$ti)
+    $tw         = $tw->xchg(0,1)->sumover->todense; ##-- pdl: [$ti] -> -H_e(Doc|$ti)
+    $tw        *= -1;                               ##              ->  H_e(Doc|$ti)
+    $tw        /= log(2);                           ##              ->    H(Doc|$ti)
+  }
+  else {
+    confess(ref($map)."::compile_tw(): unknown term-weighting method '$termWeight'");
   }
   #$map->{tdm} = $map->{tdm}*$tw;
   $map->{tw} = $tw->todense;
@@ -528,6 +595,9 @@ sub compile_tw {
   ##-- sanity check(s)
   if (!all($map->{tw}->isfinite)) {
     confess(ref($map)."::compile_tw(): infinite values in term-weight vector: something has gone horribly wrong!");
+  }
+  if (any($map->{tw}<0)) {
+    confess(ref($map)."::compile_tw(): negative values in term-weight vector: something has gone horribly wrong!");
   }
 
   return $map;

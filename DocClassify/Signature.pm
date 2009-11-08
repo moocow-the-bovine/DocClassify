@@ -40,6 +40,10 @@ our $LEMMATIZE_POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ)/;
 ##  + default lemma attribute for lemmatize()
 our $LEMMATIZE_LEMMA_ATTR = 'lemma';
 
+## $LEMMATIZE_LEMMA_TOLOWER
+##  + default lemmatize to lower-case?
+our $LEMMATIZE_LEMMA_TOLOWER = 1;
+
 ##==============================================================================
 ## Constructors etc.
 
@@ -136,7 +140,8 @@ sub unlemmatize {
 ##     textRegex => $re,         ##-- regex for wanted text (default=$LEMMATIZE_TEXT_REGEX)
 ##     textStop => \%stopText,   ##-- unwanted if exists($stopText{$text}); default=undef (none)
 ##     posRegex => $re,          ##-- regex for wanted PoS  (default=$LEMMATIZE_POS_REGEX)
-##     lemmaAttr => $attr,       ##-- lemma attribute (defaul=$LEMMATIZE_LEMMA_ATTR)
+##     lemmaAttr => $attr,       ##-- lemma attribute (default=$LEMMATIZE_LEMMA_ATTR)
+##     lemmaToLower => $bool,    ##-- force lemmata to lower-case? (default=$LEMMATIZE_LEMMA_TOLOWER)
 sub lemmatize {
   my ($sig,%opts) = @_;
   return $sig if ($sig->lemmatized);
@@ -148,6 +153,7 @@ sub lemmatize {
   my $posAttr   = 'pos';
   my $posRegex  = defined($opts{posRegex}) ? $opts{posRegex} : $LEMMATIZE_POS_REGEX;
   my $lemmaAttr = defined($opts{lemmaAttr}) ? $opts{lemmaAttr} : $LEMMATIZE_LEMMA_ATTR;
+  my $lemma2lc  = defined($opts{lemmaToLower}) ? $opts{lemmaToLower} : $LEMMATIZE_LEMMA_TOLOWER;
 
   ##-- pre-compile regexes
   $textRegex = qr/$textRegex/ if (defined($textRegex) && !UNIVERSAL::isa($textRegex,'Regexp'));
@@ -165,6 +171,7 @@ sub lemmatize {
     next if (defined($posRegex)  && $ya{$posAttr}  !~ $posRegex);
     next if (defined($textStop)  && exists($textStop->{$ya{$textAttr}}));
     next if (defined($textRegex) && $ya{$textAttr} !~ $textRegex);
+    $ya{$lemmaAttr} = lc($ya{$lemmaAttr}) if ($lemma2lc);
     $lf->{$ya{$lemmaAttr}} += $f;
     $$Nlref += $f;
   }

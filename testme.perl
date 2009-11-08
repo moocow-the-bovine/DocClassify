@@ -1417,7 +1417,7 @@ test_compile_xcheck(@ARGV);
 ##--
 ## $psmooth = li1($p,$eps)
 ##  + linear-interpolated smoothed (1-$eps)*$p + $eps;
-sub li1 {
+sub _li1 {
   my ($p,$eps) = @_;
   $eps = 1e-5 if (!defined($eps));
   return (1-$eps)*$p + $eps;
@@ -1426,7 +1426,7 @@ sub li1 {
 ##--
 ## $F1 = F1($pr,$rc,$eps)
 ##  + balanced F-score
-sub F1 {
+sub _F1 {
   my ($pr,$rc,$eps) = @_;
   #return Fb($pr,$rc,0.5,$eps);
   my ($pr1,$rc1) = (li1($pr,$eps),li1($rc,$eps));
@@ -1439,7 +1439,7 @@ sub F1 {
 ##  + beta-weighted F-score (see wikipedia / "F-score")
 ##     $beta = 2.0 --> weight $rc twice as heavily as $pr
 ##     $beta = 0.5 --> weight $rc half as heavily as $pr
-sub Fb {
+sub _Fb {
   my ($pr,$rc,$beta,$eps)=@_;
   $beta = 0.5 if (!defined($beta));
   my ($pr1,$rc1) = (li1($pr,$eps),li1($rc,$eps));
