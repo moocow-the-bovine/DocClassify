@@ -1809,7 +1809,7 @@ sub test_load_xcheck {
 
   print STDERR "$0: test_load_xcheck() done: what now?\n";
 }
-test_load_xcheck(@ARGV);
+#test_load_xcheck(@ARGV);
 
 
 
@@ -1845,6 +1845,45 @@ sub _Fb {
   my $Fb = (1+$beta**2) * ($pr1*$rc1) / ($beta**2 * $pr1 + $rc1);
 }
 
+##======================================================================
+sub test_cluster_mapper {
+  my $mfile = shift;
+  if (!defined($mfile)) {
+    #$mfile = 'vzdata-safe.u1.train0.bin'; ##-- uhura, r=128
+    #$mfile = 'vzdata-safe.u1.r-256.tw-Hmax.xn-0.tpd-100.lsimap.bin'; ##-- uhura
+    #$mfile = 'vzdata-safe.u1.r-512.tw-Hmax.xn-0.tpd-1000.mdf-2.lsimap.bin';
+    $mfile = 'vzdata-all.r-512.tw-Hmax.xn-0.tpd-100.mdf-2.lc-1.lsimap.nbin'; ##-- uhura, from lal0 (error: "out of memory!")
+  }
+
+  ##----
+  print STDERR "$0: load($mfile)\n";
+  my $map = DocClassify::Mapper::LSI->loadFile("$mfile")
+    or die("$0: Mapper->loadFile($mfile) failed: $!");
+
+  ##----
+  my $xcm = $map->{xcm};
+  my $tck = 16;
+  my ($distf,$cm,%cm);
+  foreach my $link (qw(avg max min)) {
+    print STDERR "$0: cluster(link=$link)\n";
+    $distf = MUDL::Cluster::Distance->new(class=>$map->{dist}, link=>$link);
+    $cm = $cm{link} = MUDL::Cluster::Tree->new(distf=>$distf,data=>$xcm,enum=>$map->{lcenum});
+    $cm->cluster();
+    $cm->cut($tck);
+    ##
+    my $ld0 = $cm->{linkdist}->slice("0:-2");
+    ##
+    #my $ld  = $ld0->log-$ld0->minimum->log;
+    my $ld = $ld0;
+    $cm->view(dists=>$ld, dmult=>10);
+    $cm->saveFile("$mfile.ctree-$link.bin");
+  }
+
+  print STDERR "$0: test_cluster_mapper() done: what now?\n";
+}
+test_cluster_mapper(@ARGV);
+
+##======================================================================
 ##-- test doc freeze-thaw
 sub test_freeze_thaw {
   my $dfile = 'test-small.xml';
@@ -1862,6 +1901,7 @@ sub test_freeze_thaw {
   exit 0;
 }
 #test_freeze_thaw();
+
 
 ##======================================================================
 ## test: pdl ccs buglet
