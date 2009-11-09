@@ -22,15 +22,19 @@ mfs="1"
 dists="u"
 #dists="c"
 ##--
+#xns="3"
+xns="10"
 
 for base in $bases; do
  for dist in $dists; do
   for mdf in $mdfs; do
    for mf in $mfs; do
-    label="base=$base; mf=$mf; mdf=$mdf; dist=$dist"
-    echo "$0[$$]: BEGIN ($label): `date -R`"
-    ./dc-mapper-xcheck.perl -n=10 -xn=3 -seed=0 -r=128 -mf=$mf -mdf=$mdf -od ${base}.n-10.xn-3.seed-0.r-128.mf-${mf}.mdf-${mdf}.dist-${dist}.xcheck.d ${base}.corpus.xml
-    echo "$0[$$]: END ($label): `date -R`"
+    for xn in $xns; do
+     label="base=$base; mf=$mf; mdf=$mdf; dist=$dist; xn=$xn"
+     echo "$0[$$]: BEGIN ($label): `date -R`"
+     ./dc-mapper-xcheck.perl -n=10 -xn=$xn -seed=0 -r=128 -mf=$mf -mdf=$mdf -od ${base}.n-10.xn-${xn}.seed-0.r-128.mf-${mf}.mdf-${mdf}.dist-${dist}.xcheck.d ${base}.corpus.xml
+     echo "$0[$$]: END ($label): `date -R`"
+    done
    done
   done
  done

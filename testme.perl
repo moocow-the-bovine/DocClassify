@@ -1864,6 +1864,7 @@ sub test_cluster_mapper {
   my $xcm = $map->{xcm};
   my $tck = 16;
   my ($distf,$cm,%cm);
+  my %ldopts = ( avg=>{ dexp=>1, dmult=>12 }, max=>{ dexp=>1, dmult=>12 }, min=>{ dexp=>1, dmult=>12 }, );
   foreach my $link (qw(avg max min)) {
     print STDERR "$0: cluster(link=$link)\n";
     $distf = MUDL::Cluster::Distance->new(class=>$map->{dist}, link=>$link);
@@ -1873,15 +1874,43 @@ sub test_cluster_mapper {
     ##
     my $ld0 = $cm->{linkdist}->slice("0:-2");
     ##
-    #my $ld  = $ld0->log-$ld0->minimum->log;
-    my $ld = $ld0;
-    $cm->view(dists=>$ld, dmult=>10);
+    my $ld = ($ldopts{$link}{dexp} ? $ld0->exp : $ld0);
+    $cm->view(dists=>$ld, dmult=>($ldopts{$link}{dmult}||1));
     $cm->saveFile("$mfile.ctree-$link.bin");
   }
 
   print STDERR "$0: test_cluster_mapper() done: what now?\n";
 }
-test_cluster_mapper(@ARGV);
+#test_cluster_mapper(@ARGV);
+
+sub test_cluster_tree {
+  my $mfile = shift;
+  if (!defined($mfile)) {
+    #$mfile = 'vzdata-safe.u1.train0.bin'; ##-- uhura, r=128
+    #$mfile = 'vzdata-safe.u1.r-256.tw-Hmax.xn-0.tpd-100.lsimap.bin'; ##-- uhura
+    #$mfile = 'vzdata-safe.u1.r-512.tw-Hmax.xn-0.tpd-1000.mdf-2.lsimap.bin';
+    $mfile = 'vzdata-all.r-512.tw-Hmax.xn-0.tpd-100.mdf-2.lc-1.lsimap.nbin'; ##-- uhura, from lal0 (error: "out of memory!")
+  }
+
+  ##----
+  my $tck = 16;
+  my ($cm,%cm);
+  my %ldopts = ( avg=>{ dexp=>1, dmult=>12 }, max=>{ dexp=>1, dmult=>12 }, min=>{ dexp=>1, dmult=>12 }, );
+  foreach my $link (qw(avg max min)) {
+    $treefile = "$mfile.ctree-$link.bin";
+    print STDERR "$0: tree($treefile)\n";
+    $cm = MUDL::Cluster::Tree->loadFile($treefile) or die("$0: load($treefile) failed: $!");
+    ##
+    my $ld0 = $cm->{linkdist}->slice("0:-2");
+    my $ld = ($ldopts{$link}{dexp} ? $ld0->exp : $ld0);
+    my %vopts = (dists=>$ld, dmult=>($ldopts{$link}{dmult}||1));
+    $cm->view(%vopts);
+    $cm->toDendogram(%vopts)->savePs("$treefile.ps");
+  }
+  print STDERR "$0: test_cluster_tree() done: what now?\n";
+  exit 0;
+}
+test_cluster_tree(@ARGV);
 
 ##======================================================================
 ##-- test doc freeze-thaw
