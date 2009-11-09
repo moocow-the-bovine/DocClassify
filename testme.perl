@@ -1442,7 +1442,7 @@ sub test_load_xcheck {
   $map->loadCrossCheckEval($eval);
 
   ##--------------------
-  ## plot some stuff again
+  ## ... again (vars)
   my $lcenum = $map->{lcenum};
   my $gcenum = $map->{gcenum};
   my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);             ##-- [$lci] -> $gci
@@ -1462,19 +1462,80 @@ sub test_load_xcheck {
   my $acc_bydist = ($d2c_bydist==$d2c)->nnz / $ND;
 
   ##--------------------
-  ## repeat of test_compile_xcheck()
-
-  ##--------------------
   ##-- get positive evidence
   my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
-  my $dc_mask   = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
-  $dc_mask->indexND($dc_which1) .= 1;
-  my $dc_which0 = whichND(!$dc_mask);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
-  #my $d_dist1   = $dc_dist->indexND($dc_which1);        ##-- [$di]     ->     dist($di,$ci) : $di \in $ci
-  #my $d_dist0   =                                       ##-- [$di]     -> avg dist($di,$ci) : $di \not\in $ci
-  #  PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0))->xchg(0,1)->average_nz->decode;
-  my $nc  = $dc_mask->long->sumover->double;             ##-- [$ci] -> |{ $di : $di \in     $ci }|
+  my $dc_mask1  = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
+  $dc_mask1->indexND($dc_which1) .= 1;
+  my $dc_which0 = whichND(!$dc_mask1);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
+  my $nc  = $dc_mask1->long->sumover->double;            ##-- [$ci] -> |{ $di : $di \in     $ci }|
   my $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
+
+  ##----------------------------------------------------
+  ## histogram confusion matrix, <=
+  ## $cc1_hist : [$c1,$c2] -> |{$d : $c1=wanted($d) && dist($d,$c2)<=dist($d,$c1)}|
+  my $d_dist1 = $dc_dist->index2d($d2c->xvals,$d2c); ##-- [$di] -> dist($c1) : $c1=wanted($di)
+  my $dc1_e_mask  = ($dc_dist <= $d_dist1);
+  my $dc1_e_which = whichND($dc1_e_mask);
+  my $cc1_e_which = $d2c->index($dc1_e_which->slice("(0),"))->cat($dc1_e_which->slice("(1),"))->xchg(0,1);
+  my $cc1_hist = PDL::CCS::Nd->newFromWhich($cc1_e_which,ones($cc1_e_which->dim(1)))->dummy(0,1)->sumover->decode;
+  my $cc1_p12  = $cc1_hist / $cc1_hist->sum;
+  my $cc1_p1g2 = ($cc1_hist / $cc1_hist->sumover->slice("*1,"))->inplace->setnantobad->inplace->setbadtoval(0);
+  my $cc1_p2g1 = ($cc1_hist / $cc1_hist->xchg(0,1)->sumover)->inplace->setnantobad->inplace->setbadtoval(0);
+
+  ## $cc0_hist : [$c1,$c2] -> |{$d : $c1=wanted($d) && dist($d,$c2) < dist($d,$c1)}|
+  my $dc0_e_mask  = ($dc_dist <  $d_dist1);
+  my $dc0_e_which = whichND($dc0_e_mask);
+  my $cc0_e_which = $d2c->index($dc0_e_which->slice("(0),"))->cat($dc0_e_which->slice("(1),"))->xchg(0,1);
+  my $cc0_hist = PDL::CCS::Nd->newFromWhich($cc0_e_which,ones($cc0_e_which->dim(1)))->dummy(0,1)->sumover->decode;
+  my $cc0_p12  = $cc0_hist / $cc0_hist->sum;
+  my $cc0_p1g2 = ($cc0_hist / $cc0_hist->sumover->slice("*1,"))->inplace->setnantobad->inplace->setbadtoval(0);
+  my $cc0_p2g1 = ($cc0_hist / $cc0_hist->xchg(0,1)->sumover)->inplace->setnantobad->inplace->setbadtoval(0);
+
+  ##-- plot
+  our (%iplot);
+  %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1 : wanted', ytitle=>'c2 : measured');
+  if (1) {
+    imag($cc1_hist,{%iplot,title=>'Histogram: |{d : dist(d,c2) <= dist(d,c1)}|'});
+    imag($cc1_p12,{%iplot, title=>'p(dist(d,c2) <= dist(d,c1))'});
+    imag($cc1_p1g2,{%iplot,title=>'p(dist(d,c2) <= dist(d,c1) | c2)'});
+    imag($cc1_p2g1,{%iplot,title=>'p(dist(d,c2) <= dist(d,c1) | c1)'});
+    ##
+    imag($cc0_hist,{%iplot,title=>'Histogram: |{d : dist(d,c2) < dist(d,c1)}|'});
+    imag($cc0_p12,{%iplot, title=>'p(dist(d,c2) < dist(d,c1))'});
+    imag($cc0_p1g2,{%iplot,title=>'p(dist(d,c2) < dist(d,c1) | c2)'});
+    imag($cc0_p2g1,{%iplot,title=>'p(dist(d,c2) < dist(d,c1) | c1)'});
+  }
+
+  ##----------------------------------------------------
+  ## histogram confusion matrix, min
+  ##  $ccg_hist : [$c1,$c2] -> |{$d : $c1=wanted($d) && $c2=got($d)}|
+  #my $d_dist1 = $dc_dist->index2d($d2c->xvals,$d2c); ##-- [$di] -> dist($c1) : $c1=wanted($di)
+  my $d_c2 = $d2c_bydist = $dc_dist->xchg(0,1)->minimum_ind;
+  my $d_c1 = $d2c;
+  #my $d_c2_mask   = zeroes(byte,$dc_dist->dims); $d_c2_mask->index2d(xvals(long,$ND),$d_c2) .= 1;
+  #my $dg_which = which($d_c1 != $d_c2);
+  my $dg_which = $d_c1->xvals;
+  my $ccg_which = $d_c1->index($dg_which)->cat($d_c2->index($dg_which))->xchg(0,1);
+  my $ccg_hist = PDL::CCS::Nd->newFromWhich($ccg_which,$dg_which->ones)->dummy(0,1)->sumover->decode;
+  my $ccg_p12  = $ccg_hist / $ccg_hist->sum;
+  my $ccg_p1g2 = ($ccg_hist / $ccg_hist->sumover->slice("*1,"))->inplace->setnantobad->inplace->setbadtoval(0);
+  my $ccg_p2g1 = ($ccg_hist / $ccg_hist->xchg(0,1)->sumover)->inplace->setnantobad->inplace->setbadtoval(0);
+
+  ##-- plot
+  our (%iplot);
+  %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1 : wanted', ytitle=>'c2 : got');
+  if (1) {
+    imag($ccg_hist,{%iplot,title=>'Histogram: |{ d : wanted(d)=c1 & got(d)=c2 }|'});
+    imag($ccg_p12,{%iplot, title=>'p(Wanted=c1,Got=c2)'});
+    imag($ccg_p1g2,{%iplot,title=>'p(Wanted=c1|Got=c2) ~ Precision'});
+    imag($ccg_p2g1,{%iplot,title=>'p(Got=c2|Wanted=c1) ~ Recall'});
+    imag(F1($ccg_p2g1,$cc_p1g2), {%iplot,title=>'F1(p(Wanted=c1|Got=c2),p(Got=c2|Wanted=c1))'});
+  }
+  ##-- CONTINUE HERE: how to use this data at runtime ?!
+
+  ##----------------------------------------------------
+  ## repeat of test_compile_xcheck()
+
 
   ##--------------------
   ##-- from testme.perl test_errors(), above
@@ -1698,7 +1759,8 @@ sub test_load_xcheck {
   $compute_cdfs->();
 
   ##--------------------
-  our %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1', ytitle=>'c2');
+  our (%iplot);
+  %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1', ytitle=>'c2');
   if (0) {
     imag($dc0_cdf*(1-$dc1_cdf)*1,       {%iplot,itf=>'linear'});
     imag($dc0_cdf*(1-$dc1_cdf)*$dc_mask,{%iplot,itf=>'log'});
@@ -1809,7 +1871,7 @@ sub test_load_xcheck {
 
   print STDERR "$0: test_load_xcheck() done: what now?\n";
 }
-#test_load_xcheck(@ARGV);
+test_load_xcheck(@ARGV);
 
 
 
@@ -1910,7 +1972,7 @@ sub test_cluster_tree {
   print STDERR "$0: test_cluster_tree() done: what now?\n";
   exit 0;
 }
-test_cluster_tree(@ARGV);
+#test_cluster_tree(@ARGV);
 
 ##======================================================================
 ##-- test doc freeze-thaw
