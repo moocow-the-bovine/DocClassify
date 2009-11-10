@@ -6,6 +6,7 @@
 package DocClassify::Mapper::ByLemma;
 use DocClassify::Object;
 use DocClassify::Mapper;
+use DocClassify::Lemmatizer;
 use DocClassify::Utils ':all';
 
 use MUDL::Enum;
@@ -37,18 +38,19 @@ our $verbose = 3;
 ## %$map, %opts:
 ##  ##-- options
 ##  verbose => $vlevel,              ##-- verbosity level (default=$verbose)
-##  lemmatize => \%opts,             ##-- options for $doc->typeSignature->lemmatize()
+##  lzClass => $lzClass,             ##-- lemmatizer class (see DocClassify::Lemmatizer::new(); default='default')
+##  lzOpts => \%lzOpts,              ##-- options for $lzClass->new();
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
 ##  minFreq => $f,                   ##-- minimum global frequency f(t) for term-inclusion (default=0)
 ##  minDocFreq => $ndocs,            ##-- minimum number of docs with f(t,d)>0 for term-inclusion (default=0)
 ##  maxTermsPerDoc => $nterms,       ##-- maximum number of terms per document (0~no max (default))
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1)
 ##  termWeight => $how,              ##-- term "weighting" method: one of:
-##                                   ##    'uniform'                ##-- w($t) = 1
-##                                   ##    'max-entropy-quotient'   ##-- w($t) = 1 - H(Doc|T=$t) / H_max(Doc)
-##                                   ##    'entropy-quotient'       ##-- w($t) = H(Doc|T=$t) / H(Doc)
-##                                   ##    'conditional-entropy'    ##-- w($t) = H(Doc|T=$t)
-##                                   ##    'entropy'                ##-- alias for 'max-entropy-quotient' (default)
+##                                   ##    'uniform'                 ##-- w($t) = 1; aka 'no','id'
+##                                   ##    'max-entropy-quotient'    ##-- w($t) = 1 - H(Doc|T=$t) / H_max(Doc); aka 'Hmax'
+##                                   ##    'entropy-quotient'        ##-- w($t) = H(Doc|T=$t) / H(Doc); aka 'Hq'
+##                                   ##    'conditional-entropy'     ##-- w($t) = H(Doc|T=$t); aka 'Hc'
+##                                   ##    'entropy'                 ##-- alias for 'max-entropy-quotient' (default); aka 'H'
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -58,6 +60,7 @@ our $verbose = 3;
 ##  docids => $docIdPdl,             ##-- document id subset: pdl($ND_local): [$doc_pdl_index] -> $docid_denum
 ##  ##
 ##  ##-- data: training
+##  lz => $lemmatizer,               ##-- DocClassify::Lemmatizer object
 ##  gf => \%global_tf,               ##-- global term-frequency hash: ($term=>$freq, ...)
 ##  df => \%global_df,               ##-- global term-docfrequency hash: ($term=>$ndocs, ...)
 ##  docs   => \@docs,                ##-- training docs, indexed by local $docid ($ND=$docEnum->size()=scalar(@docs))
@@ -78,7 +81,8 @@ sub new {
   my $obj =  $that->SUPER::new(
 			       ##-- options
 			       verbose=>$verbose,
-			       lemmatize => {},
+			       lzClass => 'default',
+			       lzOpts  => {},
 			       trainExclusive => 1,
 			       minFreq =>0,
 			       minDocFreq =>0,
@@ -631,13 +635,19 @@ sub logwm {
 ##==============================================================================
 ## Methods: Misc
 
+## $lz = $map->lemmatizer()
+##  + gets or creates $map->{lz}
+sub lemmatizer {
+  return $_[0]{lz} if (defined($_[0]{lz}));
+  return $_[0]{lz} = DocClassify::Lemmatizer->new(%{$_[0]{lzOpts}},class=>$_[0]{lzClass});
+}
 
 ## $sig = $map->lemmaSignature($doc_or_sig)
-##  + wrapper for $doc->termSignature->lemmatize() with options %{$map->{lemmatize}}
+##  + wrapper for $map->lemmatizer->lemmatize($doc_or_sig->typeSignature)
 sub lemmaSignature {
   my ($map,$sig) = @_;
   $sig = $sig->typeSignature if (!UNIVERSAL::isa($sig,'DocClassify::Signature'));
-  $sig = $sig->lemmatize( %{$map->{lemmatize}} ) if (!$sig->lemmatized);
+  $sig = ($map->{lz}||$map->lemmatizer)->lemmatize($sig) if (!$sig->lemmatized);
   return $sig;
 }
 

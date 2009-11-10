@@ -30,7 +30,7 @@ our %ALIAS =
 ## $map = $CLASS_OR_OBJ->new(%opts)
 ## %$map, %opts:
 ##  ##-- subclass selection
-##  class => $clas,       ##-- package name or alias or 'DocClassify::Mapper' suffix
+##  class => $class,       ##-- package name or alias or 'DocClassify::Mapper' suffix
 sub new {
   my ($that,%opts) = @_;
   if (defined($opts{class})) {

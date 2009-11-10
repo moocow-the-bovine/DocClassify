@@ -37,7 +37,8 @@ our %splitopts = (
 our %mapopts = (
 		class=>'LSI',    ##-- mapper class
 		label=>undef,    ##-- default label
-		lemmatize=>{},   ##-- see $DocClassify::Signature::LEMMA_XYZ variables for defaults
+		lzClass => 'default', ##-- default lemmatizer class; see DocClassify::Lemmatizer::new()
+		lzOpts=>{},      ##-- lemmatizer options; see DocClassify::Lemmatizer::LZ_CLASS for detatils
 		svdr => 256,     ##-- svd dimensions
 		maxTermsPerDoc=>0, ##-- maximum #/terms per doc
 		minFreq =>0,     ##-- minimum frequency
@@ -72,7 +73,8 @@ GetOptions(##-- General
 	   'n-subcorpora|n=i' => \$n_subcorpora,
 	   'mapper-class|mapclass|class|mapc|mc=s' => \$mapopts{class},
 	   'label|l=s' => sub { $evalopts{label}=$mapopts{label}=$corpusopts{label}=$_[1]; },
-	   'lemmatize-option|lemma-option|lemma|L=s%' => $mapopts{lemmatize},
+	   'lemmatizer-class|lemma-class|lz-class|lzc|lc=s' => \$mapopts{lzClass},
+	   'lemmatizer-option|lemma-option|lz-option|lzo|lo=s' => $mapopts{lzOpts},
 	   'max-terms-per-doc|max-tpd|maxtpd|mtpd|tpd=f' => \$mapopts{maxTermsPerDoc},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
 	   'min-doc-frequency|min-docs|mdf|md=f' => \$mapopts{minDocFreq},
@@ -136,7 +138,7 @@ our $label0 = $corpus0->{label};
 if ($mapper0->can('lemmaSignature')) {
   print STDERR "$prog: lemmaSignatures()\n" if ($verbose);
   foreach (@{$corpus0->{docs}}) {
-    print STDERR "$prog: lemmaSignature(".$_->label.")\n" if ($verbose >= 2);
+    print STDERR "$prog: lemmaSignature(".$_->label.")\n" if ($verbose >= 3);
     $_->{sig} = $mapper0->lemmaSignature($_);
   }
 }
@@ -225,7 +227,8 @@ dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swe
  Mapper Options:
   -mapper-class CLASS    # set mapper class (default='LSI')
   -label LABEL           # set global mapper label
-  -lemma OPT=VALUE       # set lemmatization option
+  -lz-class LZ_CLASS     # set lemmatizer subclass (default='default')
+  -lz-option OPT=VALUE   # set lemmatizer option OPT to VAL (default=none)
   -max-tpd NTERMS        # set maximum #/terms per doc (default=0 [no limit])
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)

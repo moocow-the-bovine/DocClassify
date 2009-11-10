@@ -1,7 +1,7 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::Signature.pm
 ## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
-## Descript: document classifier: signature (term frequencies)
+## Descript: document classifier: signature (raw term-type frequencies)
 
 package DocClassify::Signature;
 use DocClassify::Object;
@@ -22,30 +22,6 @@ our $CAT_DEG_MAX = 3;
 ## $CAT_DEG_DEFAULT
 ##  + default membership degree if unspecified (for loadCsvFile())
 our $CAT_DEG_DEFAULT = 1;
-
-## $LEMMATIZE_TEXT_ATTR
-##  + default text attribute for lemmatize()
-our $LEMMATIZE_TEXT_ATTR = 'norm';
-
-## $LEMMATIZE_TEXT_REGEX
-##  + default text regex for lemmatize()
-our $LEMMATIZE_TEXT_REGEX = undef;
-
-## $LEMMATIZE_POS_REGEX
-##  + default pos regex for lemmatize()
-#our $LEMMATIZE_POS_REGEX = qr/^N/;
-#our $LEMMATIZE_POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ)/;
-#our $LEMMATIZE_POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ|FM)/;
-our $LEMMATIZE_POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ|FM|XY)/;
-#our $LEMMATIZE_POS_REGEX= qr/./;
-
-## $LEMMATIZE_LEMMA_ATTR
-##  + default lemma attribute for lemmatize()
-our $LEMMATIZE_LEMMA_ATTR = 'lemma';
-
-## $LEMMATIZE_LEMMA_TOLOWER
-##  + default lemmatize to lower-case?
-our $LEMMATIZE_LEMMA_TOLOWER = 1;
 
 ##==============================================================================
 ## Constructors etc.
@@ -136,51 +112,26 @@ sub unlemmatize {
 }
 
 ## $sig = $sig->lemmatize(%opts)
-##  + creates lemma-frequency hash $sig->{lf}, $sig->{Nl} from $sig->{tf}
+##  + wrapper $opts{lemmatizer}->lemmatize($sig) rsp. $opts{lzClass}->new(%opts)->lemmatize($sig) 
 ##  + does nothing if $sig->lemmatized() returns true
 ##  + %opts:
-##     textAttr => $attr,        ##-- text attribute (default=$LEMMATIZE_TEXT_ATTR)
-##     textRegex => $re,         ##-- regex for wanted text (default=$LEMMATIZE_TEXT_REGEX)
-##     textStop => \%stopText,   ##-- unwanted if exists($stopText{$text}); default=undef (none)
-##     posRegex => $re,          ##-- regex for wanted PoS  (default=$LEMMATIZE_POS_REGEX)
-##     lemmaAttr => $attr,       ##-- lemma attribute (default=$LEMMATIZE_LEMMA_ATTR)
-##     lemmaToLower => $bool,    ##-- force lemmata to lower-case? (default=$LEMMATIZE_LEMMA_TOLOWER)
+##     lemmatizer => $lz,         ##-- lemmatizer object to use
+##     lzClass    => $lzClass,    ##-- lemmatizer class
+##     $lzOptKey  => $lzOptVal,   ##-- other options are passed to $lemmatizerClass->new(), if classed
 sub lemmatize {
   my ($sig,%opts) = @_;
   return $sig if ($sig->lemmatized);
 
-  ##-- defaults
-  my $textAttr  = defined($opts{textAttr}) ? $opts{textAttr} : $LEMMATIZE_TEXT_ATTR;
-  my $textRegex = defined($opts{textRegex}) ? $opts{textRegex} : $LEMMATIZE_TEXT_REGEX;
-  my $textStop  = $opts{textStop};
-  my $posAttr   = 'pos';
-  my $posRegex  = defined($opts{posRegex}) ? $opts{posRegex} : $LEMMATIZE_POS_REGEX;
-  my $lemmaAttr = defined($opts{lemmaAttr}) ? $opts{lemmaAttr} : $LEMMATIZE_LEMMA_ATTR;
-  my $lemma2lc  = defined($opts{lemmaToLower}) ? $opts{lemmaToLower} : $LEMMATIZE_LEMMA_TOLOWER;
-
-  ##-- pre-compile regexes
-  $textRegex = qr/$textRegex/ if (defined($textRegex) && !UNIVERSAL::isa($textRegex,'Regexp'));
-  $posRegex  = qr/$posRegex/  if (defined($posRegex) && !UNIVERSAL::isa($posRegex,'Regexp'));
-
-  ##-- lemmatize
-  my $tf = $sig->{tf};
-  my $lf = $sig->{lf} = {};
-  my $Nlref = \$sig->{Nl};
-  $$Nlref = 0;
-
-  my ($y,$f, %ya);
-  while (($y,$f)=each(%$tf)) {
-    %ya = (map {split(/=/,$_,2)} split(/\t/,$y));
-    next if (defined($posRegex)  && $ya{$posAttr}  !~ $posRegex);
-    next if (defined($textStop)  && exists($textStop->{$ya{$textAttr}}));
-    next if (defined($textRegex) && $ya{$textAttr} !~ $textRegex);
-    $ya{$lemmaAttr} = lc($ya{$lemmaAttr}) if ($lemma2lc);
-    $lf->{$ya{$lemmaAttr}} += $f;
-    $$Nlref += $f;
+  my $lz = $opts{lemmatizer};
+  if (!UNIVERSAL::isa($lz,'DocClassify::Lemmatizer')) {
+    my $lzClass = ($lz || $opts{lzClass} || 'default');
+    $lz = DocClassify::Lemmatizer->new(%opts,class=>$lzClass);
   }
+  confess(ref($sig)."::lemmatize(): could not create lemmatizer!") if (!defined($lz));
 
-  return $sig;
+  return $lz->lemmatize($sig);
 }
+
 
 
 ##==============================================================================

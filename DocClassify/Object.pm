@@ -21,7 +21,11 @@ use PDL;
 use Storable;
 use PDL::IO::Storable;
 
-use DocClassify::Utils ':all';
+##-- storable v2.18, v2.21 can't handle qr//-style Regexp regexes
+use Regexp::Copy;
+#use Regexp::Storable; ##-- there's a bug in this; hack is in DocClassify::Utils
+
+use DocClassify::Utils ':all';  ##-- load this AFTER Regexp::Copy, Regexp::Storable
 use IO::File;
 use Carp;
 use strict;

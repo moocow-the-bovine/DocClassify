@@ -12,6 +12,10 @@ use DocClassify::FileChurner;
 use DocClassify::Corpus;
 use DocClassify::Signature;
 
+use DocClassify::Lemmatizer;
+use DocClassify::Lemmatizer::VzContent;
+use DocClassify::Lemmatizer::VzSep;
+
 use DocClassify::Mapper;
 use DocClassify::Mapper::ByLemma;
 use DocClassify::Mapper::LSI;

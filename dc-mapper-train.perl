@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+#use DocClassify::Lemmatizer::VzSep;
 
 #use PDL;
 #use PDL::Ngrams;
@@ -31,8 +32,9 @@ our %corpusopts = qw();
 our %mapopts = (
 		class=>'LSI',    ##-- mapper class
 		label=>undef,    ##-- default label
-		lemmatize=>{},   ##-- see $DocClassify::Signature::LEMMA_XYZ variables for defaults
-		svdr => 256,     ##-- svd dimensions (see DocClassify::Mapper::LSI defaults)
+		lzClass => 'default', ##-- default lemmatizer class; see DocClassify::Lemmatizer::new()
+		lzOpts=>{},      ##-- lemmatizer options; see DocClassify::Lemmatizer::LZ_CLASS for detatils
+		svdr => 512,     ##-- svd dimensions (see DocClassify::Mapper::LSI defaults)
 		maxTermsPerDoc=>0, ##-- maximum #/terms per doc
 		minFreq =>0,     ##-- minimum global term-frequency f(t) for term-inclusion
 		minDocFreq =>0,  ##-- minimum #/docs with f(t,d)>0 for term-inclusion
@@ -40,7 +42,8 @@ our %mapopts = (
 		trainExclusive=>1, ##-- exclusive-mode training?
 		catProfile => 'average',   ##-- how to do category profiling
 		termWeight => 'entropy',   ##-- how to do term weighting
-		xn => 3,                   ##-- number of splits for parameter-fitting cross-check
+		#xn => 3,                   ##-- number of splits for parameter-fitting cross-check
+		xn => 0,                   ##-- number of splits for parameter-fitting cross-check
 		seed =>0,        ##-- random seed for x-check
 		##-- local options
 		clearCache => 1,
@@ -62,7 +65,8 @@ GetOptions(##-- General
 	   ##-- Map Options
 	   'mapper-class|mapclass|class|mapc|mc=s' => \$mapopts{class},
 	   'label|l=s' => \$mapopts{label},
-	   'lemmatize-option|lemma-option|lemma|L=s%' => $mapopts{lemmatize},
+	   'lemmatizer-class|lemma-class|lz-class|lzc|lc=s' => \$mapopts{lzClass},
+	   'lemmatizer-option|lemma-option|lz-option|lzo|lo=s' => $mapopts{lzOpts},
 	   'max-terms-per-doc|max-tpd|maxtpd|mtpd|tpd=f' => \$mapopts{maxTermsPerDoc},
 	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
 	   'min-doc-frequency|min-docs|mdf|md=f' => \$mapopts{minDocFreq},
@@ -141,7 +145,8 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
  Mapper Options:
   -mapper-class CLASS    # set mapper class (default='LSI')
   -label LABEL           # set global mapper label
-  -lemma OPT=VALUE       # set lemmatization option
+  -lz-class LZ_CLASS     # set lemmatizer subclass (default='default')
+  -lz-option OPT=VALUE   # set lemmatizer option OPT to VAL (default=none)
   -max-tpd NTERMS        # set maximum #/terms per doc (default=0 [no limit])
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)
@@ -149,7 +154,7 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -svd-dims DIMS         # set max SVD dimensions (default=256)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
-  -xcheck-n XN           # set number of cross-check splits for param-fitting (default=3)
+  -xcheck-n XN           # set number of cross-check splits for param-fitting (default=0) [SLOW AND GOOFY!]
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
   -clear     , -noclear  # do/don't clear training cache before saving (default=do)

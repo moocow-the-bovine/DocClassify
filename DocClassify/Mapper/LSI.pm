@@ -200,7 +200,7 @@ sub compileFit {
   my $map = shift;
 
   if (!defined($map->{dc_dist})) {
-    warn(ref($map)."::compileFit(): no {dc_dist} matrix defined -- skipping");
+    print STDERR (ref($map)."::compileFit(): no {dc_dist} matrix defined; NOT computing fit paramters\n");
     return $map;
   }
 
@@ -375,7 +375,7 @@ sub compileCrossCheck {
   my $xcn = $map->{xn};
 
   if (!$xcn || $xcn<3) {
-    warn(ref($map)."::compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")");
+    print STDERR (ref($map)."::compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")\n");
     return $map;
   }
 

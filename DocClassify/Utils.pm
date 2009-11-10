@@ -312,8 +312,32 @@ sub _gausswidth {
 }
 
 ##==============================================================================
+## Hacks: Regexp::Storable fixes
+
+BEGIN {
+  no warnings 'redefine';
+
+  ##-- from Regexp::Storable.pm, distribution Regexp::Copy
+  package Regexp;
+  sub STORABLE_freeze {
+    #my $serialized = substr($_[0], rindex($_[0],':')+1, -1); ##-- original
+    my $serialized =  substr($_[0],CORE::index($_[0],':')+1,-1);    ##-- fixed
+    return $serialized;
+  }
+
+  ##-- nothing changed here
+  sub STORABLE_thaw {
+    my ( $original, $cloning, $thaw ) = @_;
+    my $final = ($thaw) ? qr/$thaw/ : qr//;
+    Regexp::Copy::re_copy($final, $original);
+  }
+}
+
+
+##==============================================================================
 ## Footer
 1;
+
 
 __END__
 ##========================================================================

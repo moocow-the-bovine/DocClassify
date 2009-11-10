@@ -1871,7 +1871,7 @@ sub test_load_xcheck {
 
   print STDERR "$0: test_load_xcheck() done: what now?\n";
 }
-test_load_xcheck(@ARGV);
+#test_load_xcheck(@ARGV);
 
 
 
@@ -1906,6 +1906,16 @@ sub _Fb {
   my ($pr1,$rc1) = (li1($pr,$eps),li1($rc,$eps));
   my $Fb = (1+$beta**2) * ($pr1*$rc1) / ($beta**2 * $pr1 + $rc1);
 }
+
+##======================================================================
+sub test_store_regex {
+  my $re = qr/(?:foo|bar)/;
+  my $re_f = Storable::freeze($re);
+  my $re_t = Storable::thaw($re_f);
+  print STDERR "$0: test_store_regex(): ", ("$re" eq "$re_t" ? "ok" : "NOT ok"), "\n";
+  print "$0: test_store_regex() done: what now?\n";
+}
+test_store_regex;
 
 ##======================================================================
 sub test_cluster_mapper {
