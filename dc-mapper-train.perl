@@ -3,7 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
-#use DocClassify::Lemmatizer::VzSep;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -20,76 +20,29 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 2;
-our ($help);
+our $verbose = setVerboseOptions(2);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
+%opts = (%opts,
 
-our %corpusopts = qw();
-
-our %mapopts = (
-		class=>'LSI',    ##-- mapper class
-		label=>undef,    ##-- default label
-		lzClass => 'default', ##-- default lemmatizer class; see DocClassify::Lemmatizer::new()
-		lzOpts=>{},      ##-- lemmatizer options; see DocClassify::Lemmatizer::LZ_CLASS for detatils
-		svdr => 512,     ##-- svd dimensions (see DocClassify::Mapper::LSI defaults)
-		maxTermsPerDoc=>0, ##-- maximum #/terms per doc
-		minFreq =>0,     ##-- minimum global term-frequency f(t) for term-inclusion
-		minDocFreq =>0,  ##-- minimum #/docs with f(t,d)>0 for term-inclusion
-		smoothf =>1,     ##-- smoothing frequency (undef for NTypes/NTokens)
-		trainExclusive=>1, ##-- exclusive-mode training?
-		catProfile => 'average',   ##-- how to do category profiling
-		termWeight => 'entropy',   ##-- how to do term weighting
-		#xn => 3,                   ##-- number of splits for parameter-fitting cross-check
-		xn => 0,                   ##-- number of splits for parameter-fitting cross-check
-		seed =>0,        ##-- random seed for x-check
-		##-- local options
-		clearCache => 1,
-	       ),
-
-our %loadopts_corpus = ( mode=>undef, );
-our %saveopts_map    = ( mode=>undef, format=>1, );
+	 #corpusLoad=>{optsLoad('corpus'),verboseIO=>0},
+	 #corpusSave=>{optsSave('corpus'),verboseIO=>0},
+	);
 
 our $compileMap = 1; ##-- whether to compile map before saving
-our $outfile = '-';
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
+GetOptions(##-- common options
+	   dcOptions(),
 
-	   ##-- Map Options
-	   'mapper-class|mapclass|class|mapc|mc=s' => \$mapopts{class},
-	   'label|l=s' => \$mapopts{label},
-	   'lemmatizer-class|lemma-class|lz-class|lzc|lc=s' => \$mapopts{lzClass},
-	   'lemmatizer-option|lemma-option|lz-option|lzo|lo=s' => $mapopts{lzOpts},
-	   'max-terms-per-doc|max-tpd|maxtpd|mtpd|tpd=f' => \$mapopts{maxTermsPerDoc},
-	   'min-frequency|min-freq|mf=f' => \$mapopts{minFreq},
-	   'min-doc-frequency|min-docs|mdf|md=f' => \$mapopts{minDocFreq},
-	   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$mapopts{smoothf},
-	   'svd-dims|svd-r|svdr|r=i' =>\$mapopts{svdr},
-	   'exclusive|x!' => \$mapopts{trainExclusive},
-	   'cat-profile|catProfile|profile|cp=s' => \$mapopts{catProfile},
-	   'term-weight|termWeight|tw|w=s'       => \$mapopts{termWeight},
-	   'mapper-option|mo=s' => \%mapopts,
-	   'cross-check-n|xcheck-n|xn=i' => \$mapopts{xn},
-	   'random-seed|seed|rs=i' => \$mapopts{seed},
+	   ##-- local options
 	   'compile|c!' => \$compileMap,
-	   'clear-training-cache|clear-cache|clear!' => \$mapopts{clearCache},
-
-	   ##-- I/O
-	   'corpus-input-mode|input-mode|cim|im=s' => \$loadopts_corpus{mode},
-	   'map-output-mode|output-mode|om=s' => \$saveopts_map{mode},
-	   'format-xml|format|fx|f!' => sub { $saveopts_map{format}=$_[1] ? 1 : 0; },
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
 	  );
+$verbose = $opts{corpusLoad}{verboseIO} = $opts{mapSave}{verboseIO} = $opts{verbose};
+our $outfile = $opts{outputFile};
 
-
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
 
 ##------------------------------------------------------------------------------
@@ -102,31 +55,33 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 ##-- vars
-$mapopts{verbose} = $verbose;
+our %mapopts = optsNew('map');
 our $mapper = DocClassify::Mapper->new( %mapopts )
   or die("$0: Mapper::new(class=>'$mapopts{class}') failed: $!");
+our $logger = 'DocClassify::Program';
 
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);
 foreach (@ARGV) {
-  print STDERR "$prog: loadCorpus($_)\n" if ($verbose);
-  my $corpus = DocClassify::Corpus->new(%corpusopts)->loadFile($_,%loadopts_corpus)
+  $logger->info("loadCorpus($_)") if ($verbose);
+  my $corpus = DocClassify::Corpus->new(optsNew('corpus'))->loadFile($_,optsLoad('corpus'))
     or die("$0: Corpus::loadFile() failed for '$_': $!");
-  print STDERR "$prog: trainCorpus()\n" if ($verbose);
+
+  $logger->info("trainCorpus()") if ($verbose);
   $mapper->trainCorpus($corpus)
     or die("$0: Mapper::trainCorpus() failed for '$_': $!");
 }
 
 if ($compileMap) {
-  print STDERR "$prog: compile()\n" if ($verbose);
+  $logger->info("compile()") if ($verbose);
   $mapper->compile()
     or die("$0: Mapper::compile() failed, class=$mapopts{class}: $!");
-  print STDERR "$prog: clearTrainingCache()\n" if ($verbose);
+
+  $logger->info("clearTrainingCache()") if ($verbose);
   $mapper->clearTrainingCache() if ($mapopts{clearCache});
 }
 
-print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
-$mapper->saveFile($outfile, %saveopts_map);
+$mapper->saveFile($outfile, optsSave('map'));
 
 =pod
 

@@ -37,9 +37,8 @@ our $inputCorpora = 0; ##-- where INPUTs are corpora or document files/dirs
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(generalOptions,
-	   corpusOptions,
-	   ioOptions,
+GetOptions(##-- common options
+	   dcOptions(),
 
 	   ##-- local options
 	   'union|merge|corpora|u|m|c!' => \$inputCorpora,
@@ -59,7 +58,7 @@ sub fc_callback {
   my ($infile) = @_;
   if ($inputCorpora) {
     ##-- read corpora
-    my $c2 = DocClassify::Corpus->loadFile($infile,%{$opts{corpusNew}},%{$opts{corpusLoad}})
+    my $c2 = DocClassify::Corpus->loadFile($infile,newOpts('corpus'))
       or die("$0: loadXmlFile() failed for input corpus '$infile': $!");
     $corpus->addCorpus($c2);
   } else {
@@ -79,14 +78,14 @@ sub fc_callback {
 ##------------------------------------------------------------------------------
 
 ##-- vars
-$corpus = DocClassify::Corpus->new( %{$opts{corpusNew}} );
+$corpus = DocClassify::Corpus->new( newOpts('corpus') );
 
 ##-- load inputs
 push(@ARGV,'-') if (!@ARGV);
-$fc = DocClassify::FileChurner->new( %{$opts{fcNew}}, fileCallback=>\&fc_callback );
+$fc = DocClassify::FileChurner->new( newOpts('fc'), fileCallback=>\&fc_callback );
 $fc->churn(@ARGV);
 
-$corpus->saveFile($opts{outputFile}, %{$opts{save}}, %{$opts{corpusSave}});
+$corpus->saveFile($opts{outputFile}, saveOpts('corpus'));
 
 =pod
 

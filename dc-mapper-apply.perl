@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -19,40 +20,23 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 2;
-our ($help);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
-
-our %corpusopts = qw();
-
-our %loadopts_map = ( mode=>undef, );
-our %loadopts_corpus = ( mode=>undef, );
-our %saveopts_corpus = ( mode=>undef, format=>1, saveCats=>1,saveSigs=>0 );
-
-our $outfile = '-';
+our $verbose = setVerbose(2);
+%opts = (%opts,
+	 corpusSave => { optsSave('corpus'), format=>1, saveCats=>1,saveSigs=>0 },
+	 outputFile => '-',
+	);
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
 GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
-
-	   ##-- Mapping Options (none)
-
-	   ##-- I/O
-	   'map-input-mode|mim=s' => \$loadopts_map{mode},
-	   'corpus-input-mode|input-mode|cim|im=s' => \$loadopts_corpus{mode},
-	   'corpus-output-mode|output-mode|com|om=s' => \$saveopts_corpus{mode},
-	   'format-xml|format|fx|f!' => sub { $saveopts_corpus{format}=$_[1] ? 1 : 0; },
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
+	   dcOptions(),
 	  );
+$verbose = $opts{verbose};
+our $outfile = $opts{outputFile};
 
-
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 pod2usage({-exitval=>0, -verbose=>0, -msg=>'No Mapper file specified!'}) if (!@ARGV);
 
 
@@ -66,9 +50,9 @@ pod2usage({-exitval=>0, -verbose=>0, -msg=>'No Mapper file specified!'}) if (!@A
 ##------------------------------------------------------------------------------
 
 ##-- vars
+our $logger = 'DocClassify::Program';
 our $mapfile = shift(@ARGV);
-print STDERR "$prog: Mapper->load($mapfile)\n" if ($verbose);
-our $mapper = DocClassify::Mapper->loadFile($mapfile, %loadopts_map )
+our $mapper = DocClassify::Mapper->loadFile($mapfile, optsLoad('map') )
   or die("$0: Mapper->load() failed for '$mapfile': $!");
 $mapper->{verbose} = $verbose;
 
@@ -76,8 +60,8 @@ $mapper->{verbose} = $verbose;
 push(@ARGV,'-') if (!@ARGV);
 our ($corpus);
 foreach (@ARGV) {
-  print STDERR "$prog: mapCorpus($_)\n" if ($verbose);
-  my $c2 = DocClassify::Corpus->new(%corpusopts)->loadFile($_,%loadopts_corpus)
+  $logger->info("Mapper->mapCorpus($_)") if ($verbose);
+  my $c2 = DocClassify::Corpus->new(optsNew('corpus'))->loadFile($_,optsLoad('corpus'))
     or die("$0: Corpus::loadFile() failed for '$_': $!");
   $c2 = $mapper->mapCorpus($c2)
     or die("$0: Mapper::mapCorpus() failed for '$_': $!");
@@ -85,8 +69,7 @@ foreach (@ARGV) {
   else { $corpus->addCorpus($c2); }
 }
 
-print STDERR "$prog: Corpus::saveFile($outfile)\n" if ($verbose);
-$corpus->saveFile($outfile, %saveopts_corpus);
+$corpus->saveFile($outfile, optsSave('corpus'));
 
 =pod
 

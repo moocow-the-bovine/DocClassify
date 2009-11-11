@@ -38,14 +38,14 @@ our $copy_glob = 1;     ##-- whether to copy by file-glob (default=true)
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(generalOptions(),
+GetOptions(
+	   ##-- common
+	   dcOptions(),
 
-	   ioOptions(),
+	   ##-- Local: I/O
 	   'output-dir|outdir|odir|od|d=s'=> \$outdir,
 
-	   corpusOptions(),
-
-	   ##-- Misc
+	   ##-- Local: Misc
 	   'copy|c' => sub { $copy_how='copy'; },
 	   'hardlink|hard|link|hl' => sub { $copy_how='hardlink'; },
 	   'symlink|sym|sl|s' => sub { $copy_how='symlink'; },
@@ -102,7 +102,7 @@ our $corpus = undef;
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);
 foreach (@ARGV) {
-  my $c2 = DocClassify::Corpus->new(%{$opts{corpusNew}})->loadFile($_,%{$opts{load}},%{$opts{corpusLoad}})
+  my $c2 = DocClassify::Corpus->new( optsNew('corpus') )->loadFile($_,optsLoad('corpus'))
     or die("$0: Corpus->loadFile() failed for '$_': $!");
   if (!$corpus) {
     $corpus=$c2;
@@ -139,7 +139,7 @@ foreach $doc (@{$corpus->{docs}}) {
 }
 
 #print STDERR "$prog: Corpus->saveFile($outfile)\n" if ($verbose);
-$corpus->saveFile($opts{outputFile}, %{$opts{save}}, %{$opts{corpusSave}});
+$corpus->saveFile($opts{outputFile}, optsSave('corpus'));
 
 =pod
 

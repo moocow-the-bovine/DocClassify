@@ -39,7 +39,8 @@ log4perl.PatternLayout.cspec.G = sub { return File::Basename::basename(\"$::0\")
 log4perl.appender.AppStderr = Log::Log4perl::Appender::Screen
 log4perl.appender.AppStderr.stderr = 1
 log4perl.appender.AppStderr.layout = Log::Log4perl::Layout::PatternLayout
-log4perl.appender.AppStderr.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss} %G[%P] %p: %c: %m%n
+log4perl.appender.AppStderr.layout.ConversionPattern = %G[%P] %p: %c: %m%n
+#log4perl.appender.AppStderr.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss} %G[%P] %p: %c: %m%n
 ";
   return $cfg;
 }

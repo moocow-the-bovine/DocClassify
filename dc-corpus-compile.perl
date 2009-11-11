@@ -33,15 +33,13 @@ our $verbose = setVerboseOptions(1);
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(generalOptions(),
-	   corpusOptions(),
-	   ioOptions(),
+GetOptions(dcOptions(),
 
 	   ##-- I/O
 	   'signature-mode|sigmode|sm=s' => \$opts{sigSave}{mode},
 	   'signature-suffix|sig-suffix|ss=s' => \$opts{sigSuffix}, ##-- per-document signature suffix
 	  );
-our $verbose = $opts{verbose};
+$verbose = $opts{verbose};
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
@@ -61,7 +59,7 @@ $corpus = undef;
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);
 foreach (@ARGV) {
-  my $c2 = DocClassify::Corpus->new( %{$opts{corpusNew}} )->loadFile($_, %{$opts{load}}, %{$opts{corpusLoad}})
+  my $c2 = DocClassify::Corpus->new( newOpts('corpus') )->loadFile($_, optsLoad('corpus'))
     or die("$0: Corpus::loadFile() failed for '$_': $!");
   if (!$corpus) { $corpus=$c2; next; }
   $corpus->addCorpus($c2);
@@ -78,13 +76,13 @@ foreach $doc (@{$corpus->{docs}}) {
   ##-- compile: signature
   if ($opts{corpusSave}{saveSigs}) {
     my $sigFile = $doc->{file}.$opts{sigSuffix};
-    $doc->saveSignature($sigFile, %{$opts{save}}, %{$opts{sigSave}});
+    $doc->saveSignature($sigFile, optsSave('sig'));
     delete(@$doc{qw(sig xdoc)}); ##-- clear cache, in case of binary save
   }
 }
 
 #print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
-$corpus->saveFile($opts{outputFile}, %{$opts{save}}, %{$opts{corpusSave}});
+$corpus->saveFile($opts{outputFile}, optsSave('corpus'));
 
 =pod
 

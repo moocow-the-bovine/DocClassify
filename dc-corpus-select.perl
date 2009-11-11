@@ -20,16 +20,13 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 2;
-our ($help);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
+our $verbose = setVerboseOptions(2);
+%opts = (%opts,
+	 corpusNew => { optsNew('corpus'), label=>'' },
+	 corpusSave => { optsSave('corpus'), format=>1, saveCats=>1, saveSigs=>1, },
+	);
 
-our %corpusOpts = ( label=>'', );
-our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, saveCats=>1, saveSigs=>1, );
 our $catListFile = '';
 our $maxDeg = 0;
 our $maxCats = 0;
@@ -38,25 +35,19 @@ our $outfile = '-';
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
+GetOptions(##-- common
+	   dcOptions(),
 
-	   ##-- Misc
-	   'label|l=s' => \$corpusOpts{label},
-	   'category-list|cat-list|cats|cat-file|cf|c=s' => \$catListFile,
-	   'max-cats|maxcats|mc=i' => \$maxCats,
-	   'max-degree|max-deg|maxdeg|md=i' =>\$maxDeg,
-
-	   ##-- I/O
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
-	   'format-xml|format|fx|f!' => sub { $saveopts{format}=$_[1] ? 1 : 0; },
-	   'input-mode|im=s' => \$loadopts{mode},
-	   'output-mode|om=s' => \$saveopts{mode},
+	   ##-- Local
+	   'category-list|cat-list|cat-file|cf=s' => \$catListFile,
+	   'max-cats|maxcats|MC=i' => \$maxCats,
+	   'max-degree|max-deg|maxdeg|MD=i' =>\$maxDeg,
 	  );
+$verbose = $opts{verbose};
+$opts{corpusSave}{label} = $opts{label};
 
 
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
 
 ##------------------------------------------------------------------------------
@@ -91,7 +82,7 @@ loadCatList($catListFile) if ($catListFile);
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);
 foreach (@ARGV) {
-  my $c2 = DocClassify::Corpus->new(%corpusOpts)->loadFile($_,%loadopts)
+  my $c2 = DocClassify::Corpus->new(optsNew('corpus'))->loadFile($_,optsLoad('corpus'))
     or die("$0: Corpus::loadFile() failed for '$_': $!");
   if (!$corpus) { $corpus=$c2; next; }
   $corpus->addCorpus($c2);
@@ -114,8 +105,8 @@ if ($maxDeg) {
   @{$corpus->{docs}} = grep {scalar(@{$_->{cats}}) > 0} @{$corpus->{docs}};
 }
 
-print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
-$corpus->saveFile($outfile, %saveopts);
+#print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
+$corpus->saveFile($outfile, optsSave('corpus'));
 
 =pod
 

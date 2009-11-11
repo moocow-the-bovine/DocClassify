@@ -149,7 +149,7 @@ sub loadFile {
   my $method = "load".($mode->{method} || ucfirst($mode->{name}))."File";
   my $sub = $that->can($method);
   $that->logconfess("loadFile(): no method for input mode '$mode->{name}'") if (!$sub);
-  $that->vlog('info',"loadFile($file) [mode=$mode]") if ($opts{verboseIO});
+  $that->vlog('info',"loadFile($file) [mode=$mode->{name}]") if ($opts{verboseIO});
   return $sub->($that,$file,%opts);
 }
 

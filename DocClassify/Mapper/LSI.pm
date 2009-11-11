@@ -373,7 +373,7 @@ sub compileCrossCheck {
   my $xcn = $map->{xn};
 
   if (!$xcn || $xcn<3) {
-    $map->vlog('info', "compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")");
+    $map->vlog('warn', "compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")");
     return $map;
   }
 

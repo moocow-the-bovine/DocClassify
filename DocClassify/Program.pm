@@ -17,9 +17,10 @@ our @ISA = qw(DocClassify::Logger Exporter);
 
 our %EXPORT_TAGS =
   (
-   opts => [qw(%opts)],
-   specs => [qw(generalOptions fcOptions corpusOptions ioOptions)],
-   utils => [qw(setVerboseOptions)],
+   opts => [qw(%opts dcOptions setVerboseOptions setVerbose),
+	    qw(newOpts loadOpts saveOpts),
+	    qw(optsNew optsLoad optsSave),
+	   ],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 $EXPORT_TAGS{all} = [@EXPORT_OK];
@@ -70,25 +71,55 @@ our %opts =
    corpusSave => {},
    corpusLoad => {},
 
-   ##-- Mapper Options
-   mapNew => {
-	      verbose => 1,
-	     },
-   mapSave => {},
-   mapLoad => {},
-
    ##-- Signature Options
    sigNew => {},
    sigSave => {verboseIO=>0},
    sigLoad => {verboseIO=>0},
+
+   ##-- Mapper Options
+   mapNew => {
+	      class=>'LSI',	          ##-- mapper class
+	      verbose=>1,                 ##-- verbosity level
+	      label=>undef,	          ##-- default label
+	      lzClass => 'default',       ##-- default lemmatizer class; see DocClassify::Lemmatizer::new()
+	      lzOpts=>{},                 ##-- lemmatizer options; see DocClassify::Lemmatizer::LZ_CLASS for detatils
+	      svdr => 512,                ##-- svd dimensions (see DocClassify::Mapper::LSI defaults)
+	      maxTermsPerDoc=>0,          ##-- maximum #/terms per doc
+	      minFreq =>0,                ##-- minimum global term-frequency f(t) for term-inclusion
+	      minDocFreq =>0,             ##-- minimum #/docs with f(t,d)>0 for term-inclusion
+	      smoothf =>1,                ##-- smoothing frequency (undef for NTypes/NTokens)
+	      trainExclusive=>1,	  ##-- exclusive-mode training?
+	      catProfile => 'average',    ##-- how to do category profiling
+	      termWeight => 'entropy',    ##-- how to do term weighting
+	      xn => 0,                    ##-- number of splits for parameter-fitting cross-check
+	      seed =>0,    		  ##-- random seed for x-check
+
+	      ##-- program-local options
+	      clearCache => 1,
+	     },
+   mapSave => { mode=>undef },
+   mapLoad => { mode=>undef },
+
+   ##-- Corpus-Split Options
+   split => {
+	     seed => undef,
+	     exclusive => 1,
+	     label => undef,
+	    },
+
+   ##-- Eval Options
+   evalNew => {},
+   evalLoad => {},
+   evalSave => {format=>1, saveDocs=>1},
   );
 
 ##----------------------------------------------------------------------
-## Utilities: Getopt::Long: general
+## Utilities: Getopt::Long: verbosity
 
 ## $level = setVerboseOptions($level)
 ## $level = setVerboseOptions($level,\%opts)
 ##  + sets all 'verbose' options in \%opts to $level
+BEGIN { *setVerbose = \&setVerboseOptions; }
 sub setVerboseOptions {
   my ($level,$opts) = @_;
   $opts = \%opts if (!$opts);
@@ -97,53 +128,89 @@ sub setVerboseOptions {
   return $level;
 }
 
-## %specs = generalOptions()
-##  + Getopt::Long specs for general values
-sub generalOptions {
+##----------------------------------------------------------------------
+## Utilities: Getopt::Long: all options
+
+sub dcOptions {
   (
+   ##-- General Options
    'help|h' => \$opts{help},
    'verbose|v=i' => sub { setVerboseOptions($_[1]); },
-  );
-}
 
-##----------------------------------------------------------------------
-## Utilities: Getopt::Long: I/O
-
-## %specs = ioOptions()
-##  + Getopt::Long spec for I/O
-sub ioOptions {
-  (
+   ##-- I/O Options
    #'output-dir|outdir|odir|od|d=s'=> \$opts{outputDir},
    'output-file|outfile|out|of|o=s'=> \$opts{outputFile},
    'input-mode|im=s' => \$opts{load}{mode},
    'output-mode|om=s' => \$opts{save}{mode},
    'format-xml|format|fx|f!' => sub { $opts{save}{format}=$_[1] ? 1 : 0; },
-  );
-}
 
-##----------------------------------------------------------------------
-## Utilities: Getopt::Long: FileChurner
+   ##-- FileChurner options
+   'recursive|recurse|R' => \$opts{fcNew}{recursive},
 
-## %specs = fcOptions()
-##  + Getopt::Long spec for FileChurner
-sub fcOptions {
-  (
-   'recursive|recurse|r!' => \$opts{fcNew}{recursive},
-  );
-}
+   ##-- Labelling Options
+   'label|l=s' => \$opts{label},
 
-##----------------------------------------------------------------------
-## Utilities: Getopt::Long: Corpora
-
-
-## %specs = corpusOptions()
-##  + Getopt::Long spec for corpus I/O
-sub corpusOptions {
-  (
-   'label|l=s' => \$opts{corpusNew}{label},
+   ##-- Corpus Options
+   'corpus-label|clabel|cl=s' => \$opts{corpusNew}{label},
    'categories|cats|cat!' => \$opts{corpusSave}{saveCats},
    'signatures|sigs|sig!' => \$opts{corpusSave}{saveSigs},
+   'corpus-input-mode|cim=s' => \$opts{corpusLoad}{mode},
+   'corpus-output-mode|com=s' => \$opts{corpusSave}{mode},
+
+   ##-- Signature Options
+   #'signature-mode|sig-mode|sigmode|sm=s' => \$opts{sigSave}{mode},
+   #'signature-suffix|sig-suffix|sugsuffix|ss=s' => \$opts{sigSuffix},
+
+   ##-- Mapper Options
+   'mapper-label|maplabel|ml=s' => \$opts{mapNew}{label},
+   'mapper-class|mapclass|class|mapc|mc=s' => \$opts{mapNew}{class},
+   'lemmatizer-class|lemma-class|lz-class|lzc|lc=s' => \$opts{mapNew}{lzClass},
+   'lemmatizer-option|lemma-option|lz-option|lzo|lo=s' => $opts{mapNew}{lzOpts},
+   'max-terms-per-doc|max-tpd|maxtpd|mtpd|tpd=f' => \$opts{mapNew}{maxTermsPerDoc},
+   'min-frequency|min-freq|mf=f' => \$opts{mapNew}{minFreq},
+   'min-doc-frequency|min-docs|mdf|md=f' => \$opts{mapNew}{minDocFreq},
+   'smooth-frequency|smooth-freq|smoothf|sf=f' => \$opts{mapNew}{smoothf},
+   'svd-dims|svd-r|svdr|r=i' =>\$opts{mapNew}{svdr},
+   'exclusive|x!' => \$opts{mapNew}{trainExclusive},
+   'cat-profile|catProfile|profile|cp=s' => \$opts{mapNew}{catProfile},
+   'term-weight|termWeight|tw|w=s'       => \$opts{mapNew}{termWeight},
+   'cross-check-n|xcheck-n|xn=i' => \$opts{mapNew}{xn},
+   #'random-seed|seed|rs=i' => \$opts{mapNew}{seed},
+   'clear-training-cache|clear-cache|clear!' => \$opts{mapNew}{clearCache},
+   'mapper-option|map-option|mapopt|mo=s%' => \$opts{mapNew},
+   #'compile|c!' => \$compileMap,
+   'mapper-input-mode|mim=s' => \$opts{mapLoad}{mode},
+   'mapper-output-mode|mom=s' => \$opts{mapSave}{mode},
+
+   ##-- Corpus-Split Options
+   'random-seed|seed|rs=i' => sub { $opts{mapNew}{seed}=$opts{split}{seed}=$_[1]; },
+   'split-label|sl=s' => \$opts{split}{label},
+
+   ##-- Eval Options
+   'eval-output-mode|eom=s'   => \$opts{evalSave}{mode},
+   'eval-save-docs|edocs|ed!' => \$opts{evalSave}{saveDocs},
   );
+}
+
+## %opts = optsNew($classKey)
+BEGIN { *newOpts = \&optsNew; }
+sub optsNew {
+  my $class = shift;
+  return ($class && $opts{"${class}New"} ? (%{$opts{"${class}New"}}) : qw());
+}
+
+## %opts = loadOpts($classKey)
+BEGIN { *loadOpts = \&optsLoad; }
+sub optsLoad {
+  my $class = shift;
+  return (%{$opts{load}}, ($class && $opts{"${class}Load"} ? (%{$opts{"${class}Load"}}) : qw()));
+}
+
+## %opts = saveOpts($classKey)
+BEGIN { *saveOpts = \&optsSave; }
+sub optsSave {
+  my $class = shift;
+  return (%{$opts{save}}, ($class && $opts{"${class}Save"} ? (%{$opts{"${class}Save"}}) : qw()));
 }
 
 
@@ -151,7 +218,7 @@ sub corpusOptions {
 ##==============================================================================
 ## Utilities
 
-#(nothing else here; this class is just used as a useful symbolic name)
+#(nothing else here)
 
 
 ##==============================================================================

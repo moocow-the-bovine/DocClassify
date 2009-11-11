@@ -33,8 +33,7 @@ our $want_cats = 1;
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(generalOptions(),
-	   ioOptions(),
+GetOptions(dcOptions(),
 
 	   ##-- Misc
 	   'ndocs|docs|d!' => \$want_ndocs,
