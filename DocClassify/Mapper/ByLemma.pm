@@ -50,6 +50,7 @@ our $verbose = 3;
 ##                                   ##    'entropy-quotient'        ##-- w($t) = H(Doc|T=$t) / H(Doc); aka 'Hq'
 ##                                   ##    'conditional-entropy'     ##-- w($t) = H(Doc|T=$t); aka 'Hc'
 ##                                   ##    'entropy'                 ##-- alias for 'max-entropy-quotient' (default); aka 'H'
+##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -88,6 +89,7 @@ sub new {
 			       maxTermsPerDoc =>0,
 			       smoothf =>1,
 			       termWeight  => 'entropy',
+			       cleanDocs => 1,
 
 			       ##-- data: enums
 			       lcenum => MUDL::Enum->new,
@@ -162,6 +164,11 @@ sub trainDocument {
 
   ##-- save reference to sig (for matrix construction)
   $map->{sigs}[$doc->{id}] = $sig;
+
+  ##-- cleanup document (avoid memory gobbling)
+  if ($map->{cleanDocs}) {
+    $doc->clearCache();
+  }
 
   ##-- that's it for here...
   return $doc;
@@ -651,14 +658,19 @@ sub docPdlRaw {
   return $_[0]->sigPdlRaw(@_[1..$#_]);
 }
 
-## $fpdl = $map->sigPdlRaw($sig, $want_ccs=0)
+## $fpdl = $map->sigPdlRaw($sig_or_doc, $want_ccs=0)
 ##  + $fpdl is dense or CCS::Nd pdl($NT): [$tid,1]=>f($tid,$sig)
 sub sigPdlRaw {
-  my ($map,$sig, $as_ccs) = @_;
-  $sig = $map->lemmaSignature($sig); ##-- ensure lemmatized signature
+  my ($map,$sig_or_doc, $as_ccs) = @_;
+  my $sig = $map->lemmaSignature($sig_or_doc); ##-- ensure lemmatized signature
   my $tenum = $map->{tenum};
   my $dtf_wt = pdl(long,   grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})});
   my $dtf_nz = pdl(double, @{$sig->{lf}}{@{$tenum->{id2sym}}[$dtf_wt->list]});
+  if ($map->{cleanDocs} || !exists($map->{cleanDocs})) {
+    ##-- cleanup
+    #$sig->unlemmatize;
+    $sig_or_doc->clearCache() if ($sig_or_doc->can('clearCache'));
+  }
   if ($as_ccs) {
     ##-- ccs mode
     return PDL::CCS::Nd->newFromWhich($dtf_wt->slice("*1,"),$dtf_nz,dims=>pdl(long,[$tenum->size]),missing=>0)->dummy(1,1);

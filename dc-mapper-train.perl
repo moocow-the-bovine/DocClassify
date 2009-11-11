@@ -106,7 +106,7 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
-  -svd-dims DIMS         # set max SVD dimensions (default=256)
+  -svd-dims DIMS         # set max SVD dimensions (default=512)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
   -xcheck-n XN           # set number of cross-check splits for param-fitting (default=0) [SLOW AND GOOFY!]

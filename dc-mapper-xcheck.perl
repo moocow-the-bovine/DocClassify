@@ -38,7 +38,8 @@ GetOptions(
 	   ##-- common options
 	   dcOptions(),
 
-	   ##-- Local: I/O
+	   ##-- Local
+	   'n-subcorpora|n-splits|nsplit|n=i' => \$n_subcorpora,
 	   'output-directory|output-dir|outdir|dir|od|d=s'=> \$outdir,
 	  );
 $verbose = $opts{verbose};
@@ -69,7 +70,7 @@ if (!-d $outdir) {
 ##--------------------------------------------------------------
 ## Initialize: mapper (master)
 our %mapopts = optsNew('map');
-our $mapper0 = DocClassify::Mapper->new( %mapopts )
+our $mapper0 = DocClassify::Mapper->new( %mapopts, cleanDocs=>0 )
   or die("$0: Mapper::new(class=>'$mapopts{class}') failed: $!");
 
 ##--------------------------------------------------------------
@@ -182,12 +183,12 @@ dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swe
   -min-freq FREQ         # set minimum global lemma frequency (default=0)
   -min-docs NDOCS        # set minimum "document frequency" (num docs) (default=0)
   -smooth-freq FREQ      # set global smoothing frequency (default=1)
-  -svd-dims DIMS         # set max SVD dimensions (default=256)
+  -svd-dims DIMS         # set max SVD dimensions (default=512)
   -cat-profile CP_HOW    # one of 'fold-in', 'average', 'weighted-average' (default='average')
   -term-weight TW_HOW    # one of 'uniform', 'entropy' (default='entropy')
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
-  -txn N                 # number of training-internal cross-check iterations (default=3)
+  -txn N                 # number of training-internal cross-check iterations (default=0) [GOOFY!]
   -mapper-option OPT=VAL # set generic (class-specific) mapper option
 
  I/O Options:

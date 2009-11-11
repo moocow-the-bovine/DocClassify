@@ -14,12 +14,14 @@ use DocClassify::Corpus;
 use DocClassify::Signature;
 
 use DocClassify::Lemmatizer;
+use DocClassify::Lemmatizer::VzPlain;
 use DocClassify::Lemmatizer::VzContent;
 use DocClassify::Lemmatizer::VzSep;
 
 use DocClassify::Mapper;
 use DocClassify::Mapper::ByLemma;
 use DocClassify::Mapper::LSI;
+use DocClassify::Mapper::LSI::KNN;
 
 use DocClassify::Eval;
 

@@ -23,9 +23,17 @@ our (%ALIAS);
 BEGIN {
   %ALIAS =
     (
+     ##
      VZ => 'VzContent',
      vzcontent => 'VzContent',
+     vzContent => 'VzContent',
+     ##
+     plain => 'VzPlain',
+     vzPlain => 'VzPlain',
+     ##
      vzsep => 'VzSep',
+     vzSep => 'VzSep',
+     ##
      Default => 'VzContent',
     );
   @ALIAS{map {lc($_)} keys(%ALIAS)} = values(%ALIAS);

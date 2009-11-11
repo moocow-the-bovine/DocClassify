@@ -149,7 +149,7 @@ sub compile {
   my $map = shift;
 
   ##-- inherited compilation
-  $map->SUPER::compile() or confess(ref($map)."::compile() inherited compilation failed: $!");
+  $map->SUPER::compile() or $map->logconfess("compile() inherited compilation failed: $!");
 
   ##-- clear expensive perl signature structs
   @{$map->{sigs}} = qw();
@@ -382,7 +382,7 @@ sub compileCrossCheck {
   my @subcs  = $corpus->splitN($xcn, seed=>$map->{seed}, exclusive=>$map->{trainExclusive}, label=>"XCHECK.%d/$xcn");
 
   ##-- cross-check: map subcorpora to document index pdls
-  confess(ref($map)."::compileCrossCheck(): can't handle non-exclusive training mode!") if (!$map->{trainExclusive});
+  $map->logconfess("compileCrossCheck(): can't handle non-exclusive training mode!") if (!$map->{trainExclusive});
   my $NC     = $map->{lcenum}->size;
   my $ND     = $map->{denum}->size;
   my $d2subc = zeroes(long,$ND);
@@ -418,7 +418,7 @@ sub compileCrossCheck {
       $map->vlog('trace', "compileCrossCheck(): [$xclabel]: MAP: DOC(".$map->{docs}[$od_did]{label}.")") if ($map->{verbose}>=2);
       $od_tdm = $map->{tdm}->dice_axis(1,$od_did);
       $od_xdm = $map2->svdApply($od_tdm);
-      $od_cdmat = $map2->{disto}->clusterDistanceMatrix(data=>$od_xdm,cdata=>$map2->{xcm});
+      $od_cdmat = $map2->{disto}->clusterDistanceMatrix(data=>$od_xdm,cdata=>$map2->{xcm})->lclip(0);
       $dc_dist->slice("($od_did),") .= $od_cdmat->flat;
     }
   }
@@ -523,7 +523,7 @@ sub catProfileMethod {
   elsif ($catProfile =~ /^a/) { $catProfile = 'average'; }
   elsif ($catProfile =~ /^w/) { $catProfile = 'weighted-average'; }
   else {
-    confess(ref($map)."::catProfileMethod(): unknown category-profiling method option '$catProfile'");
+    $map->logconfess("catProfileMethod(): unknown category-profiling method option '$catProfile'");
     return undef;
   }
   return $map->{catProfile} = $catProfile;
@@ -605,7 +605,7 @@ sub mapDocument {
   my ($map,$doc) = @_;
 
   ##-- be verbose
-  $map->vlog('info', "mapDocument(".$doc->label.")") if ($map->{verbose}>=3);
+  $map->vlog('trace', "mapDocument(".$doc->label.")") if ($map->{verbose}>=3);
 
   ##-- sanity check(s)
   $map->logconfess("mapDocument(): no feature-category matrix 'xcm'!") if (!defined($map->{xcm}));
@@ -617,7 +617,7 @@ sub mapDocument {
 
   ##-- compute distance to each centroid
   my $xdm   = $map->svdApply($tdm);
-  my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$xdm,cdata=>$map->{xcm});
+  my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$xdm,cdata=>$map->{xcm})->lclip(0);
 
   ##-- convert distance to similarity
   my ($cd_sim);
@@ -632,6 +632,7 @@ sub mapDocument {
     my $cd_cdf0 = gausscdf($cd_dist, $map->{c0dist_mu}, $map->{c0dist_sd});
     $cd_sim = F1( (1-li1($cd_cdf1)), (1-li1($cd_cdf0)), 1e-5);
   }
+  $cd_sim->inplace->clip(0,1e38);
 
   ##-- dump similarities to $doc->{cats}
   my $cname;
