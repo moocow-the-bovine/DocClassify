@@ -6,7 +6,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile
   (
    NAME		=> 'DocClassify',
-   AUTHOR       => 'Bryan Jurish <moocow@bbaw.de>',
+   AUTHOR       => 'Bryan Jurish <jurish@uni-potsdam.de>',
    ABSTRACT	=> 'Document classification module and utilities',
    VERSION_FROM	=> 'DocClassify.pm',
 
@@ -29,6 +29,7 @@ WriteMakefile
 		   },
 
    EXE_FILES   => [ glob('dc-*.perl'), ],
+   NORECURS => 1, ##-- don't recurse into local 'MUDL' mirror dir
   );
 
 
