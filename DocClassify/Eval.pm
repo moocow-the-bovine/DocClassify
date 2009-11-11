@@ -6,6 +6,7 @@
 
 package DocClassify::Eval;
 use DocClassify::Object;
+use DocClassify::Logger;
 use DocClassify::Utils ':all';
 use DocClassify::Document;
 
@@ -18,7 +19,7 @@ use strict;
 ##==============================================================================
 ## Globals
 
-our @ISA = qw(DocClassify::Object Exporter);
+our @ISA = qw(DocClassify::Object DocClassify::Logger Exporter);
 
 our @EXPORT = qw();
 our %EXPORT_TAGS =

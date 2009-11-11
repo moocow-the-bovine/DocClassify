@@ -25,10 +25,13 @@ use PDL::IO::Storable;
 use Regexp::Copy;
 #use Regexp::Storable; ##-- there's a bug in this; hack is in DocClassify::Utils
 
+use DocClassify::Logger;
 use DocClassify::Utils ':all';  ##-- load this AFTER Regexp::Copy, Regexp::Storable
 use IO::File;
 use Carp;
 use strict;
+
+our @ISA = qw(DocClassify::Logger);
 
 ##==============================================================================
 ## Constructors etc.
@@ -130,7 +133,8 @@ sub saveFile {
   my $mode = $obj->guessFileMode($file,%opts);
   my $method = "save".($mode->{method} || ucfirst($mode->{name}))."File";
   my $sub = $obj->can($method);
-  confess(ref($obj)."::saveFile(): no method for output mode '$mode->{name}'") if (!$sub);
+  $obj->logconfess("saveFile(): no method for output mode '$mode->{name}'") if (!$sub);
+  $obj->vlog('info', "saveFile($file) [mode=$mode->{name}]") if ($opts{verboseIO});
   return $sub->($obj,$file,%opts);
 }
 
@@ -144,7 +148,8 @@ sub loadFile {
   my $mode = $that->guessFileMode($file,%opts);
   my $method = "load".($mode->{method} || ucfirst($mode->{name}))."File";
   my $sub = $that->can($method);
-  confess((ref($that)||$that)."::loadFile(): no method for input mode '$mode->{name}'") if (!$sub);
+  $that->logconfess("loadFile(): no method for input mode '$mode->{name}'") if (!$sub);
+  $that->vlog('info',"loadFile($file) [mode=$mode]") if ($opts{verboseIO});
   return $sub->($that,$file,%opts);
 }
 
@@ -184,9 +189,10 @@ sub loadString {
 ##     netorder => $bool,  ##-- store in network order? (default=0)
 sub saveBinFile {
   my ($obj,$file,%opts) = @_;
+  #$obj->vlog('info', "saveBinFile($file) [netorder=".($opts{netorder} ? 1 : 0),"]");
   my $fh = ref($file) ? $file : IO::File->new(">$file");
-  confess(ref($obj)."::saveBinFile(): open failed for '$file': $!") if (!defined($fh));
-  my $rc = $opts{netorder} ? Storable::nsture_fd($obj,$fh) : Storable::store_fd($obj,$fh);
+  $obj->logconfess("saveBinFile(): open failed for '$file': $!") if (!defined($fh));
+  my $rc = $opts{netorder} ? Storable::nstore_fd($obj,$fh) : Storable::store_fd($obj,$fh);
   $fh->close() if (!ref($file));
   return $rc;
 }
@@ -206,8 +212,9 @@ sub saveBinString {
 ## $bool = $CLASS_OR_OBJECT->loadBinFile($filename_or_fh)
 sub loadBinFile {
   my ($obj,$file) = @_;
+  #$obj->vlog('info', "loadBinFile($file)");
   my $fh = ref($file) ? $file : IO::File->new("<$file");
-  confess(ref($obj)."::loadBinFile(): open failed for '$file': $!") if (!defined($fh));
+  $obj->logconfess("loadBinFile(): open failed for '$file': $!") if (!defined($fh));
   my $robj = Storable::retrieve_fd($fh);
   $fh->close() if (!ref($file));
   if (ref($obj) && $obj->isa('HASH') && $robj->isa('HASH')) {
@@ -233,7 +240,7 @@ sub loadBinString {
 ##  + dummy method
 sub saveTextFile {
   my $obj = shift;
-  confess(ref($obj)."saveTextFile(): not implemented");
+  $obj->logconfess("saveTextFile(): not implemented");
 }
 
 ## $str = $obj->saveTextString()
@@ -252,7 +259,7 @@ sub saveTextString {
 ##  + dummy method
 sub loadTextFile {
   my $obj = shift;
-  confess(ref($obj)."loadTextFile(): not implemented");
+  $obj->logconfess("loadTextFile(): not implemented");
 }
 
 ## $str = $CLASS_OR_OBJECT->loadTextString($str)

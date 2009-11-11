@@ -4,7 +4,6 @@
 ## Descript: document classifier: document-to-class mapper: by lemma
 
 package DocClassify::Mapper::ByLemma;
-use DocClassify::Object;
 use DocClassify::Mapper;
 use DocClassify::Lemmatizer;
 use DocClassify::Utils ':all';
@@ -139,7 +138,7 @@ sub noShadowKeys {
 ##  + calls $map->lemmaSignature($doc)
 sub trainDocument {
   my ($map,$doc) = @_;
-  print STDERR ref($map)."::trainDocument(".$doc->label.")\n" if ($map->{verbose} >= 3);
+  $map->vlog('trace',"trainDocument(".$doc->label.")") if ($map->{verbose} >= 3);
   my $sig = $map->lemmaSignature($doc);
 
   ##-- add sig frequency data to global hash(es)
@@ -261,8 +260,7 @@ sub compileTrim {
   my $map = shift;
 
   ##-- trim by max terms per doc
-  print STDERR ref($map)."::compileTrim(): by #/terms per doc: maxTermsPerDoc=$map->{maxTermsPerDoc}\n"
-    if ($map->{verbose});
+  $map->vlog('info',"compileTrim(): by #/terms per doc: maxTermsPerDoc=$map->{maxTermsPerDoc}") if ($map->{verbose});
   if ($map->{maxTermsPerDoc} && $map->{maxTermsPerDoc}>0) {
     my $maxtpd = $map->{maxTermsPerDoc};
     my $gf  = $map->{gf};
@@ -277,11 +275,11 @@ sub compileTrim {
   }
 
   ##-- trim by global term frequency
-  print STDERR ref($map)."::compileTrim(): by global term freqency: minFreq=$map->{minFreq}\n" if ($map->{verbose});
+  $map->vlog('info', "compileTrim(): by global term freqency: minFreq=$map->{minFreq}") if ($map->{verbose});
   delete(@{$map->{gf}}{ grep {$map->{gf}{$_} < $map->{minFreq}} keys(%{$map->{gf}}) }) if ($map->{minFreq}>0);
 
   ##-- trim by doc "frequency"
-  print STDERR ref($map)."::compileTrim(): by document term frequency: minDocFreq=$map->{minDocFreq}\n" if ($map->{verbose});
+  $map->vlog('info', "compileTrim(): by document term frequency: minDocFreq=$map->{minDocFreq}") if ($map->{verbose});
   delete(@{$map->{gf}}{ grep {$map->{df}{$_} < $map->{minDocFreq}} keys(%{$map->{gf}}) }) if ($map->{minDocFreq}>0);
   delete(@{$map->{df}}{ grep {!exists($map->{gf}{$_})} keys(%{$map->{df}}) });
 
@@ -293,7 +291,7 @@ sub compileTrim {
 ##  + compiles $map->{tenum} from keys(%{$map->{gf}})
 sub compileTermEnum {
   my $map = shift;
-  print STDERR ref($map)."::compileTermEnum()\n" if ($map->{verbose});
+  $map->vlog('info', "compileTermEnum()") if ($map->{verbose});
   my $tenum = $map->{tenum};
   $tenum->clear();
   #@{$tenum->{id2sym}} = ($map->{unkTerm}, keys(%{$map->{gf}}));
@@ -307,7 +305,7 @@ sub compileTermEnum {
 ##  + compiles $map->{lcenum} from $map->{gcenum}
 sub compileCatEnum {
   my $map = shift;
-  print STDERR ref($map)."::compileCatEnum()\n" if ($map->{verbose});
+  $map->vlog('info', "compileCatEnum()") if ($map->{verbose});
   $map->{lcenum} = $map->{gcenum}->clone;
   $map->{lcenum}->compact; ##-- renumber local categories (no missing rows!)
   return $map;
@@ -318,8 +316,8 @@ sub compileCatEnum {
 ##  + compile $map->{denum} (dummy placeholder; should already have happened in trainDocument())
 sub compileDocEnum {
   my $map = shift;
-  #print STDERR ref($map)."::compileDocEnum()\n" if ($map->{verbose});
-  # should already have happened in $map->trainDocument()
+  #$map->vlog('info',"compileDocEnum()") if ($map->{verbose});
+  # ... this should already have happened in $map->trainDocument()
   return $map;
 }
 
@@ -331,7 +329,7 @@ sub compile_dcm {
   my $lcenum = $map->{lcenum};
   my ($ND,$NC) = map {$_->size} @$map{qw(denum lcenum)};
 
-  print STDERR ref($map)."::compile_dcm(): matrix: dcm: (ND=$ND x NC=$NC) [Doc x Cat -> Deg]\n" if ($map->{verbose});
+  $map->vlog('info', "compile_dcm(): matrix: dcm: (ND=$ND x NC=$NC) [Doc x Cat -> Deg]") if ($map->{verbose});
   my $dcm = zeroes(double, $ND,$NC); #+'inf';
   my ($doc,$cat);
   foreach $doc (@{$map->{docs}}) {
@@ -357,19 +355,17 @@ sub compile_tdm0 {
   my $NT = $tenum->size;
   my $ND = $denum->size;
 
-  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: (NT=$NT x ND=$ND) [Term x Doc -> Freq]\n"
-    if ($map->{verbose});
+  $map->vlog('info', "compile_tdm0(): matrix: tdm0: (NT=$NT x ND=$ND) [Term x Doc -> Freq]") if ($map->{verbose});
 
   ##-- step 1: @$doc_wt: doc-wise term ids
-  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: doc_wt: [Doc -> Terms]\n"
-    if ($map->{verbose});
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: doc_wt: [Doc -> Terms]") if ($map->{verbose});
   my $tenum_sym2id = $tenum->{sym2id};
   my $tenum_id2sym = $tenum->{id2sym};
   my $doc_wt = $map->{doc_wt} = []; ##-- [$docid] => pdl($nnz_doc) : [$nzi_doc] -> $ti : f($doc,$ti) defined
   @$doc_wt = map { pdl(long, [grep {defined($_)} @$tenum_sym2id{keys %{$_->{lf}}}]) } @{$map->{sigs}};
 
   ##-- step 2: count doc-term nnz
-  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: Nnz\n" if ($map->{verbose});
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: Nnz") if ($map->{verbose});
   my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt]);
   my $nnz       = $doc_wt_n->sum;                        ##-- sclr: nnz($d,$t)
   my $doc_wt_i1 = $doc_wt_n->cumusumover-1;              ##-- [$di] -> sum_{$dj<=$di} nnz($dj)
@@ -377,7 +373,7 @@ sub compile_tdm0 {
 		   ->append(0)->rotate(1)->slice("0:-2")->cumusumover);
 
   ##-- step 3: create CCS::Nd tdm0
-  print STDERR ref($map)."::compile_tdm0(): matrix: tdm0: PDL::CCS::Nd\n" if ($map->{verbose});
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: PDL::CCS::Nd") if ($map->{verbose});
   my $sigs   = $map->{sigs};
   my $tdm0_w = zeroes(long,2,$nnz);
   my $tdm0_v = zeroes(double,$nnz);
@@ -419,8 +415,7 @@ sub compile_tcm0 {
   my $ND = $docids->nelem;
   my $NC = $lcenum->size;
 
-  print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: (NT=$NT x NC=$NC) [Term x Cat -> Freq]\n"
-    if ($map->{verbose});
+  $map->vlog('info', "compile_tcm0(): matrix: tcm0: (NT=$NT x NC=$NC) [Term x Cat -> Freq]") if ($map->{verbose});
 
   ##-- step 0: get sparse boolean dcmb [Doc x Cat -> Bool]
   my $dcm    = $map->{dcm};
@@ -432,14 +427,14 @@ sub compile_tcm0 {
   #my $dcm_wc = $dcmb->_whichND->slice("(1),");
 
   ##-- step 1: count doc-term nnz
-  print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: Nnz\n" if ($map->{verbose});
+  $map->vlog('info', "compile_tcm0(): matrix: tcm0: Nnz") if ($map->{verbose});
   my $doc_wt    = $map->{doc_wt};
   my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt])->index($docids);
   my $doc_cat_wt_n = $doc_wt_n * $doc_nc;
   my $nnz       = $doc_cat_wt_n->sum;                        ##-- sclr: nnz($d,$t)
 
   ##-- step 3: create CCS::Nd
-  print STDERR ref($map)."::compile_tcm0(): matrix: tcm0: PDL::CCS::Nd\n" if ($map->{verbose});
+  $map->vlog('info', "compile_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
   my $docs = $map->{docs};
   my $lcenum_sym2id = $map->{lcenum}{sym2id};
   my $tdm0 = $map->{tdm0};
@@ -475,8 +470,7 @@ sub compile_tcm {
   my $map = shift;
 
   my ($NT,$NC) = $map->{tcm0}->dims;
-  print STDERR ref($map)."::compile_tcm(): matrix: tcm: (NT=$NT x NC=$NC) [Term x Cat -> WeightedLogFreq]\n"
-    if ($map->{verbose});
+  $map->vlog('info', "compile_tcm(): matrix: tcm: (NT=$NT x NC=$NC) [Term x Cat -> WeightedLogFreq]") if ($map->{verbose});
   $map->{tcm} = $map->logwm($map->{tcm0});
 
   return $map;
@@ -492,7 +486,7 @@ sub compile_tdm_log {
 
   ##-- smooth & log-transform term-doc matrix
   $map->{smoothf} = $map->{tenum}->size/$map->{tdm0}->sum if (!$map->{smoothf});
-  print STDERR ref($map)."::compile_tdm_log(): smooth(smoothf=$map->{smoothf})\n" if ($map->{verbose});
+  $map->vlog('info', "compile_tdm_log(): smooth(smoothf=$map->{smoothf})") if ($map->{verbose});
   $map->{tdm} = ($map->{tdm0}+$map->{smoothf})->inplace->log;
 
   return $map;
@@ -538,7 +532,7 @@ sub compile_tw {
   my $ND = $map->{denum}->size;
 
   ##-- guts
-  print STDERR ref($map)."::compile_tw(): vector: tw: ($NT): [Term -> Weight] : tw=$termWeight\n" if ($map->{verbose});
+  $map->vlog('info',"compile_tw(): vector: tw: ($NT): [Term -> Weight] : tw=$termWeight") if ($map->{verbose});
   my ($tw);
   if ($termWeight eq 'uniform') {
     $tw = ones($NT);                                ##-- identity weighting

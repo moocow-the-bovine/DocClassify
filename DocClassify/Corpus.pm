@@ -6,6 +6,7 @@
 
 package DocClassify::Corpus;
 use DocClassify::Object;
+use DocClassify::Logger;
 use DocClassify::Utils ':all';
 use DocClassify::Document;
 
@@ -18,7 +19,7 @@ use strict;
 ##==============================================================================
 ## Globals
 
-our @ISA = qw(DocClassify::Object);
+our @ISA = qw(DocClassify::Object DocClassify::Logger);
 
 ##==============================================================================
 ## Constructors etc.

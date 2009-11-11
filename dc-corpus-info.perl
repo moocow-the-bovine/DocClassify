@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -19,13 +20,12 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our ($help,$verbose);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
+our $verbose = setVerboseOptions(2);
+%opts = (%opts,
+	 outputFile => '-',
+	);
 
-our $outfile = '-';
 our $want_ndocs = 1;
 our $want_bytes = 1;
 our $want_cats = 1;
@@ -33,18 +33,17 @@ our $want_cats = 1;
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
+GetOptions(generalOptions(),
+	   ioOptions(),
 
 	   ##-- Misc
 	   'ndocs|docs|d!' => \$want_ndocs,
 	   'sizes|bytes|s|b!' => \$want_bytes,
 	   'cats|c!' => \$want_cats,
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
 	  );
+$verbose=$opts{verbose};
 
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
 
 ##------------------------------------------------------------------------------
@@ -55,6 +54,7 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ## MAIN
 ##------------------------------------------------------------------------------
 
+our $outfile = $opts{outputFile};
 our $outfh = IO::File->new(">$outfile")
   or die("$0: open failed for output file '$outfile': $!");
 

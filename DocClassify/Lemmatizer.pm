@@ -5,6 +5,7 @@
 
 package DocClassify::Lemmatizer;
 use DocClassify::Object;
+use DocClassify::Logger;
 use DocClassify::Signature;
 use DocClassify::Utils ':all';
 use IO::File;
@@ -14,7 +15,7 @@ use strict;
 ##==============================================================================
 ## Globals
 
-our @ISA = qw(DocClassify::Object);
+our @ISA = qw(DocClassify::Object DocClassify::Logger);
 
 ## %ALIAS
 ##  + subclass aliases

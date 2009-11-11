@@ -5,6 +5,8 @@
 
 
 package DocClassify::FileChurner;
+use DocClassify::Object;
+use DocClassify::Logger;
 use DocClassify::Utils ':all';
 use File::Basename qw(basename dirname);
 use File::Find;
@@ -16,7 +18,7 @@ use strict;
 ##==============================================================================
 ## Globals
 
-our @ISA = qw(DocClassify::Object);
+our @ISA = qw(DocClassify::Object DocClassify::Logger);
 
 ##==============================================================================
 ## Constructors etc.
@@ -77,7 +79,7 @@ sub noShadowKeys {
 ##  + collects desired files from @inputs
 sub findFiles {
   my ($fc,@inputs) = @_;
-  print STDERR "$fc->{label}: findFiles()\n" if ($fc->{verbose} >= 1);
+  $fc->vlog('info', "findFiles()") if ($fc->{verbose} >= 1);
   foreach (@inputs) {
     if    (-d $_ && $fc->{recursive}) {
       find({wanted=>$fc->wantedSub,follow=>1,no_chdir=>1},$_);
@@ -116,11 +118,11 @@ sub processFiles {
   my $cb = $fc->{fileCallback};
   confess(ref($fc)."::processFiles(): no fileCallback defined!") if (!defined($cb));
   foreach $file (@files) {
-    print STDERR "$fc->{label}: FILE: $file\n" if ($fc->{verbose} >= 2);
+    $fc->vlog('trace', "FILE: $file") if ($fc->{verbose} >= 2);
     #chdir(dirname($file));
     eval { $cb->($file,$file,$fc->{callbackData}); };
     #chdir($cwd);
-    if ($@) { warn("$fc->{label}: in callback: $@"); $@=''; }
+    if ($@) { $fc->logwarn("in callback: $@"); $@=''; }
   }
   @{$fc->{files}} = qw();
   push(@{$fc->{done}},@files);
@@ -147,7 +149,7 @@ sub in2out {
   if (defined($fc->{outputFile})) {
     if (!defined($fc->{outputFh})) {
       $fc->{outputFh} = IO::File->new(">$fc->{outputFile}")
-	or confess("$fc->{label}: ".ref($fc)."::in2out($infile): open failed for output file '$fc->{outputFile}': $!");
+	or confess("in2out($infile): open failed for output file '$fc->{outputFile}': $!");
     }
     return @$fc{qw(outputFile outputFh)};
   }
@@ -158,7 +160,7 @@ sub in2out {
   $outfile .= $fc->{outputFileSuffix};
   $outfile = dirname($infile).'/'.$outfile;
   my $outfh = IO::File->new(">$outfile")
-    or confess("$fc->{label}: ".ref($fc)."::in2out($infile): open failed for output file '$outfile': $!");
+    or confess("in2out($infile): open failed for output file '$outfile': $!");
 
   return ($outfile,$outfh);
 }

@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -19,52 +20,34 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our ($help,$verbose);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
+our $verbose = setVerboseOptions(1);
+%opts = (%opts,
+	 fcNew => {
+		   %{$opts{fcNew}},
+		   recursive=>1,
+		   inputFileMatch=>qr/\.xml$/,
+		  },
+	 corpusSave => { saveCats=>undef, saveSigs=>undef, },
+	);
 
-our %fcopts = (
-	       verbose=>2,
-	       recursive=>1,
-	       inputFileMatch=>qr/\.xml$/,
-	       #inputFileTrim=>qr/\.[^\.]*$/,
-	       outputFile=>'-',
-	       #outputFileSuffix=>'.sig',
-	      );
-
-our %corpusOpts = ( label=>'', );
-
-our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, saveCats=>undef, saveSigs=>undef, );
 
 our $inputCorpora = 0; ##-- where INPUTs are corpora or document files/dirs
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$fcopts{verbose},
+GetOptions(generalOptions,
+	   corpusOptions,
+	   ioOptions,
 
-	   ##-- Misc
-	   'label|l=s' => \$corpusOpts{label},
-	   'categories|cats|cat!' => \$saveopts{saveCats},
-	   #'signatures|sigs|sig!' => \$saveopts{saveSigs},
-
-	   ##-- I/O
+	   ##-- local options
 	   'union|merge|corpora|u|m|c!' => \$inputCorpora,
-	   'recursive|recurse|r!' => \$fcopts{recursive},
-	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
-	   'input-mode|im=s' => \$loadopts{mode},
-	   'output-mode|om=s' => \$saveopts{mode},
-	   'format-xml|format|fx|f!' => sub { $saveopts{format}=$_[1] ? 1 : 0; },
 	  );
-$verbose=$fcopts{verbose};
+$verbose=$opts{verbose};
+$opts{fcNew}{outputFile} = $opts{outputFile};
 
-
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
 
 ##------------------------------------------------------------------------------
@@ -72,18 +55,18 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 our ($fc,$corpus);
-sub cb_make_corpus {
+sub fc_callback {
   my ($infile) = @_;
   if ($inputCorpora) {
     ##-- read corpora
-    my $c2 = DocClassify::Corpus->loadFile($infile,%loadopts,%corpusOpts)
+    my $c2 = DocClassify::Corpus->loadFile($infile,%{$opts{corpusNew}},%{$opts{corpusLoad}})
       or die("$0: loadXmlFile() failed for input corpus '$infile': $!");
     $corpus->addCorpus($c2);
   } else {
     ##-- read documents
     my $doc = DocClassify::Document->new(file=>$infile)
       or die("$0: Document->new() failed for '$infile': $!");
-    if ($saveopts{saveCats}) {
+    if ($opts{corpusSave}{saveCats}) {
       $doc->cats();            ##-- parse relevant data
       delete($doc->{xdoc});    ##-- cleanup
     }
@@ -96,15 +79,14 @@ sub cb_make_corpus {
 ##------------------------------------------------------------------------------
 
 ##-- vars
-$corpus = DocClassify::Corpus->new( %corpusOpts );
+$corpus = DocClassify::Corpus->new( %{$opts{corpusNew}} );
 
 ##-- load inputs
 push(@ARGV,'-') if (!@ARGV);
-$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_make_corpus );
+$fc = DocClassify::FileChurner->new( %{$opts{fcNew}}, fileCallback=>\&fc_callback );
 $fc->churn(@ARGV);
 
-print STDERR "$prog: saveFile($fcopts{outputFile})\n" if ($verbose);
-$corpus->saveFile($fcopts{outputFile}, %saveopts);
+$corpus->saveFile($opts{outputFile}, %{$opts{save}}, %{$opts{corpusSave}});
 
 =pod
 

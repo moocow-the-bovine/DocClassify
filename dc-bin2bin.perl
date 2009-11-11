@@ -10,10 +10,10 @@ our $ofile = '-';
 our $netorder = 1;
 
 GetOptions(
-  'output|out|o=s' => \$ofile,
-  'network-order|netorder|net|n!' => \$netorder,
-  'local-order|machine-order|machorder|l|m!'    => sub { $netorder=!$_[1]; },
-  );
+	   'output|out|o=s' => \$ofile,
+	   'network-order|netorder|net|n!' => \$netorder,
+	   'local-order|machine-order|machorder|l|m!'    => sub { $netorder=!$_[1]; },
+	  );
 
 $ifile = shift if (@ARGV);
 print STDERR "$0: LOAD($ifile)\n";

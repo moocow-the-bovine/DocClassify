@@ -4,8 +4,6 @@
 ## Descript: document classifier: document-to-class mapper: "latent semantic indexing" / SVD
 
 package DocClassify::Mapper::LSI;
-use DocClassify::Object;
-use DocClassify::Mapper;
 use DocClassify::Mapper::ByLemma;
 use DocClassify::Utils ':all';
 
@@ -200,7 +198,7 @@ sub compileFit {
   my $map = shift;
 
   if (!defined($map->{dc_dist})) {
-    print STDERR (ref($map)."::compileFit(): no {dc_dist} matrix defined; NOT computing fit paramters\n");
+    $map->vlog('warn', "compileFit(): no {dc_dist} matrix defined; NOT computing fit paramters");
     return $map;
   }
 
@@ -336,7 +334,7 @@ sub compileFit {
 ##  + cross-check data should have been created on a subset of the corpus used to train this mapper!
 sub loadCrossCheckEval {
   my ($map,$eval) = @_;
-  print STDERR ref($map)."::loadCrossCheckEval(): ".($eval->{label}||'')."\n" if ($map->{verbose});
+  $map->vlog('info',"loadCrossCheckEval(): ".($eval->{label}||'')) if ($map->{verbose});
 
   ##-- vars
   my $lcenum = $map->{lcenum};
@@ -353,7 +351,7 @@ sub loadCrossCheckEval {
   my $di = 0;
   while (($lab,$d12)=each(%{$eval->{lab2docs}})) {
     if (!defined($di = $d_sym2id->{$lab})) {
-      warn(ref($map)."::loadCrossCheckEval(): no internal ID for doc label '$lab' -- skipping");
+      $map->logwarn("loadCrossCheckEval(): no internal ID for doc label '$lab' -- skipping");
       next;
     }
     $dcats2 = $d12->[1]{cats};
@@ -375,7 +373,7 @@ sub compileCrossCheck {
   my $xcn = $map->{xn};
 
   if (!$xcn || $xcn<3) {
-    print STDERR (ref($map)."::compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")\n");
+    $map->vlog('info', "compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")");
     return $map;
   }
 
@@ -405,21 +403,19 @@ sub compileCrossCheck {
     $xclabel = "XCHECK ($xci/$xcn)";
     ($docids_test,$docids_train) = which_both($d2subc==($xci-1));
     if ($docids_train->isempty || $docids_test->isempty) {
-      warn(ref($map)."::compileCrossCheck(): [$xclabel]: TRAIN: empty subcorpus: skipping!\n");
+      $map->logwarn("compileCrossCheck(): [$xclabel]: TRAIN: empty subcorpus: skipping!");
       next;
     }
     my ($ND_train,$ND_test) = ($docids_train->nelem,$docids_test->nelem);
-    print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: TRAIN: ND_train=$ND_train, ND_test=$ND_test\n"
-      if ($map->{verbose});
+    $map->vlog('info',"compileCrossCheck(): [$xclabel]: TRAIN: ND_train=$ND_train, ND_test=$ND_test") if ($map->{verbose});
     $map2 = $map->docSubset($docids_train);
     $map2->compileLocal(label=>$xclabel);
 
     ##-- map left-out ("other") documents
     #$map2->{verbose} = 0; 
-    print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: MAP: ND_test=$ND_test\n" if ($map->{verbose});
+    $map->vlog('info', "compileCrossCheck(): [$xclabel]: MAP: ND_test=$ND_test") if ($map->{verbose});
     foreach $od_did ($docids_test->list) {
-      print STDERR ref($map)."::compileCrossCheck(): [$xclabel]: MAP: DOC(".$map->{docs}[$od_did]{label}.")\n"
-	if ($map->{verbose}>=2);
+      $map->vlog('trace', "compileCrossCheck(): [$xclabel]: MAP: DOC(".$map->{docs}[$od_did]{label}.")") if ($map->{verbose}>=2);
       $od_tdm = $map->{tdm}->dice_axis(1,$od_did);
       $od_xdm = $map2->svdApply($od_tdm);
       $od_cdmat = $map2->{disto}->clusterDistanceMatrix(data=>$od_xdm,cdata=>$map2->{xcm});
@@ -487,16 +483,16 @@ sub compile_svd {
   my ($map,%opts) = @_;
   my $label = $map->labelString(%opts);
 
-  print STDERR ref($map)."::compile_svd() [$label]: SVD (svdr=>$map->{svdr})\n" if ($map->{verbose});
+  $map->vlog('info',"compile_svd() [$label]: SVD (svdr=>$map->{svdr})") if ($map->{verbose});
   my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr}, maxiters=>0); #$maxiters=>(2*$map->{svdr})
   $svd->computeccs_nd($map->{tdm});
   if ($opts{svdShrink}) {
     $svd->shrink();
-    print STDERR ref($map)."::compile_svd() [$label]: SVD: auto-shrunk to r=$svd->{r}\n" if ($map->{verbose});
+    $map->vlog('info', "compile_svd() [$label]: SVD: auto-shrunk to r=$svd->{r}") if ($map->{verbose});
     $map->{svdr} = $svd->{r}; ##-- NOT HERE ?!
   }
   if ($opts{svdCache} || !defined($opts{svdCache})) {
-    print STDERR ref($map)."::compile_svd() [$label]: SVD: cache: isigmaVt_()\n" if ($map->{verbose});
+    $map->vlog('info', "compile_svd() [$label]: SVD: cache: isigmaVt_()") if ($map->{verbose});
     $map->{svd}->isigmaVt(); ##-- cache $svd->{isigmaVt_} for $svd->apply0()
   }
   return $map;
@@ -512,8 +508,7 @@ sub compile_xdm {
   my $label = $map->labelString(%opts);
   #my $ND    = $map->{denum}->size;
   my $ND    = $map->{svd}{u}->dim(1);
-  print STDERR ref($map)."::compile_xdm() [$label]: matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]\n"
-    if ($map->{verbose});
+  $map->vlog('info', "compile_xdm() [$label]: matrix: xdm: (r=$map->{svdr} x ND=$ND) [R x Doc -> Sv]") if ($map->{verbose});
   $map->{xdm} = $map->{svd}{u};         ##-- we've already computed the bugger (duh!)
   return $map;
 }
@@ -552,7 +547,8 @@ sub compile_xcm {
   my $ND = $map->{dcm}->dim(0);
 
   ##-- guts
-  print STDERR ref($map)."::compile_xcm() [$label]: matrix: xcm: (r=$map->{svdr} x NC=$NC) [R x Cat -> Sv] : prof=$catProfile\n";
+  $map->vlog('info', "compile_xcm() [$label]: matrix: xcm: (r=$map->{svdr} x NC=$NC) [R x Cat -> Sv] : prof=$catProfile")
+    if ($map->{verbose});
   if ($catProfile eq 'fold-in') {
     ##-- fold-in
     $map->compile_tcm0() if (!defined($map->{tcm0}));
@@ -589,7 +585,7 @@ sub compile_xcm {
 sub compile_disto {
   my ($map,%opts) = @_;
   my $label = $map->labelString(%opts);
-  print STDERR ref($map)."::compile_disto() [$label]: disto: dist=$map->{dist}\n" if ($map->{verbose});
+  $map->vlog('info', "compile_disto() [$label]: disto: dist=$map->{dist}") if ($map->{verbose});
   $map->{disto} = MUDL::Cluster::Distance->new(class=>$map->{dist});
   return $map;
 }
@@ -609,15 +605,15 @@ sub mapDocument {
   my ($map,$doc) = @_;
 
   ##-- be verbose
-  print STDERR ref($map)."::mapDocument(".$doc->label.")\n" if ($map->{verbose}>=3);
+  $map->vlog('info', "mapDocument(".$doc->label.")") if ($map->{verbose}>=3);
 
   ##-- sanity check(s)
-  confess(ref($map)."::mapDocument(): no feature-category matrix 'xcm'!") if (!defined($map->{xcm}));
+  $map->logconfess("mapDocument(): no feature-category matrix 'xcm'!") if (!defined($map->{xcm}));
 
   ##-- get doc pdl
   my $tdm = $map->docPdlRaw($doc);
   my $tdN = $tdm->sum;
-  warn(ref($map)."::mapDocument(): null vector for document '$doc->{label}'") if ($map->{verbose} && $tdN==0);
+  $map->logwarn("mapDocument(): null vector for document '$doc->{label}'") if ($map->{verbose} && $tdN==0);
 
   ##-- compute distance to each centroid
   my $xdm   = $map->svdApply($tdm);

@@ -7,6 +7,7 @@
 package DocClassify;
 
 use DocClassify::Object;
+use DocClassify::Logger;
 use DocClassify::Document;
 use DocClassify::FileChurner;
 use DocClassify::Corpus;
@@ -21,6 +22,8 @@ use DocClassify::Mapper::ByLemma;
 use DocClassify::Mapper::LSI;
 
 use DocClassify::Eval;
+
+use DocClassify::Program;
 
 use strict;
 
@@ -55,7 +58,7 @@ __END__
 
 =head1 NAME
 
-DocClassify - Descript: language identification utilities: top-level
+DocClassify - document classification utilities: top level
 
 =cut
 
@@ -78,8 +81,7 @@ DocClassify - Descript: language identification utilities: top-level
 
 =head1 DESCRIPTION
 
-The DocClassify package provides some language guessing routines
-using Kullback-Leibler divergence over character n-gram signatures.
+Not yet written.
 
 =cut
 

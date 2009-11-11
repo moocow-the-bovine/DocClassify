@@ -3,6 +3,8 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Program ':all';
+
 use File::Copy ('copy','move');
 use Cwd 'abs_path'; ##-- for abs_path()
 
@@ -21,20 +23,14 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 2;
-our ($help);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
-
-our %corpusOpts = ( label=>'', );
-
-our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, saveCats=>undef, );
-
-our $outfile = '-';
-our $outdir  = undef;
+%opts = (%opts,
+	 outputFile => '-',
+	 outputDir  => undef,
+	 corpusNew => { %{$opts{corpusNew}}, label=>'' },
+	 corpusLoad => { %{$opts{corpusLoad}}, label=>'' },
+	 corpusSave => { %{$opts{corpusSave}}, mode=>undef, saveCats=>undef },
+	);
 
 our $copy_how = 'copy'; ##-- one of 'copy', 'hardlink', 'symlink', 'move'
 our $copy_glob = 1;     ##-- whether to copy by file-glob (default=true)
@@ -42,27 +38,24 @@ our $copy_glob = 1;     ##-- whether to copy by file-glob (default=true)
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
+GetOptions(generalOptions(),
+
+	   ioOptions(),
+	   'output-dir|outdir|odir|od|d=s'=> \$outdir,
+
+	   corpusOptions(),
 
 	   ##-- Misc
 	   'copy|c' => sub { $copy_how='copy'; },
-	   'hardlink|hard|link|hl|l' => sub { $copy_how='hardlink'; },
+	   'hardlink|hard|link|hl' => sub { $copy_how='hardlink'; },
 	   'symlink|sym|sl|s' => sub { $copy_how='symlink'; },
 	   'move|m' => sub { $copy_how='move'; },
 	   'glob|g!' => \$copy_glob,
-
-	   ##-- I/O
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
-	   'output-directory|output-dir|outdir|od|d=s'=> \$outdir,
-	   'format-xml|format|fx|f!' => sub { $saveopts{format}=$_[1] ? 1 : 0; },
-	   'input-mode|im=s' => \$loadopts{mode},
-	   'output-mode|om=s' => \$saveopts{mode},
 	  );
+our $verbose = $opts{verbose};
 
 
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
 
 ##------------------------------------------------------------------------------
@@ -77,7 +70,7 @@ sub copyDocFile {
   my $infile = shift;
   return $copied{$infile} if (exists($copied{$infile}));
   my $outfile = $outdir.'/'.basename($infile);
-  print STDERR "+ FILE: $infile -> $outfile\n" if ($verbose >= 2);
+  print STDERR "+ FILE: $infile -> $outfile" if ($verbose >= 2);
   unlink($outfile) if (-e $outfile);
   if    ($copy_how eq 'copy') {
     copy($infile,$outfile) or die("$0: copy failed for '$infile' -> '$outfile': $!");
@@ -109,7 +102,7 @@ our $corpus = undef;
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);
 foreach (@ARGV) {
-  my $c2 = DocClassify::Corpus->new(%corpusOpts)->loadFile($_,%loadopts)
+  my $c2 = DocClassify::Corpus->new(%{$opts{corpusNew}})->loadFile($_,%{$opts{load}},%{$opts{corpusLoad}})
     or die("$0: Corpus->loadFile() failed for '$_': $!");
   if (!$corpus) {
     $corpus=$c2;
@@ -145,8 +138,8 @@ foreach $doc (@{$corpus->{docs}}) {
   }
 }
 
-print STDERR "$prog: Corpus->saveFile($outfile)\n" if ($verbose);
-$corpus->saveFile($outfile, %saveopts);
+#print STDERR "$prog: Corpus->saveFile($outfile)\n" if ($verbose);
+$corpus->saveFile($opts{outputFile}, %{$opts{save}}, %{$opts{corpusSave}});
 
 =pod
 

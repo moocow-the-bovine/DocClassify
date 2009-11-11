@@ -6,6 +6,7 @@
 
 package DocClassify::Document;
 use DocClassify::Object;
+use DocClassify::Logger;
 use DocClassify::Utils ':all';
 use DocClassify::Signature;
 use IO::File;
@@ -15,7 +16,7 @@ use strict;
 ##==============================================================================
 ## Globals
 
-our @ISA = qw(DocClassify::Object);
+our @ISA = qw(DocClassify::Object DocClassify::Logger);
 
 ## @XML_CAT_XPATHS
 ##  + XPaths for categorization

@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -19,45 +20,30 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 2;
-our ($help);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
-
-our %corpusOpts = ( label=>'', );
-
-our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, saveCats=>1, saveSigs=>1, );
-
-our %sigsaveopts = ( mode=>undef, lemmatized=>0 );
-our $sigSuffix = '.sig.bin';
-our $outfile = '-';
+our $verbose = setVerboseOptions(1);
+%opts = (%opts,
+	 corpusSave => { %{$opts{corpusSave}}, saveCats=>1, saveSigs=>1 },
+	 sigLoad => { %{$opts{sigLoad}}, mode=>undef, lemmatized=>0, verboseIO=>0 },
+	 sigSave => { %{$opts{sigSave}}, mode=>undef, lemmatized=>0, verboseIO=>0 },
+	 outputFile => '-',
+	 sigSuffix => '.sig.bin',
+	);
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
-
-	   ##-- Misc
-	   'label|l=s' => \$corpusOpts{label},
-	   'categories|cats|cat!' => \$saveopts{saveCats}, ##-- whether to compile cats
-	   'signatures|sigs|sig!' => \$saveopts{saveSigs}, ##-- whether to compile signatures
+GetOptions(generalOptions(),
+	   corpusOptions(),
+	   ioOptions(),
 
 	   ##-- I/O
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
-	   'format-xml|format|fx|f!' => sub { $saveopts{format}=$_[1] ? 1 : 0; },
-	   'input-mode|im=s' => \$loadopts{mode},
-	   'output-mode|om=s' => \$saveopts{mode},
-	   'signature-mode|sigmode|sm=s' => \$sigsaveopts{mode},
-	   'signature-suffix|sig-suffix|ss=s' => \$sigSuffix, ##-- per-document signature suffix
+	   'signature-mode|sigmode|sm=s' => \$opts{sigSave}{mode},
+	   'signature-suffix|sig-suffix|ss=s' => \$opts{sigSuffix}, ##-- per-document signature suffix
 	  );
+our $verbose = $opts{verbose};
 
-
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
 
 ##------------------------------------------------------------------------------
@@ -75,7 +61,7 @@ $corpus = undef;
 ##-- load input corpora
 push(@ARGV,'-') if (!@ARGV);
 foreach (@ARGV) {
-  my $c2 = DocClassify::Corpus->new(%corpusOpts)->loadFile($_,%loadopts)
+  my $c2 = DocClassify::Corpus->new( %{$opts{corpusNew}} )->loadFile($_, %{$opts{load}}, %{$opts{corpusLoad}})
     or die("$0: Corpus::loadFile() failed for '$_': $!");
   if (!$corpus) { $corpus=$c2; next; }
   $corpus->addCorpus($c2);
@@ -84,21 +70,21 @@ foreach (@ARGV) {
 ##-- compile
 my ($doc);
 foreach $doc (@{$corpus->{docs}}) {
-  print STDERR "DOC: ", $doc->label, "\n" if ($verbose);
+  DocClassify::Program->vlog('trace', "DOC: ", $doc->label) if ($verbose);
 
   ##-- compile: categories
-  if ($saveopts{saveCats}) { $doc->cats; }
+  if ($opts{corpusSave}{saveCats}) { $doc->cats; }
 
   ##-- compile: signature
-  if ($saveopts{saveSigs}) {
-    my $sigFile = $doc->{file}.$sigSuffix;
-    $doc->saveSignature($sigFile, %sigsaveopts);
+  if ($opts{corpusSave}{saveSigs}) {
+    my $sigFile = $doc->{file}.$opts{sigSuffix};
+    $doc->saveSignature($sigFile, %{$opts{save}}, %{$opts{sigSave}});
     delete(@$doc{qw(sig xdoc)}); ##-- clear cache, in case of binary save
   }
 }
 
-print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
-$corpus->saveFile($outfile, %saveopts);
+#print STDERR "$prog: saveFile($outfile)\n" if ($verbose);
+$corpus->saveFile($opts{outputFile}, %{$opts{save}}, %{$opts{corpusSave}});
 
 =pod
 

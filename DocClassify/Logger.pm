@@ -25,7 +25,7 @@ our @ISA = qw();
 sub defaultLogConf {
   my ($that,%opts) = @_;
   $opts{rootLevel} = ($^W ? 'WARN'  : 'FATAL')  if (!exists($opts{rootLevel}));
-  $opts{level}     = ($^W ? 'DEBUG' : 'TRACE')  if (!exists($opts{level}));
+  $opts{level}     = ($^W ? 'TRACE' : 'DEBUG')  if (!exists($opts{level}));
   my $cfg = "
 ##-- Loggers
 log4perl.oneMessagePerAppender = 1     ##-- suppress duplicate messages to the same appender
@@ -81,7 +81,13 @@ sub ensureLog {
 ## $logger = $class_or_obj->logger($category)
 ##  + wrapper for Log::Log4perl::get_logger($category)
 ##  + $category defaults to ref($class_or_obj)||$class_or_obj
-sub logger { Log::Log4perl::get_logger(ref($_[0])||$_[0]); }
+sub logger {
+  my $that = (shift || __PACKAGE__);
+  $that->ensureLog;
+  Log::Log4perl::get_logger(ref($that)||$that);
+  ##--
+  #Log::Log4perl::get_logger(ref($_[0])||$_[0]);
+}
 
 ##==============================================================================
 ## Methods: messages
@@ -98,7 +104,9 @@ sub error { $_[0]->logger->error(@_[1..$#_]); }
 sub fatal { $_[0]->logger->fatal(@_[1..$#_]); }
 
 ## undef = $class_or_obj->llog($level, @msg)
-##  + $level is some constant exported by Log::Log4perl::Level
+##  + $level is some constant exported by Log::Log4perl::Level, e.g.:
+##     $OFF, $FATAL, $ERROR, $WARN, $INFO, $DEBUG, $TRACE, $ALL
+##  + import these with 'use Log::Log4perl::Level qw(:levels);'
 sub llog { $_[0]->logger->log(@_[1..$#_]); }
 
 ## undef = $class_or_obj->vlog($methodname_or_coderef_or_undef, @msg)

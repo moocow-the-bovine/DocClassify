@@ -152,7 +152,7 @@ sub xsl_stylesheet {
     $doc = $xmlparser->parse_string($src)
       or croak(__PACKAGE__, "::xsl_stylesheet(): failed to parse XSL source string as XML: $!");
   } else {
-    warn(__PACKAGE__, "::xsl_stylesheet(): treating unknown type key '$what' as 'string'");
+    DocClassify::Logger->logwarn(__PACKAGE__, "::xsl_stylesheet(): treating unknown type key '$what' as 'string'");
     $doc = $xmlparser->parse_string(defined($src) ? $src : $what)
       or croak(__PACKAGE__, "::xsl_stylesheet(): failed to parse XSL source string as XML: $!");
   }
