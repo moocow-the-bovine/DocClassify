@@ -65,6 +65,18 @@ sub noShadowKeys {
   return qw(tf N cat2deg lf Nl);
 }
 
+## $sig = $sig->clear()
+##  + clears object, preparing it for re-use
+sub clear {
+  my $sig = shift;
+  %{$sig->{tf}} = qw();
+  $sig->{N} = 0;
+  %{$sig->{cat2deg}} = qw();
+  %{$sig->{cat2id}} = qw();
+  delete(@$sig{qw(lf N)});
+  return $sig;
+}
+
 ##==============================================================================
 ## Methods: Agglomeration
 
