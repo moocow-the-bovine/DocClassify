@@ -91,12 +91,12 @@ sub lemmatize {
     next if (defined($posRegex)  && $ya{$posAttr}  !~ $posRegex);
     next if (defined($textStop)  && exists($textStop->{$ya{$textAttr}}));
     next if (defined($textRegex) && $ya{$textAttr} !~ $textRegex);
-    $lemma = $lemma2lc ? lc($ya{$lemmaAttr}) : $ya{$lemmaAttr};
+    next if (!defined($lemma = $ya{$lemmaAttr}));
+    $lemma = lc($ya{$lemmaAttr}) if ($lemma2lc);
 
     ##-- add raw lemma
     $lf->{$lemma} += $f;
     $$Nlref += $f;
-
 
     ##-- add separated raw lemma (on punct, '_' space)
     foreach ($lemma =~ m/[^\_\s[:punct:]]+/g) {
@@ -105,7 +105,7 @@ sub lemmatize {
     }
 
     ##-- use tagh-separated lemma components
-    $lemmas = $ya{$sLemmaAttr};
+    next if (!defined($lemmas = $ya{$sLemmaAttr}));
     $lemmas =~ s/[\|\=]//g; ##-- e.g. Band/N#er|fahr/V~ung -> Band/N#erfahr/V~ung, aus=stell/V~ung -> ausstell/V~ung
     $lemmas =~ s/(?:\-)|(?:\/\w+)|(?:[\~\\]\w+)|(?:[\|\=\+])|(?:\#)/ /g;
     $lemmas = lc($lemmas) if ($lemma2lc);
