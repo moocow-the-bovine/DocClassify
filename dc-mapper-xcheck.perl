@@ -171,6 +171,7 @@ dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swe
   -verbose LEVEL         # verbosity level
 
  Splitting Options:
+  -n N                   # set number of splits (default=10)
   -seed SEED             # set random seed
   -exclusive , -nox      # do/don't split exclusively (also effects mapper)
 
