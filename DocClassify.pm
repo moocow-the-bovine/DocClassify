@@ -17,6 +17,7 @@ use DocClassify::Lemmatizer;
 use DocClassify::Lemmatizer::VzPlain;
 use DocClassify::Lemmatizer::VzContent;
 use DocClassify::Lemmatizer::VzSep;
+use DocClassify::Lemmatizer::VzSem;
 
 use DocClassify::Mapper;
 use DocClassify::Mapper::ByLemma;

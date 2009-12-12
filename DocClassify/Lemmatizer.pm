@@ -34,6 +34,9 @@ BEGIN {
      vzsep => 'VzSep',
      vzSep => 'VzSep',
      ##
+     vzsem => 'VzSem',
+     vzSem => 'VzSem',
+     ##
      Default => 'VzContent',
     );
   @ALIAS{map {lc($_)} keys(%ALIAS)} = values(%ALIAS);
@@ -56,6 +59,7 @@ sub new {
     $class=$ALIAS{$class} while (defined($ALIAS{$class}));
     delete($opts{class});
     $class = __PACKAGE__ . "::$class" if (!UNIVERSAL::isa($class,__PACKAGE__));
+    eval "use $class;" if (!UNIVERSAL::can($class,'new'));
     return $class->new(%opts);
   }
   ##-- ... otherwise just pass through to MUDL::Object

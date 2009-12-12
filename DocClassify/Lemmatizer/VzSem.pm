@@ -1,14 +1,16 @@
 ## -*- Mode: CPerl -*-
-## File: DocClassify::Lemmatizer::VzSep.pm
+## File: DocClassify::Lemmatizer::VzSem.pm
 ## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
-## Descript: document classifier: lemmatizer: from Vz-signatures to content lemmata, using separators
+## Descript: document classifier: lemmatizer:
+##  + from Vz-signatures to content lemmata, using sem_lemma & separators
 
-package DocClassify::Lemmatizer::VzSep;
+package DocClassify::Lemmatizer::VzSem;
 
 use DocClassify::Object;
 use DocClassify::Utils ':all';
 use DocClassify::Lemmatizer;
 use DocClassify::Lemmatizer::VzContent;
+use DocClassify::Lemmatizer::VzSep;
 use IO::File;
 use Carp;
 use strict;
@@ -16,14 +18,17 @@ use strict;
 ##==============================================================================
 ## Globals
 
-our @ISA = qw(DocClassify::Lemmatizer::VzContent);
+our @ISA = qw(DocClassify::Lemmatizer::VzSep);
 
 ##==============================================================================
 ## Constructors etc.
 
 ## $lz = $CLASS_OR_OBJ->new(%opts)
 ## %$lz, %opts:
-##  ##---- NEW for DocClassify::Lemmatizer::VzSep
+##  ##---- NEW for DocClassify::Lemmatizer::VzSem
+##  semLemmaAttr => $attr,  ##-- semantic-lemma attribute (default='sem_lemma')
+##  semLemmaWeight => $w,   ##-- weight for semantic lemma (default=1) [only used if (sem_lemma =~ /^SEM/)
+##  ##---- INHERITED for DocClassify::Lemmatizer::VzSep
 ##  sepLemmaAttr => $attr,  ##-- separated-lemma attribute (default='sep_lemma')
 ##  sepLemmaWeight => $w,   ##-- weight for lemma components (default=1)
 ##  lemmaWeight => $w,      ##-- weight for raw lemma (default=1)
@@ -42,9 +47,8 @@ sub new {
   my $that = shift;
   return $that->SUPER::new(
 			   ##-- new
-			   sepLemmaAttr => 'sep_lemma',
-			   sepLemmaWeight => 1,
-			   lemmaWeight => 1,
+			   semLemmaAttr => 'sem_lemma',
+			   semLemmaWeight => 1,
 
 			   ##-- user args
 			   @_
@@ -78,6 +82,8 @@ sub lemmatize {
   my $lemmaWt   = $lz->{lemmaWeight};
   my $sepLemmaAttr= $lz->{sepLemmaAttr};
   my $sepLemmaWt  = $lz->{sepLemmaWeight};
+  my $semLemmaAttr= $lz->{semLemmaAttr};
+  my $semLemmaWt  = $lz->{semLemmaWeight};
   my $lemma2lc  = $lz->{lemmaToLower};
 
   ##-- pre-compile regexes
@@ -89,14 +95,14 @@ sub lemmatize {
   my $lf = $sig->{lf} = {};
 
   ##-- lemmatize: loop
-  my ($y,$f, %ya,$lemma,$lemmas);
+  my ($y,$f, %ya,$lemma,$lemmas,$sem);
   while (($y,$f)=each(%$tf)) {
     %ya = (map {split(/=/,$_,2)} split(/\t/,$y));
     next if (defined($posRegex)  && $ya{$posAttr}  !~ $posRegex);
     next if (defined($textStop)  && exists($textStop->{$ya{$textAttr}}));
     next if (defined($textRegex) && $ya{$textAttr} !~ $textRegex);
     next if (!defined($lemma = $ya{$lemmaAttr}));
-    $lemma = lc($ya{$lemmaAttr}) if ($lemma2lc);
+    $lemma = lc($lemma) if ($lemma2lc);
 
     ##-- add raw lemma
     $lf->{$lemma} += $lemmaWt*$f;
@@ -114,6 +120,15 @@ sub lemmatize {
     foreach ($lemmas =~ m/\S+/g) {
       $lf->{$_} += $sepLemmaWt*$f;
     }
+
+    ##-- add semantic lemma (if defined and != $lemma)
+    if (defined($semLemmaAttr)
+	&& defined($sem=$ya{$semLemmaAttr})
+	#&& (!$lemma2lc || ($sem=lc($sem)) || 1)
+	&& $sem =~ /^SEM/)
+      {
+	$lf->{$sem} += $semLemmaWt*$f;
+      }
   }
 
   ##-- compute $sig->{Nl}
