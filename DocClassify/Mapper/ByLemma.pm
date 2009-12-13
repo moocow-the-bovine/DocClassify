@@ -51,6 +51,8 @@ our $verbose = 3;
 ##                                   ##    'conditional-entropy'     ##-- w($t) = H(Doc|T=$t); aka 'Hc'
 ##                                   ##    'entropy'                 ##-- alias for 'max-entropy-quotient' (default); aka 'H'
 ##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
+##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
+##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -90,6 +92,8 @@ sub new {
 			       smoothf =>1,
 			       termWeight  => 'entropy',
 			       cleanDocs => 1,
+			       byCat => 0,
+			       weightByCat => 0,
 
 			       ##-- data: enums
 			       lcenum => MUDL::Enum->new,
@@ -191,11 +195,18 @@ sub addCat {
 ##==============================================================================
 ## Methods: API: Compilation
 
-## $map = $map->compile()
+## $map = $map->compile(%opts)
 ##  + compile underlying map data
 ##  + should be called only after all training data have been added
+##  + %opts:
+##     byCat => $bool,       ##-- compile tcm0, tcm instead of tdm0, tdm? (default=$map->{byCat})
+##     weightByCat => $bool, ##-- use tcm0 to compute term weights? (default=$map->{weightByCat})
 sub compile {
-  my $map = shift;
+  my ($map,%opts) = @_;
+
+  ##-- option defaults
+  $opts{byCat}       = $map->{byCat} if (!exists($opts{byCat}));
+  $opts{weightByCat} = $map->{weightByCat} if (!exists($opts{weightByCat}));
 
   ##-- frequency-trimming
   $map->compileTrim();
@@ -213,12 +224,26 @@ sub compile {
   ##-- matrix: term-doc frequency: $tdm0 : [$tid,$did] => f($term[$tid],$doc[$did])
   $map->compile_tdm0();
 
-  ##-- smooth & log-transform term-doc matrix
-  $map->compile_tdm_log();
+  ##-- smooth & log-transform term-(doc|cat) matrix, compile & apply term weights
+  if ($opts{byCat}) {
+    ##-- matrix: $map->{tcm0}: ($NT,$NC) : CCS::Nd: [Term x Cat -> Freq]
+    $map->compile_tcm0();
+    $map->compile_tcm_log();
+    $map->compile_tw($map->{tcm0});
+    $map->{tcm} = $map->{tcm} * $map->{tw};
+  } else {
+    ##-- smooth & log-transform term-doc matrix
+    $map->compile_tdm_log();
 
-  ##-- compile & apply term weights
-  $map->compile_tw();
-  $map->{tdm} = $map->{tdm} * $map->{tw};
+    ##-- compile & apply term weights
+    if ($opts{weightByCat}) {
+      $map->compile_tcm0();
+      $map->compile_tw($map->{tcm0});
+    } else {
+      $map->compile_tw();
+    }
+    $map->{tdm} = $map->{tdm} * $map->{tw};
+  }
 
   ##-- clear expensive perl signature structs (we've outgrown them)
   #@{$map->{sigs}} = qw();
@@ -500,6 +525,22 @@ sub compile_tdm_log {
 }
 
 ##----------------------------------------------
+## $map = $map->compile_tcm_log()
+##  + smooths & logs raw term-cat frequency matrix: $map->{tcm} : [$tid,$did] => log(f($term[$tid],$cat[$lcid])+1)
+##  + computes from $map->{tcm0}
+sub compile_tcm_log {
+  my $map = shift;
+
+  ##-- smooth & log-transform term-doc matrix
+  $map->{smoothf} = $map->{lcenum}->size/$map->{tcm0}->sum if (!$map->{smoothf});
+  $map->vlog('info', "compile_tcm_log(): smooth(smoothf=$map->{smoothf})") if ($map->{verbose});
+  $map->{tcm} = ($map->{tcm0}+$map->{smoothf})->inplace->log;
+
+  return $map;
+}
+
+
+##----------------------------------------------
 ## $twMethod = $map->termWeightMethod()
 ##  + gets $map->{termWeight}, does some sanity checks & canonicalization
 sub termWeightMethod {
@@ -520,7 +561,7 @@ sub termWeightMethod {
     $termWeight='max-entropy-quotient';
   }
   else {
-    confess(ref($map)."::compile(): unknown term-weighting method '$termWeight'");
+    $map->logconfess("compile(): unknown term-weighting method '$termWeight'");
   }
 
   return $map->{termWeight}=$termWeight;
@@ -528,25 +569,30 @@ sub termWeightMethod {
 
 ##----------------------------------------------
 ## $map = $map->compile_tw()
+## $map = $map->compile_tw($tdm0)
 ##  + compiles term-weight vector $map->{tw}: ($NT): [$tid] -> weight($term[$tid])
 ##  + does NOT apply weights to $map->{tdm} -- do that yourself!
+##  + default $tdm0 = $map->{tdm0}
+##    - to use doc-cat matrix, call $map->compile_tw($map->{tcm0})
 sub compile_tw {
-  my $map = shift;
+  my ($map,$tdm0) = @_;
+  $tdm0 = $map->{tdm0} if (!defined($tdm0));
 
   ##-- vars
   my $termWeight = $map->termWeightMethod;
-  my $NT = $map->{tenum}->size;
-  my $ND = $map->{denum}->size;
+  #my $NT = $map->{tenum}->size;
+  #my $ND = $map->{denum}->size;
+  my ($NT,$ND) = $tdm0->dims;
 
   ##-- guts
-  $map->vlog('info',"compile_tw(): vector: tw: ($NT): [Term -> Weight] : tw=$termWeight") if ($map->{verbose});
+  $map->vlog('info',"compile_tw(): vector: tw: ($NT): [Term -> Weight] : tw=$termWeight, weightByCat=".($map->{weightByCat} ? 1 : 0)) if ($map->{verbose});
   my ($tw);
   if ($termWeight eq 'uniform') {
     $tw = ones($NT);                                ##-- identity weighting
   }
   elsif ($termWeight eq 'max-entropy-quotient') {
     ##-- weight terms by doc max-entropy (see e.g. Berry(1995); Nakov, Popova, & Mateev (2001))
-    my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
+    #my $tdm0   = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
     my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
     my $td_pdgt = ($tdm0 / $t_f)->_missing(0);      ##-- ccs: [$ti,$di] -> p($di|$ti)
     $tw         = $td_pdgt->log->_missing(0);       ##-- ccs: [$ti,$di] -> ln p($di|$ti)
@@ -558,7 +604,7 @@ sub compile_tw {
   }
   elsif ($termWeight eq 'entropy-quotient') {
     ##-- weight terms by relative doc entropy: tw(t) = 1 - (H(Doc|t) / H(Doc))
-    my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
+    #my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
     my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
     my $td_pdgt = ($tdm0 / $t_f)->_missing(0);      ##-- ccs: [$ti,$di] -> p($di|$ti)
     my $td_pdt  = ($tdm0 / $t_f->sum)->_missing(0); ##-- ccs: [$ti,$di] -> p($di,$ti)
@@ -581,7 +627,7 @@ sub compile_tw {
   }
   elsif ($termWeight eq 'conditional-entropy') {
     ##-- weight terms by conditional doc|term subdistribution entropy: tw(t) = H(Doc|t)
-    my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
+    #my $tdm0    = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
     my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
     my $td_pdgt = ($tdm0 / $t_f)->_missing(0);      ##-- ccs: [$ti,$di] -> p($di|$ti)
     ##
@@ -592,17 +638,20 @@ sub compile_tw {
     $tw        /= log(2);                           ##              ->    H(Doc|$ti)
   }
   else {
-    confess(ref($map)."::compile_tw(): unknown term-weighting method '$termWeight'");
+    $map->logconfess("compile_tw(): unknown term-weighting method '$termWeight'");
   }
   #$map->{tdm} = $map->{tdm}*$tw;
   $map->{tw} = $tw->todense;
 
   ##-- sanity check(s)
   if (!all($map->{tw}->isfinite)) {
-    confess(ref($map)."::compile_tw(): infinite values in term-weight vector: something has gone horribly wrong!");
+    $map->logconfess("compile_tw(): infinite values in term-weight vector: something has gone horribly wrong!");
   }
   if (any($map->{tw}<0)) {
-    confess(ref($map)."::compile_tw(): negative values in term-weight vector: something has gone horribly wrong!");
+    $map->logconfess("compile_tw(): negative values in term-weight vector: something has gone horribly wrong!");
+  }
+  if (any($map->{tw}==0)) {
+    $map->logwarn("compile_tw(): zero values in term-weight vector: something looks fishy!");
   }
 
   return $map;

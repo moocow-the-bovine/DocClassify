@@ -23,6 +23,9 @@ our %ALIAS =
    lsi=>'LSI',
    svd=>'LSI',
    SVD=>'LSI',
+   ##
+   'lsi-bycat'=>'LSI::ByCat',
+   'bycat' => 'LSI::ByCat',
   );
 
 ##==============================================================================
@@ -40,6 +43,7 @@ sub new {
     $class=$ALIAS{$class} while (defined($ALIAS{$class}));
     delete($opts{class});
     $class = __PACKAGE__ . "::$class" if (!UNIVERSAL::isa($class,__PACKAGE__));
+    eval "use $class;" if (!UNIVERSAL::can($class,'new'));
     return $class->new(%opts);
   }
   ##-- ... otherwise just pass through to MUDL::Object

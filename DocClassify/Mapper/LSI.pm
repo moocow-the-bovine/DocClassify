@@ -66,6 +66,9 @@ our $verbose = 3;
 ##  minDocFreq => $ndocs,            ##-- minimum number of docs with f(t,d)>0 for term-inclusion (default=0)
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1)
 ##  termWeight => $how,              ##-- term "weighting" method ('uniform', 'entropy'): default='entropy'
+##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
+##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
+##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -142,14 +145,14 @@ sub noShadowKeys {
 ##==============================================================================
 ## Methods: API: Compilation
 
-## $map = $map->compile()
+## $map = $map->compile(%opts)
 ##  + compile underlying map data
 ##  + should be called only after all training data have been added
 sub compile {
-  my $map = shift;
+  my ($map,%opts) = @_;
 
   ##-- inherited compilation
-  $map->SUPER::compile() or $map->logconfess("compile() inherited compilation failed: $!");
+  $map->SUPER::compile(%opts) or $map->logconfess("compile() inherited compilation failed: $!");
 
   ##-- clear expensive perl signature structs
   @{$map->{sigs}} = qw();
@@ -160,7 +163,7 @@ sub compile {
   $map->compileFit();
 
   ##-- local compilation (final)
-  $map->compileLocal(label=>'FINAL', svdShrink=>1, svdCache=>1);
+  $map->compileLocal(%opts, label=>'FINAL', svdShrink=>1, svdCache=>1);
   $map->{svdr} = $map->{svd}{r};
 
   return $map;
@@ -474,7 +477,7 @@ sub labelString {
 }
 
 ## $map = $map->compile_svd(%opts)
-##  + compiles $map->{svd} from $map->{tdm}
+##  + compiles $map->{svd} from $map->{tdm} (or $map->{tcm}, if $map->{byCat} is true)
 ##  + %opts:
 ##     label     => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
 ##     svdShrink => $bool,   ##-- whether to auto-shrink svd (default=false)
@@ -485,7 +488,7 @@ sub compile_svd {
 
   $map->vlog('info',"compile_svd() [$label]: SVD (svdr=>$map->{svdr})") if ($map->{verbose});
   my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr}, maxiters=>0); #$maxiters=>(2*$map->{svdr})
-  $svd->computeccs_nd($map->{tdm});
+  $svd->computeccs_nd($map->{byCat} ? $map->{tcm} : $map->{tdm});
   if ($opts{svdShrink}) {
     $svd->shrink();
     $map->vlog('info', "compile_svd() [$label]: SVD: auto-shrunk to r=$svd->{r}") if ($map->{verbose});
