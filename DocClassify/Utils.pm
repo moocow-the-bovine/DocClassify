@@ -46,10 +46,12 @@ $EXPORT_TAGS{all} = [@EXPORT_OK];
 
 ## undef = usepgplot()
 ## undef = usepgplot($PACKAGE)
+## undef = usepgplot($PACKAGE,$dev)
 sub usepgplot {
-  my $pkg = shift;
+  my ($pkg,$dev) = @_;
   $pkg = 'main' if (!defined($pkg));
   $pkg = ref($pkg) if (ref($pkg));
+  $dev = '/XS' if (!defined($dev));
   my $s = "package $pkg;".q{
     require PDL::Graphics::PGPLOT;
     require PDL::Graphics::PGPLOT::Window;
@@ -59,8 +61,7 @@ sub usepgplot {
     PDL::Graphics::PGPLOT::Window->import();
     PDL::Graphics::LUT->import();
     PDL::Image2D->import();
-    #dev('/XWINDOW');
-    dev('/XS');
+    }."dev('$dev');".q{
     #ctab('Fire');             ##-- ?
     #ctab('gray');
     ctab(lut_data('smooth2')); ##-- color table similar to gnuplot 'pm3d' default; see string list lut_names() for more

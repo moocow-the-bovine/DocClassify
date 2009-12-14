@@ -24,11 +24,12 @@ our $prog = basename($0);
 our $verbose = setVerboseOptions(2);
 %opts = (%opts,
 	 outputFile => '-',
+	 cats=>1,
 	);
 
 our $want_ndocs = 1;
 our $want_bytes = 1;
-our $want_cats = 1;
+our $want_cats = 1; ##-- $opts{cats}
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -38,9 +39,10 @@ GetOptions(dcOptions(),
 	   ##-- Misc
 	   'ndocs|docs|d!' => \$want_ndocs,
 	   'sizes|bytes|s|b!' => \$want_bytes,
-	   'cats|c!' => \$want_cats,
+	   'c!' => \$opts{cats},
 	  );
 $verbose=$opts{verbose};
+$want_cats=$opts{cats};
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
@@ -48,6 +50,13 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 ##------------------------------------------------------------------------------
 ## Subs
 ##------------------------------------------------------------------------------
+
+sub catcmp {
+  my ($ai,$bi,$as,$bs) = (0,0,$a,$b);
+  ($ai,$as) = ($1,$2) if ($a=~/^(\d+)(.*)$/);
+  ($bi,$bs) = ($1,$2) if ($b=~/^(\d+)(.*)$/);
+  return ( $ai <=> $bi || $as cmp $bs);
+}
 
 ##------------------------------------------------------------------------------
 ## MAIN
@@ -89,7 +98,8 @@ foreach my $cfile (@ARGV) {
 		    map {
 		      sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "> #/Docs (CAT '$_')",
 			      $c2ndocs{$_}, 100*$c2ndocs{$_}/$ndocs)
-		    } sort(keys(%c2ndocs)))
+		    } sort catcmp keys(%c2ndocs)
+		   )
 		 : qw()),
 		sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "#/Bytes (TOTAL)", $nbytes, 100),
 		($want_cats && $want_bytes
@@ -97,7 +107,7 @@ foreach my $cfile (@ARGV) {
 		    map {
 		      sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "> #/Bytes (CAT '$_')",
 			      $c2nbytes{$_}, 100*$c2nbytes{$_}/$nbytes)
-		    } sort(keys(%c2nbytes))
+		    } sort catcmp keys(%c2nbytes)
 		   )
 		 : qw()),
 	       );
