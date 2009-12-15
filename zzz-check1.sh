@@ -1,19 +1,24 @@
 #!/bin/sh
 
 #base=vzdata-safe.u1
+#base=anno-big-2;
+base=data/groups_all_v3.2
 
-base=anno-big-2;
-#n=10;
+
 n=3
-tw=Hmax;
+seed=0
+mc=LSI
+mc_wcat=1
+lzc=VzSem;
+lz_semw=10
 r=768;
-xn=0;
-mdf=0;
-mf=0;
-mtpd=0;
-cp=avg;
-lzc=vzsep;
+tw=Hmax;
 
-./dc-mapper-xcheck.perl -seed=0 -v=1 \
-  -cp=$cp -xn=$xn -n=$n -tw=$tw -mtpd=$mtpd -mdf=$mdf -r=$r -lzc=$lzc \
-  $base.corpus.xml -od $base.n-$n.r-$r.mdf-$mdf.mf-$mf.xn-$xn.tw-$tw.mtpd-$mtpd.cp-$cp.lzc-$lzc.xcheck.d
+
+./dc-mapper-xcheck.perl -v=1 -seed=$seed -n=$n \
+  -mc=$mc -mo weightByCat="$mc_wcat" \
+  -lzc=$lzc -lzo semLemmaWeight="$lz_semw" \
+  -r=$r -tw=$tw \
+  $base.corpus.xml \
+  -od $base.n-$n.seed-$seed.mc-$mc.wcat-$mc_wcat.lzc-$lzc.semw-$lz_semw.r-$r.tw-$tw.xcheck.d \
+  "$@"

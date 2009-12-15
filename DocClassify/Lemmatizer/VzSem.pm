@@ -27,7 +27,7 @@ our @ISA = qw(DocClassify::Lemmatizer::VzSep);
 ## %$lz, %opts:
 ##  ##---- NEW for DocClassify::Lemmatizer::VzSem
 ##  semLemmaAttr => $attr,  ##-- semantic-lemma attribute (default='sem_lemma')
-##  semLemmaWeight => $w,   ##-- weight for semantic lemma (default=1) [only used if (sem_lemma =~ /^SEM/)
+##  semLemmaWeight => $w,   ##-- weight for semantic lemma (default=1) [only used if (sem_lemma ne '')]
 ##  ##---- INHERITED for DocClassify::Lemmatizer::VzSep
 ##  sepLemmaAttr => $attr,  ##-- separated-lemma attribute (default='sep_lemma')
 ##  sepLemmaWeight => $w,   ##-- weight for lemma components (default=1)
@@ -121,14 +121,13 @@ sub lemmatize {
       $lf->{$_} += $sepLemmaWt*$f;
     }
 
-    ##-- add semantic lemma (if defined and != $lemma)
-    if (defined($semLemmaAttr)
-	&& defined($sem=$ya{$semLemmaAttr})
-	#&& (!$lemma2lc || ($sem=lc($sem)) || 1)
-	&& $sem =~ /^SEM/)
-      {
-	$lf->{$sem} += $semLemmaWt*$f;
+    ##-- add semantic lemma (if defined and non-empty)
+    if (defined($semLemmaAttr) && defined($sem=$ya{$semLemmaAttr}) && $sem ne '') {
+      $lf->{$sem} += $semLemmaWt*$f;
+      if ($sem =~ /^(SEM\d+)\D/) {
+	$lf->{$1} += $semLemmaWt*$f;
       }
+    }
   }
 
   ##-- compute $sig->{Nl}

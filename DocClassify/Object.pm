@@ -82,6 +82,7 @@ BEGIN {
      {name=>'text',re=>qr/\.(?:txt)$/i,method=>'Text'},
      {name=>'csv',re=>qr/\.(?:csv)$/i,method=>'Csv'},
      {name=>'xml',re=>qr/\.(?:xml)$/i,method=>'Xml'},
+     #{name=>'perl',re=>qr/\.(?:perl|pl|plm)$/i,method=>'Perl'},
     );
 }
 

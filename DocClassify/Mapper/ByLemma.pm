@@ -377,7 +377,7 @@ sub compile_dcm {
 
 ##----------------------------------------------
 ## $map = $map->compile_tdm0()
-##  + compiles raw term-doc frequency matrix: $map->{tdm_raw} : [$tid,$did] => f($term[$tid],$doc[$did])
+##  + compiles raw term-doc frequency matrix: $map->{tdm0} : [$tid,$did] => f($term[$tid],$doc[$did])
 ##  + caches $map->{doc_wt}
 sub compile_tdm0 {
   my $map = shift;
@@ -436,7 +436,7 @@ sub docIdPdl {
 ##----------------------------------------------
 ## $map = $map->compile_tcm0()
 ##  + compiles matrix $map->{tcm0}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tdm0}
-##  + requires cached $map->{tdm0}, $map->{dcm}
+##  + requires cached $map->{tdm0}, $map->{dcm}, $map->{doc_wt}
 sub compile_tcm0 {
   my $map = shift;
 
@@ -667,6 +667,109 @@ sub logwm {
   return ($txm0+$map->{smoothf})->inplace->log->inplace->mult($map->{tw},0);
 }
 
+##==============================================================================
+## Methods: DEBUG: Recovery
+
+##----------------------------------------------
+## $tdm0 = $map->get_tdm0()
+##  + computes & re-caches $map->{tcm0}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tdm0}
+##  + requires $map->{tdm}, $map->{tw}
+sub get_tdm0 {
+  my $map = shift;
+  return $map->{tdm0} if (defined($map->{tdm0}));
+  return $map->{tdm0} = ($map->{tdm} / $map->{tw})->exp - $map->{smoothf};
+}
+
+##----------------------------------------------
+## $doc_wt = $map->get_doc_wt()
+##  + compites & re-caches $map->{doc_wt} from $map->{tdm0}
+sub get_doc_wt {
+  my $map = shift;
+  return $map->{doc_wt} if (defined($map->{doc_wt}) && @{$map->{doc_wt}});
+  my $tdm0 = $map->get_tdm0();
+  my ($ptr,$pi2nzi) = $tdm0->getptr(1);
+  my $nzimin = $ptr->slice("0:-2");
+  my $nzimax = $ptr->slice("1:-1")-1;
+  #my $ptrlen = ccs_pointerlen($ptr);
+  #my $which  = $tdm0->_whichND->dice_axis(1,$pi2nzi);
+  my $nzvals = $tdm0->_nzvals->index($pi2nzi);
+  $map->{doc_wt} = [
+		    map {
+		      ($nzimin->at($_) > $nzimax->at($_)
+		       ? null->long
+		       : $nzvals->slice($nzimin->at($_).":".$nzimax->at($_)))
+		    } $nzimin->xvals->list
+		   ];
+  return $map->{doc_wt};
+}
+
+##----------------------------------------------
+## $tcm = $map->get_tcm0()
+##  + (re-)computes & caches $map->{tcm0} from $map->{tcm} or $map->{tdm0}
+sub get_tcm0 {
+  my $map = shift;
+  return $map->{tcm0} if (defined($map->{tcm0}));
+  if (defined($map->{tcm})) {
+    $map->{tcm0} = ($map->{tcm} / $map->{tw})->exp - $map->{smoothf};
+  } else {
+    ##-- create CCS::Nd
+    #$map->vlog('info', "get_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
+
+    ##-- step 0: get sparse boolean dcmb [Doc x Cat -> Bool]
+    my $dcm    = $map->{dcm};
+    my $dcmb   = $dcm->clone;
+    $dcmb->_nzvals->slice("0:-1") .= 1;
+    my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di_local] -> $ncats
+
+    ##-- step 1: count doc-term nnz [HACKED]
+    my $tdm0 = $map->get_tdm0();
+    my ($d_ptr,$d_pi2nzi) = $tdm0->getptr(1);
+    my $d_nzimin = $d_ptr->slice("0:-2");
+    my $d_nzimax = $d_ptr->slice("1:-1")-1;
+    my $d_nzinull = ($d_nzimin > $d_nzimax);
+    my $d_ptrlen = $d_nzimax - $d_nzimin + 1;
+    my $tdm0_which  = $tdm0->_whichND->dice_axis(1,$d_pi2nzi);
+    my $tdm0_nzvals = $tdm0->_nzvals->index($d_pi2nzi);
+    my $nnz = ($d_ptrlen * $doc_nc)->sum;
+
+    ###~~~ OLD
+    my $tcm0_w = zeroes(long,2,$nnz);
+    my $tcm0_v = zeroes(double,$nnz);
+
+    my ($di,$tdm0d,$ci,$n,$slice1,$slice2);
+    my $nzi = 0;
+    foreach $di ($d_nzimin->xvals->where(!$d_nzinull)->list) {
+      $n = $d_ptrlen->at($di);
+      $slice2 = $d_nzimin->at($di).":".$d_nzimax->at($di);
+      foreach $ci (
+		   #$dcmb->slice("($di)")->which->list
+		   $dcmb->dice_axis(0,$di)->_whichND->slice("(1),")->list
+		  )
+	{
+	  $slice1 = $nzi.':'.($nzi+$n-1);
+	  $tcm0_w->slice("(0),$slice1") .= $tdm0_which->slice("(0),$slice2");
+	  $tcm0_w->slice("(1),$slice1") .= $ci;
+	  $tcm0_v->slice("$slice1")     .= $tdm0_nzvals->slice("$slice2");
+	  $nzi += $n;
+	}
+    }
+    my $tcm0_dims = pdl(long,$map->{tenum}->size,$map->{lcenum}->size);
+    my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
+    $map->{tcm0} = $tcm0;
+  }
+  return $map->{tcm0};
+}
+
+##----------------------------------------------
+## $tcm = $map->get_tcm()
+##  + computes $map->{tcm}: CCS::Nd: 
+##  + requires $map->{tdm0}
+sub get_tcm {
+  my $map = shift;
+  return $map->{tcm} if (defined($map->{tcm}));
+  my $tcm0 = $map->get_tcm0();
+  return $map->{tcm} = $map->logwm($map->{tcm0});
+}
 
 
 ##==============================================================================
