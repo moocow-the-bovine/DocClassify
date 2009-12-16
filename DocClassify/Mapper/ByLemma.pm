@@ -53,6 +53,8 @@ our $verbose = 3;
 ##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
 ##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
+##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
+##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -69,6 +71,7 @@ our $verbose = 3;
 ##  sigs   => \@sigs,                ##-- training sigs, indexed by local $docid
 ##  ##
 ##  ##-- data: post-compile()
+##  disto => $distObj,               ##-- MUDL::Cluster::Distance object
 ##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  PDL::CCS::Nd ($ND,$NC): [$di,$ci] -> deg($di \in $ci) || 0
 ##  tdm0=> $tdm0_pdl,                ##-- raw term-doc mx: PDL::CCS::Nd ($NT,$ND): [$ti,$di] ->     f($ti,$di)
 ##  tcm0=> $tcm0_pdl,                ##-- raw term-cat mx: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] ->     f($ti,$ci)
@@ -94,6 +97,7 @@ sub new {
 			       cleanDocs => 1,
 			       byCat => 0,
 			       weightByCat => 0,
+			       dist => 'u',
 
 			       ##-- data: enums
 			       lcenum => MUDL::Enum->new,
@@ -108,6 +112,7 @@ sub new {
 			       sigs => [],
 
 			       ##-- data: post-compile
+			       disto=>undef,
 			       dcm=>undef,
 			       tw=>undef,
 			       tdm0=>undef,
@@ -127,9 +132,9 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(gf df lcenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt)
+##  + override returns qw(gf df lcenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt disto)
 sub noShadowKeys {
-  return qw(gf df clenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt);
+  return qw(gf df clenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt disto);
 }
 
 ##==============================================================================
@@ -199,14 +204,18 @@ sub addCat {
 ##  + compile underlying map data
 ##  + should be called only after all training data have been added
 ##  + %opts:
-##     byCat => $bool,       ##-- compile tcm0, tcm instead of tdm0, tdm? (default=$map->{byCat})
-##     weightByCat => $bool, ##-- use tcm0 to compute term weights? (default=$map->{weightByCat})
+##     byCat => $bool,         ##-- compile tcm0, tcm instead of tdm0, tdm? (default=$map->{byCat})
+##     weightByCat => $bool,   ##-- use tcm0 to compute term weights? (default=$map->{weightByCat})
+##     _compile_tcm0 => $bool, ##-- force compilation of $map->{tcm0}
+##     _compile_tcm  => $bool, ##-- force compilation of $map->{tcm}
 sub compile {
   my ($map,%opts) = @_;
 
   ##-- option defaults
   $opts{byCat}       = $map->{byCat} if (!exists($opts{byCat}));
   $opts{weightByCat} = $map->{weightByCat} if (!exists($opts{weightByCat}));
+  $opts{_compile_tcm0} = $map->{_compile_tcm0} if (!exists($opts{_compile_tcm0}));
+  $opts{_compile_tcm} = $map->{_compile_tcm} if (!exists($opts{_compile_tcm}));
 
   ##-- frequency-trimming
   $map->compileTrim();
@@ -250,13 +259,18 @@ sub compile {
   #@{$map->{docs}} = qw();
 
   ##-- matrix: $map->{tcm0}: ($NT,$NC) : CCS::Nd: [Term x Cat -> Freq]
-  #$map->compile_tcm0(); ##-- not by default
+  $map->compile_tcm0()
+    if (!defined($map->{tcm0}) && ($opts{_compile_tcm0} || ref($map) eq __PACKAGE__));
 
   ##-- matrix: $map->{tcm}: ($NT,$NC) : CCS::Nd: [Term x Cat -> WeightedLogFreq]
-  #$map->{tcm} = ($map->{tcm0}+$map->{smoothf})->inplace->log*$map->{tw};
+  $map->compile_tcm()
+    if (!defined($map->{tcm})  && ($opts{_compile_tcm}  || ref($map) eq __PACKAGE__));
 
   ##-- clear training cache (done by dc-mapper-train.perl)
   #$map->clearTrainingCache();
+
+  ##-- compile distance object
+  $map->compile_disto(%opts);
 
   return $map;
 }
@@ -269,21 +283,44 @@ sub compiled { return defined($_[0]{tcm}); }
 ## $map = $map->clearTrainingCache()
 ##  + clears any cached data from training
 ##  + after calling this, $map may no longer be able to train
-##  + override clears training data @$map{qw(gf df sigs)} #c2sigs
+##  + override clears training data @$map{qw(gf df sigs docs tdm0 tcm0 doc_wt)} #c2sigs
 sub clearTrainingCache {
   my $map = shift;
   %{$map->{gf}} = qw();
   %{$map->{df}} = qw();
   @{$map->{sigs}} = qw();
   @{$map->{docs}} = qw(); ##-- still needed for category mapping?
-  delete($map->{tdm0});   ##-- useful for debugging, but recoverable from $map->{tdm}
-  delete($map->{tcm0});   ##-- useful for debugging, but recoverable from $map->{tcm}
+  delete($map->{tdm0});   ##-- useful for debugging, but recoverable as ($tdm/$tw)->exp - $smoothf
+  delete($map->{tcm0});   ##-- useful for debugging, but recoverable as ($tcm/$tw)->exp - $smoothf
   delete($map->{doc_wt});
   return $map;
 }
 
 ##--------------------------------------------------------------
 ## Methods: Compilation: Utils
+
+##----------------------------------------------
+## $labstr = $map->labelString(%opts)
+##  + gets symbolic label for verbose messages
+##  + %opts:
+##     label     => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
+sub labelString {
+  my ($map,%opts) = @_;
+  return $opts{label} || $map->{label} || '';
+}
+
+##----------------------------------------------
+## $map = $map->compile_disto(%opts)
+##  + compiles distance object $map->{disto} from symbolic spec $map->{dist}
+##  + %opts:
+##     label  => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
+sub compile_disto {
+  my ($map,%opts) = @_;
+  my $label = $map->labelString(%opts);
+  $map->vlog('info', "compile_disto() [$label]: disto: dist=$map->{dist}") if ($map->{verbose});
+  $map->{disto} = MUDL::Cluster::Distance->new(class=>$map->{dist});
+  return $map;
+}
 
 ##----------------------------------------------
 ## $map = $map->compileTrim()
@@ -677,7 +714,7 @@ sub logwm {
 sub get_tdm0 {
   my $map = shift;
   return $map->{tdm0} if (defined($map->{tdm0}));
-  return $map->{tdm0} = ($map->{tdm} / $map->{tw})->exp - $map->{smoothf};
+  return $map->{tdm0} = ($map->{tdm} / $map->{tw})->_missing(0)->exp - $map->{smoothf};
 }
 
 ##----------------------------------------------
@@ -710,7 +747,7 @@ sub get_tcm0 {
   my $map = shift;
   return $map->{tcm0} if (defined($map->{tcm0}));
   if (defined($map->{tcm})) {
-    $map->{tcm0} = ($map->{tcm} / $map->{tw})->exp - $map->{smoothf};
+    $map->{tcm0} = ($map->{tcm} / $map->{tw})->_missing(0)->exp - $map->{smoothf};
   } else {
     ##-- create CCS::Nd
     #$map->vlog('info', "get_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
@@ -781,9 +818,54 @@ sub get_tcm {
 ##  + Inherited default implementation just calls $map->mapDocument() on each $doc in $corpus.
 
 ## $doc = $map->mapDocument($doc)
-##  + attempt to classify $doc
+##  + attempt to classify $doc by matching with $map->{tcm}
 ##  + destructively alters $doc->{cats} to reflect classification results
-##  + no implementation here
+sub mapDocument {
+  my ($map,$doc) = @_;
+
+  ##-- be verbose
+  $map->vlog('trace', "mapDocument(".$doc->label.")") if ($map->{verbose}>=3);
+
+  ##-- sanity check(s)
+  $map->logconfess("mapDocument(): no term-category matrix 'tcm'!") if (!defined($map->{tcm}));
+
+  ##-- get centroid pdl (force-decode if required)
+  my $tcm = $map->{tcm};
+  $tcm    = $map->{tcm} = $tcm->todense if (ref($tcm) ne 'PDL');
+
+  ##-- get doc pdl
+  my $tdm = $map->docPdlRaw($doc);
+  my $tdN = $tdm->sum;
+  $map->logwarn("mapDocument(): null vector for document '$doc->{label}'") if ($map->{verbose} && $tdN==0);
+
+  ##-- compute distance to each centroid
+  my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$tdm,cdata=>$tcm)->lclip(0);
+
+  ##-- convert distance to similarity
+  my ($cd_sim);
+  if (!defined($map->{c1dist_mu})) {
+    ##-- just invert $cdmat
+    #$cd_sim = $cd_dist->max-$cd_dist;
+    #$cd_sim  = 2-$cd_dist;
+    $cd_sim = $cd_dist**-1;
+  } else {
+    ##-- use fit parameters to estimate similarity
+    my $cd_cdf1 = gausscdf($cd_dist, $map->{c1dist_mu}, $map->{c1dist_sd});
+    my $cd_cdf0 = gausscdf($cd_dist, $map->{c0dist_mu}, $map->{c0dist_sd});
+    $cd_sim = F1( (1-li1($cd_cdf1)), (1-li1($cd_cdf0)), 1e-5);
+  }
+  $cd_sim->inplace->clip(0,1e38);
+
+  ##-- dump similarities to $doc->{cats}
+  my $cname;
+  @{$doc->{cats}} = map {
+    $cname = $map->{lcenum}{id2sym}[$_];
+    {id=>$map->{gcenum}{sym2id}{$cname}, name=>$cname, sim=>$cd_sim->at($_,0), dist_raw=>$cd_dist->at($_,0)}
+  } $cd_sim->flat->qsorti->slice("-1:0")->list;
+  $doc->{cats}[$_]{deg} = $_+1 foreach (0..$#{$doc->{cats}});
+
+  return $doc;
+}
 
 ##==============================================================================
 ## Methods: Misc

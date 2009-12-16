@@ -89,6 +89,10 @@ my $lcids  = zeroes(long,$gcids->max+1); $lcids->index($gcids) .= $gcids->xvals;
 my $NCg    = $gcids->max+1;
 
 ##--------------------------------------------------------------
+## Dump: Header
+$outfh->print("## -*- Mode: Shell-Script; encoding: utf-8; -*-\n\n");
+
+##--------------------------------------------------------------
 ## Dump: Cats: Ids
 my $catlen = 0; foreach (@{$lcenum->{id2sym}}) { $catlen=length($_) if (length($_)>$catlen); }
 my $idlen  = length(scalar(@{$gcenum->{id2sym}}));
@@ -200,7 +204,7 @@ $outfh->print("\n",
 ## Dump: Cats: Size: best terms
 my $tcm = $map->get_tcm();
 my $tw  = $map->{tw};
-my $ntpc  = 10;
+my $ntpc  = 50;
 my @ctp = qw();
 foreach (0..$#cnames) {
   $lci = $lcids[$_];
@@ -218,7 +222,7 @@ $outfh->print("\n",
 		$lcid = $lcids[$_];
 		$tp = $ctp[$_];
 		("\n",
-		 banner2("BestTerms: CAT[$gcid]: $cnames[$_]"),
+		 banner2("BestTerms[$gcid]: CAT=$cnames[$_]"),
 		 map {
 		   $tid=$_;
 		   sprintf("%-${catlen}s\tv=%.4f\tw=%.4f\tf=%d\n",

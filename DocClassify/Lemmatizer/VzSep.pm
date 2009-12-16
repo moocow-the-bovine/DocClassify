@@ -29,7 +29,8 @@ our @ISA = qw(DocClassify::Lemmatizer::VzContent);
 ##  lemmaWeight => $w,      ##-- weight for raw lemma (default=1)
 ##  ##---- INHERITED from DocClassify::Lemmatizer::VzContent
 ##  textAttr => $attr,      ##-- text attribute (default='norm')
-##  textRegex => $re,       ##-- regex matching "good" text types (default=undef (none))
+##  textRegexGood => $re,   ##-- regex matching "good" text types (default=undef (none))
+##  textRegexBad  => $re,   ##-- regex matching "bad" text types  (default=$TEXT_REGEX_BAD)
 ##  textStop => \%stopText, ##-- pseudo-hash of unwanted text types; default=undef (none)
 ##  posRegex => $re,        ##-- regex matching "good" pos tags (default=$POS_REGEX)
 ##  lemmaAttr => $attr,     ##-- lemma attribute (default='lemma')
@@ -70,7 +71,8 @@ sub lemmatize {
 
   ##-- defaults
   my $textAttr  = $lz->{textAttr};
-  my $textRegex = $lz->{textRegex};
+  my $textRegexGood = $lz->{textRegexGood};
+  my $textRegexBad = $lz->{textRegexBad};
   my $textStop  = $lz->{textStop};
   my $posAttr   = 'pos';
   my $posRegex  = $lz->{posRegex};
@@ -81,7 +83,8 @@ sub lemmatize {
   my $lemma2lc  = $lz->{lemmaToLower};
 
   ##-- pre-compile regexes
-  $textRegex = qr/$textRegex/ if (defined($textRegex) && !UNIVERSAL::isa($textRegex,'Regexp'));
+  $textRegexGood = qr/$textRegexGood/ if (defined($textRegexGood) && !UNIVERSAL::isa($textRegexGood,'Regexp'));
+  $textRegexBad = qr/$textRegexBad/ if (defined($textRegexBad) && !UNIVERSAL::isa($textRegexBad,'Regexp'));
   $posRegex  = qr/$posRegex/  if (defined($posRegex) && !UNIVERSAL::isa($posRegex,'Regexp'));
 
   ##-- lemmatize: vars
@@ -94,7 +97,8 @@ sub lemmatize {
     %ya = (map {split(/=/,$_,2)} split(/\t/,$y));
     next if (defined($posRegex)  && $ya{$posAttr}  !~ $posRegex);
     next if (defined($textStop)  && exists($textStop->{$ya{$textAttr}}));
-    next if (defined($textRegex) && $ya{$textAttr} !~ $textRegex);
+    next if (defined($textRegexGood) && $ya{$textAttr} !~ $textRegexGood);
+    next if (defined($textRegexBad)  && $ya{$textAttr} =~ $textRegexBad);
     next if (!defined($lemma = $ya{$lemmaAttr}));
     $lemma = lc($ya{$lemmaAttr}) if ($lemma2lc);
 

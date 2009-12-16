@@ -20,6 +20,10 @@ our @ISA = qw(DocClassify::Object DocClassify::Logger);
 ##  + subclass aliases
 our %ALIAS =
   (
+   raw=>'ByLemma',
+   bylemma=>'ByLemma',
+   lemma=>'ByLemma',
+   ##
    lsi=>'LSI',
    svd=>'LSI',
    SVD=>'LSI',

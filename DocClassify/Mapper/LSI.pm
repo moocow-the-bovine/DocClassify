@@ -39,8 +39,6 @@ our $verbose = 3;
 ##  ##==== NEW in Mapper::LSI
 ##  ##-- options
 ##  svdr => $svdr,                   ##-- number of reduced dimensions (default=256)
-##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
-##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
 ##  catProfile => $how,              ##-- cate profiling method ('fold-in','average', 'weighted-average'...): default='average'
 ##  xn => $xn,                       ##-- number of splits for compile-time cross-check (0 for none; default=3)
 ##  seed => $seed,                   ##-- random seed for corpus splitting (undef (default) for none)
@@ -48,7 +46,6 @@ our $verbose = 3;
 ##  conf_nofn => $conf,              ##-- confidence level for positive-evidence parameter fitting (.95)
 ##  ##
 ##  ##-- data: post-compile()
-##  disto => $distObj,               ##-- MUDL::Cluster::Distance object
 ##  svd => $svd,                     ##-- a MUDL::SVD object
 ##  xdm => $xdm_pdl,                 ##-- dense PDL ($svdr,$ND) = $svd->apply( $tdm_pdl )
 ##  xcm => $xcm_pdl,                 ##-- dense PDL ($svdr,$NC) = $svd->apply( $TERM_CAT_MATRIX($NT,$NC) )
@@ -69,6 +66,8 @@ our $verbose = 3;
 ##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
 ##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
+##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
+##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -83,6 +82,7 @@ our $verbose = 3;
 ##  sigs   => \@sigs,                ##-- training sigs, indexed by local $docid
 ##  ##
 ##  ##-- data: post-compile()
+##  disto => $distObj,               ##-- MUDL::Cluster::Distance object
 ##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  PDL::CCS::Nd ($ND,$NC): [$di,$ci] -> deg($di \in $ci)||0
 ##  tdm0=> $tdm0_pdl,                ##-- raw term-doc mx: PDL::CCS::Nd ($NT,$ND): [$ti,$di] ->     f($ti,$di)
 ##  tcm0=> $tcm0_pdl,                ##-- raw term-cat mx: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] ->     f($ti,$ci)
@@ -94,7 +94,6 @@ sub new {
   my $obj =  $that->SUPER::new(
 			       ##-- options
 			       svdr => 256,
-			       dist => 'u',
 			       catProfile => 'average',
 			       termWeight  => 'entropy',
 			       xn => 3,
@@ -106,7 +105,6 @@ sub new {
 			       svd=>undef,
 			       xdm=>undef,
 			       xcm=>undef,
-			       disto=>undef,
 			       c1dist_mu=>undef,
 			       c1dist_sd=>undef,
 			       c0dist_mu=>undef,
@@ -121,10 +119,10 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override appends qw(svd xdm xcm disto c1dist_mu c1dist_sd c0dist_mu c0dist_sd)
+##  + override appends qw(svd xdm xcm c1dist_mu c1dist_sd c0dist_mu c0dist_sd)
 sub noShadowKeys {
   return ($_[0]->SUPER::noShadowKeys(@_[1..$#_]),
-	  qw(svd xdm xcm disto),
+	  qw(svd xdm xcm),
 	  qw(c1dist_mu c1dist_sd c0dist_mu c0dist_sd));
 }
 
@@ -152,7 +150,8 @@ sub compile {
   my ($map,%opts) = @_;
 
   ##-- inherited compilation
-  $map->SUPER::compile(%opts) or $map->logconfess("compile() inherited compilation failed: $!");
+  $map->SUPER::compile(%opts)
+    or $map->logconfess("compile() inherited compilation failed: $!");
 
   ##-- clear expensive perl signature structs
   @{$map->{sigs}} = qw();
@@ -444,8 +443,8 @@ sub docSubset {
 }
 
 ## $map = $map->compileLocal(%opts)
-##  + compiles local map params qw(svd xdm xcm disto)
-##  + %opts: passed to compile_(svd|xdm|xcm|disto), e.g.
+##  + compiles local map params qw(svd xdm xcm)
+##  + %opts: passed to compile_(svd|xdm|xcm), e.g.
 ##     label     => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
 ##     svdShrink => $bool,   ##-- whether to auto-shrink svd (default=false)
 ##     svdCache  => $bool,   ##-- whether to auto-cache $svd->isigmaVt_() (default=true)
@@ -461,19 +460,7 @@ sub compileLocal {
   ##-- matrix: $map->{xcm}: (R=$map->{svdr} x NC=$NC) [R x Cat -> Sv]
   $map->compile_xcm(%opts);
 
-  ##-- create distance object
-  $map->compile_disto(%opts);
-
   return $map;
-}
-
-## $labstr = $map->labelString(%opts)
-##  + gets symbolic label for verbose messages
-##  + %opts:
-##     label     => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
-sub labelString {
-  my ($map,%opts) = @_;
-  return $opts{label} || $map->{label} || '';
 }
 
 ## $map = $map->compile_svd(%opts)
@@ -578,18 +565,6 @@ sub compile_xcm {
     $map->{xcm} = $xcm;
   }
 
-  return $map;
-}
-
-## $map = $map->compile_disto(%opts)
-##  + compiles distance object $map->{disto} from symbolic spec $map->{dist}
-##  + %opts:
-##     label  => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
-sub compile_disto {
-  my ($map,%opts) = @_;
-  my $label = $map->labelString(%opts);
-  $map->vlog('info', "compile_disto() [$label]: disto: dist=$map->{dist}") if ($map->{verbose});
-  $map->{disto} = MUDL::Cluster::Distance->new(class=>$map->{dist});
   return $map;
 }
 
