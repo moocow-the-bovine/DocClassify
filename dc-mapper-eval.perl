@@ -30,7 +30,7 @@ our %corpusopts = qw();
 our %evalopts = qw();
 
 our %loadopts_corpus = ( mode=>undef, );
-our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>0 );
+our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>1 );
 
 our $outfile = '-';
 
@@ -53,7 +53,8 @@ GetOptions(##-- General
 
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
-pod2usage({-exitval=>0, -verbose=>0, -msg=>'You must specify at least the WANTED corpus!'}) if (!@ARGV);
+pod2usage({-exitval=>0, -verbose=>0, -msg=>'You must specify at least the WANTED corpus!'})
+  if (!@ARGV);
 
 
 ##------------------------------------------------------------------------------
@@ -104,7 +105,7 @@ dc-mapper-eval.perl - evaluate Mapper results
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
-  -docs , -nodocs        # do/don't save full document list (default=don't)
+  -docs , -nodocs        # do/don't save full document list (default=do)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output eval data (default=guess)
   -output-file FILE      # set output file (default=-)
