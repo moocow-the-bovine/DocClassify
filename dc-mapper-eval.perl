@@ -31,6 +31,7 @@ our %evalopts = qw();
 
 our %loadopts_corpus = ( mode=>undef, );
 our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>1 );
+our %saveopts_eval_txt = ( nErrors=>10 );
 
 our $outfile = '-';
 
@@ -48,6 +49,7 @@ GetOptions(##-- General
 	   'eval-output-mode|output-mode|eom|om=s' => \$saveopts_eval{mode},
 	   'save-documents|save-docs|docs|d!' => \$saveopts_eval{saveDocs},
 	   'format-xml|format|fx|f!' => sub { $saveopts_eval{format}=$_[1] ? 1 : 0; },
+	   'n-errors|nerrors|nerrs|ne=i' => \$saveopts_eval_txt{nErrors},
 	   'output-file|outfile|out|of|o=s'=> \$outfile,
 	  );
 
@@ -90,7 +92,7 @@ $eval->saveFile($outfile, %saveopts_eval)
   or die("$0: Eval->saveFile() failed for '$outfile': $!");
 
 ##-- brief report
-$eval->saveTextFile(\*STDERR) if ($verbose);
+$eval->saveTextFile(\*STDERR, %saveopts_eval_txt) if ($verbose);
 
 =pod
 
@@ -106,6 +108,7 @@ dc-mapper-eval.perl - evaluate Mapper results
   -help                  # this help message
   -verbose LEVEL         # verbosity level
   -docs , -nodocs        # do/don't save full document list (default=do)
+  -nerrors NERRS         # summary top NERRS errors to stderr (default=10)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output eval data (default=guess)
   -output-file FILE      # set output file (default=-)
