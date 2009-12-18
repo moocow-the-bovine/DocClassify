@@ -27,7 +27,7 @@ our $verbose = 2;
 #our $format   = 1;
 
 our %evalopts = qw();
-our %saveopts = qw();
+our %saveopts = ( nErrors=>10 );
 
 our $outfile = '-';
 
@@ -43,6 +43,9 @@ GetOptions(##-- General
 	   'output-file|outfile|out|of|o=s'=> \$outfile,
 	   #'output-suffix|os=s' => \$fcopts{outputFileSuffix},
 	   #'format|f=1' => \$format
+
+	   ##-- error summary
+	   'n-errors|nerrors|nerrs|ne=i' => \$saveopts{nErrors},
 	  );
 #$verbose=$fcopts{verbose};
 
@@ -88,6 +91,7 @@ dc-eval-info.perl - get human-readable output from DocClassify::Eval files
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
+  -n-errors NERRS        # report top NERRS error types (default=10)
   -output-file FILE      # all output to a single file
 
 =cut

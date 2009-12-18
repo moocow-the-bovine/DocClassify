@@ -414,12 +414,12 @@ sub saveTextFile {
   if ($opts{nErrors} > 0) {
     my @errs = sort {$b->{ndocs} <=> $a->{ndocs}} values(%{$eval->{errors}});
     my $nerrs = ($opts{nErrors} < @errs ? $opts{nErrors} : @errs);
-    my $sfmt  = "%-24s";
+    my $sfmt  = "%-32s";
     my $dfmt  = "%6d";
     my $ffmt  = "%6.2f";
-    $fh->print(" + Top $nerrs error types (WANTED -> GOT = FREQ (%))\n",
+    $fh->print(" + Top $nerrs error types (WANTED -> GOT = FREQ (% ERRS))\n",
 	       (map {
-		 sprintf("    : $sfmt -> $sfmt = $dfmt ($ffmt%%)\n", @{$errs[$_]}{qw(cat1 cat2 ndocs)}, 100*$errs[$_]{fdocs})
+		 sprintf("   ~ $sfmt -> $sfmt = $dfmt ($ffmt%%)\n", @$_{qw(cat1 cat2 ndocs)}, 100*$_->{fdocs})
 	       } (@errs[0..($nerrs-1)])),
 	      );
   }
@@ -607,6 +607,17 @@ sub loadXmlDoc {
     foreach $c_node (@{$ce_node->findnodes('cat')}) {
       $c_name = $c_node->getAttribute('name');
       $c2e->{$c_name}{$_."_".$ce_unit} = $c_node->getAttribute($_) foreach (qw(tp fp fn pr rc F));
+    }
+  }
+
+  ##-- data: eval: errors
+  my $errs_root = $data_root->findnodes('errors[1]');
+  if (defined($errs_root) && defined($errs_root=$errs_root->[0])) {
+    my ($e_node,$err);
+    foreach $e_node (@{$errs_root->findnodes('error')}) {
+      $err = {};
+      $err->{$_} = $e_node->getAttribute($_) foreach (qw(cat1 cat2 ndocs fdocs nbytes fbytes));
+      $eval->{errors}{$err->{cat1}."\t".$err->{cat2}} = $err;
     }
   }
 
