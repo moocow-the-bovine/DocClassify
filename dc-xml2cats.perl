@@ -19,100 +19,102 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our $verbose = 2;
-our ($help);
+our ($help,$verbose);
 
 #our $outputEncoding = 'UTF-8';
 #our $inputEncoding  = 'UTF-8';
 #our $format   = 1;
 
-our %corpusopts = qw();
-our %evalopts = qw();
+our %fcopts = (
+	       verbose=>1,
+	       recursive=>1,
+	       inputFileMatch=>qr/\.xml$/,
+	       inputFileTrim=>qr/\.[^\.]*$/,
+	       outputFile=>'-',
+	       #outputFileSuffix=>'.csv',
+	      );
 
-our %loadopts_corpus = ( mode=>undef, );
-our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>1 );
-our %saveopts_eval_txt = ( nErrors=>10 );
-
-our $outfile = '-';
+our $catNames = 1;
+our $catIds = 1;
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
 GetOptions(##-- General
 	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
-
-	   ##-- Mapping Options (none)
+	   'verbose|v=i' => \$fcopts{verbose},
 
 	   ##-- I/O
-	   'corpus-input-mode|input-mode|cim|im=s' => \$loadopts_corpus{mode},
-	   'eval-output-mode|output-mode|eom|om=s' => \$saveopts_eval{mode},
-	   'save-documents|save-docs|docs|d!' => \$saveopts_eval{saveDocs},
-	   'format-xml|format|fx|f!' => sub { $saveopts_eval{format}=$_[1] ? 1 : 0; },
-	   'n-errors|nerrors|nerrs|ne=i' => \$saveopts_eval_txt{nErrors},
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
+	   'recursive|recurse|r!' => \$fcopts{recursive},
+	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
+	   'names|name|n!' => \$catNames,
+	   'ids|i!' => \$catIds,
+	   #'output-suffix|os=s' => \$fcopts{outputFileSuffix},
+	   #'format|f=1' => \$format
 	  );
+$verbose=$fcopts{verbose};
 
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
-pod2usage({-exitval=>0, -verbose=>0, -msg=>'You must specify at least the WANTED corpus!'})
-  if (!@ARGV);
 
 
 ##------------------------------------------------------------------------------
 ## Subs
 ##------------------------------------------------------------------------------
 
+our ($fc);
+our (%cats); ##-- ("$catKey" => undef, ...)
+our ($c,%a);
+sub cb_main {
+  my ($xmlfile) = @_;
+  open(XML,"<$xmlfile") or die("$0: open failed for '$xmlfile': $!");
+  while (<XML>) {
+    next if (!/\<[cv]at\s/);
+    chomp;
+    s/(?:^\s+)|(?:\s+$)//;
+    ($c,%a)=split(/(?:\"?\s)|(?:\=\")|(?:\"?\s*\/>)/);
+    $c = join("\t", ($catIds ? ($a{id}||'?') : qw()), ($catNames ? ($a{name}||'?') : qw()));
+    $cats{$c} = undef;
+  }
+  close(XML);
+}
+
+sub catcmp {
+  my $aid = $a =~ /^(\d+)/ ? $1 : -1;
+  my $bid = $b =~ /^(\d+)/ ? $1 : -1;
+  return ($aid <=> $bid || $a cmp $b);
+}
+
 ##------------------------------------------------------------------------------
 ## MAIN
 ##------------------------------------------------------------------------------
 
-##-- load input corpora
+##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
-our ($cfile1,$cfile2) = @ARGV;
-our $corpus1 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile1,%loadopts_corpus)
-  or die("$0: Corpus->loadFile() failed for '$cfile1': $!");
-our $corpus2 = DocClassify::Corpus->new(%corpusopts)->loadFile($cfile2,%loadopts_corpus)
-  or die("$0: Corpus->loadFile() failed for '$cfile2': $!");
+$fc = DocClassify::FileChurner->new( %fcopts, fileCallback=>\&cb_main );
+$fc->churn(@ARGV);
 
-##-- label input corpora
-$corpus1->{label} ||= $cfile1;
-$corpus2->{label} ||= $cfile2;
-
-##-- evaluate
-our $eval = DocClassify::Eval->new(%evalopts)
-  or die("$0: Eval->new() failed: $!");
-$eval->compare($corpus1, $corpus2)
-  or die("$0: Eval->compare() failed: $!");
-$eval->compile()
-  or die("$0: Eval->compile() failed: $!");
-
-##-- report: just save
-$eval->{label} = $outfile if (!$eval->{label});
-$eval->saveFile($outfile, %saveopts_eval)
-  or die("$0: Eval->saveFile() failed for '$outfile': $!");
-
-##-- brief report
-$eval->saveTextFile(\*STDERR, %saveopts_eval_txt) if ($verbose);
+##-- dump
+$outfh = IO::File->new(">$fcopts{outputFile}")
+  or die("$0: open failed for output file '$fcopts{outputFile}': $!");
+$outfh->print(map {"$_\n"} sort catcmp keys(%cats));
 
 =pod
 
 =head1 NAME
 
-dc-mapper-eval.perl - evaluate Mapper results
+dc-xml2cats.perl - get category list for DocClassify xml docs
 
 =head1 SYNOPSIS
 
- dc-mapper-eval.perl [OPTIONS] CORPUS_WANTED CORPUS_GOT
+ dc-xml2cats.perl [OPTIONS] [INPUT(s)...]
 
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
-  -docs , -nodocs        # do/don't save full document list (default=do)
-  -nerrors NERRS         # summary top NERRS errors to stderr (default=10)
-  -input-mode MODE       # I/O mode for input corpora (default=guess)
-  -output-mode MODE      # I/O mode for output eval data (default=guess)
-  -output-file FILE      # set output file (default=-)
+  -output-file FILE      # specify output file (default=STDOUT)
+  -ids , -noids          # do/don't output cat ids (default=do)
+  -names , -nonames      # do/don't output cat names (default=do)
 
 =cut
 

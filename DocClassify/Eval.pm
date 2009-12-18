@@ -271,7 +271,7 @@ sub uncompile {
 ## $eval = $eval->add_success($catName,$doc1)
 sub add_success {
   my ($eval,$cat,$doc) = @_;
-  my $nbytes = $doc->sizeBytes;
+  my $nbytes = ($doc->sizeBytes||0);
   $eval->{cat2eval}{$cat}{tp_docs}++;
   $eval->{cat2eval}{$cat}{tp_bytes} += $nbytes;
   $eval->{cat2eval}{''}{tp_docs}++;
@@ -284,7 +284,7 @@ sub add_success {
 ## $eval = $eval->add_failure($catName1,$catName2,$doc1)
 sub add_failure {
   my ($eval,$cat1,$cat2,$doc) = @_;
-  my $nbytes = $doc->sizeBytes;
+  my $nbytes = ($doc->sizeBytes||0);
 
   ##-- false negative for $cat1
   $eval->{cat2eval}{$cat1}{fn_docs}++;
@@ -417,7 +417,7 @@ sub saveTextFile {
     my $sfmt  = "%-32s";
     my $dfmt  = "%6d";
     my $ffmt  = "%6.2f";
-    $fh->print(" + Top $nerrs error types (WANTED -> GOT = FREQ (% ERRS))\n",
+    $fh->print(" + Top $nerrs error types (WANTED -> GOT = NDOCS (% ERRS))\n",
 	       (map {
 		 sprintf("   ~ $sfmt -> $sfmt = $dfmt ($ffmt%%)\n", @$_{qw(cat1 cat2 ndocs)}, 100*$_->{fdocs})
 	       } (@errs[0..($nerrs-1)])),
@@ -520,7 +520,7 @@ sub saveXmlDoc {
       $d_node = $docs_node->addNewChild(undef,'doc');
       $d_node->setAttribute('label',$doc1->label) if (defined($doc1->{file}) && $doc1->label ne $doc1->{file});
       $d_node->setAttribute('file',$doc1->{file}) if (defined($doc1->{file}));
-      $d_node->setAttribute('bytes',$doc1->sizeBytes);
+      $d_node->setAttribute('bytes',($doc1->sizeBytes||0));
       #$d_node->setAttribute('sigFile',$doc->{sigFile}) if (defined($doc->{sigFile}));
 
       $cats_node1 = $d_node->addNewChild(undef,'cats');
