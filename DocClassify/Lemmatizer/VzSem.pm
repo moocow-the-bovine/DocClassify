@@ -20,6 +20,9 @@ use strict;
 
 our @ISA = qw(DocClassify::Lemmatizer::VzSep);
 
+BEGIN {
+  *isa = \&UNIVERSAL::isa;
+}
 ##==============================================================================
 ## Constructors etc.
 
@@ -27,7 +30,7 @@ our @ISA = qw(DocClassify::Lemmatizer::VzSep);
 ## %$lz, %opts:
 ##  ##---- NEW for DocClassify::Lemmatizer::VzSem
 ##  semLemmaAttr => $attr,  ##-- semantic-lemma attribute (default='sem_lemma')
-##  semLemmaWeight => $w,   ##-- weight for semantic lemma (default=1) [only used if (sem_lemma ne '')]
+##  semLemmaWeight => $w,   ##-- weight for semantic lemma (default=10) [only used if (sem_lemma ne '')]
 ##  ##---- INHERITED for DocClassify::Lemmatizer::VzSep
 ##  sepLemmaAttr => $attr,  ##-- separated-lemma attribute (default='sep_lemma')
 ##  sepLemmaWeight => $w,   ##-- weight for lemma components (default=1)
@@ -49,7 +52,7 @@ sub new {
   return $that->SUPER::new(
 			   ##-- new
 			   semLemmaAttr => 'sem_lemma',
-			   semLemmaWeight => 1,
+			   semLemmaWeight => 10,
 
 			   ##-- user args
 			   @_
@@ -89,9 +92,9 @@ sub lemmatize {
   my $lemma2lc  = $lz->{lemmaToLower};
 
   ##-- pre-compile regexes
-  $textRegexGood = qr/$textRegexGood/ if (defined($textRegexGood) && !UNIVERSAL::isa($textRegexGood,'Regexp'));
-  $textRegexBad = qr/$textRegexBad/ if (defined($textRegexBad) && !UNIVERSAL::isa($textRegexBad,'Regexp'));
-  $posRegex  = qr/$posRegex/  if (defined($posRegex) && !UNIVERSAL::isa($posRegex,'Regexp'));
+  $textRegexGood = qr/$textRegexGood/ if (defined($textRegexGood) && !isa($textRegexGood,'Regexp'));
+  $textRegexBad = qr/$textRegexBad/ if (defined($textRegexBad) && !isa($textRegexBad,'Regexp'));
+  $posRegex  = qr/$posRegex/  if (defined($posRegex) && !isa($posRegex,'Regexp'));
 
   ##-- lemmatize: vars
   my $tf = $sig->{tf};
@@ -106,6 +109,7 @@ sub lemmatize {
     next if (defined($textRegexGood) && $ya{$textAttr} !~ $textRegexGood);
     next if (defined($textRegexBad)  && $ya{$textAttr} =~ $textRegexBad);
     next if (!defined($lemma = $ya{$lemmaAttr}));
+
     $lemma = lc($lemma) if ($lemma2lc);
 
     ##-- add raw lemma

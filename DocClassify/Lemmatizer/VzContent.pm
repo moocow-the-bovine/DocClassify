@@ -18,15 +18,26 @@ our @ISA = qw(DocClassify::Lemmatizer);
 
 ## $POS_REGEX
 ##  + default pos regex for lemmatize()
+##  + don't use qr// here, since Storable doesn't like pre-compiled Regexps
 #our $POS_REGEX = qr/^N/;
 #our $POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ)/;
 #our $POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ|FM)/;
-our $POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ|FM|XY)/;
+#our $POS_REGEX = qr/^(?:N|TRUNC|VV|ADJ|ITJ|FM|XY)/;
 #our $POS_REGEX= qr/./;
+##--
+our $POS_REGEX = q/^(?:N|TRUNC|VV|ADJ|ITJ|FM|XY)/;
+
+## $TEXT_REGEX_GOOD
+##  + default "good" text regex for lemmatize()
+##  + don't use qr// here, since Storable doesn't like pre-compiled Regexps
+##  + default requires at least 1 ASCII alphanumeric character
+our $TEXT_REGEX_GOOD = q/[a-zA-Z0-9]/;
 
 ## $TEXT_REGEX_BAD
 ##  + default "bad" text regex for lemmatize()
-our $TEXT_REGEX_BAD = qr/(?:^[^[:alpha:][:digit:]\_\-]*$)|(?:\#)/;
+##  + don't use qr// here, since Storable doesn't like pre-compiled Regexps
+#our $TEXT_REGEX_BAD = qr/(?:^[^[:alpha:][:digit:]\_\-]*$)|(?:\#)/;
+our $TEXT_REGEX_BAD = q/(?:^[^[:alpha:][:digit:]\_\-]*$)|(?:\#)/;
 
 ##==============================================================================
 ## Constructors etc.
@@ -35,7 +46,7 @@ our $TEXT_REGEX_BAD = qr/(?:^[^[:alpha:][:digit:]\_\-]*$)|(?:\#)/;
 ## %$lz, %opts:
 ##  ##---- NEW for DocClassify::Lemmatizer::VzContent
 ##  textAttr => $attr,      ##-- text attribute (default='norm')
-##  textRegexGood => $re,   ##-- regex matching "good" text types (default=undef (none))
+##  textRegexGood => $re,   ##-- regex matching "good" text types (default=$TEXT_REGEX_GOOD)
 ##  textRegexBad  => $re,   ##-- regex matching "bad" text types  (default=$TEXT_REGEX_BAD)
 ##  textStop => \%stopText, ##-- pseudo-hash of unwanted text types; default=undef (none)
 ##  posRegex => $re,        ##-- regex matching "good" pos tags (default=$POS_REGEX)
@@ -50,7 +61,7 @@ sub new {
   return $that->SUPER::new(
 			   ##-- defaults: Lemmatizer::VzContent
 			   textAttr => 'norm',
-			   textRegexGood => undef,
+			   textRegexGood => $TEXT_REGEX_GOOD,
 			   textRegexBad  => $TEXT_REGEX_BAD,
 			   textStop => undef,
 			   posRegex => $POS_REGEX,

@@ -52,7 +52,7 @@ our $verbose = 3;
 ##                                   ##    'entropy'                 ##-- alias for 'max-entropy-quotient' (default); aka 'H'
 ##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
 ##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
-##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
+##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=1)
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
 ##  ##
@@ -96,7 +96,7 @@ sub new {
 			       termWeight  => 'entropy',
 			       cleanDocs => 1,
 			       byCat => 0,
-			       weightByCat => 0,
+			       weightByCat => 1,
 			       dist => 'u',
 
 			       ##-- data: enums
@@ -216,6 +216,9 @@ sub compile {
   $opts{weightByCat} = $map->{weightByCat} if (!exists($opts{weightByCat}));
   $opts{_compile_tcm0} = $map->{_compile_tcm0} if (!exists($opts{_compile_tcm0}));
   $opts{_compile_tcm} = $map->{_compile_tcm} if (!exists($opts{_compile_tcm}));
+
+  ##-- report lemmatizer class
+  $map->vlog('info', "compile(): lemmatizer class: ", ref($map->lemmatizer));
 
   ##-- frequency-trimming
   $map->compileTrim();
@@ -622,7 +625,10 @@ sub compile_tw {
   my ($NT,$ND) = $tdm0->dims;
 
   ##-- guts
-  $map->vlog('info',"compile_tw(): vector: tw: ($NT): [Term -> Weight] : tw=$termWeight, weightByCat=".($map->{weightByCat} ? 1 : 0)) if ($map->{verbose});
+  if ($map->{verbose}) {
+    $map->vlog('info',"compile_tw(): vector: tw: ($NT): [Term -> Weight]");
+    $map->vlog('info',"compile_tw(): tw=$termWeight, weightByCat=".($map->{weightByCat} ? 1 : 0)) ;
+  }
   my ($tw);
   if ($termWeight eq 'uniform') {
     $tw = ones($NT);                                ##-- identity weighting

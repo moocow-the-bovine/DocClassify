@@ -320,14 +320,15 @@ BEGIN {
 
   ##-- from Regexp::Storable.pm, distribution Regexp::Copy
   package Regexp;
-  sub STORABLE_freeze {
+  sub STORABLE_freeze_forgetaboutit {
     #my $serialized = substr($_[0], rindex($_[0],':')+1, -1); ##-- original
-    my $serialized =  substr($_[0],CORE::index($_[0],':')+1,-1);    ##-- fixed
+    my $str        = "$_[0]";
+    my $serialized =  substr($str,CORE::index($_[0],':')+1,-1);    ##-- fixed
     return $serialized;
   }
 
   ##-- nothing changed here
-  sub STORABLE_thaw {
+  sub STORABLE_thaw_donteventhinkaboutit {
     my ( $original, $cloning, $thaw ) = @_;
     my $final = ($thaw) ? qr/$thaw/ : qr//;
     Regexp::Copy::re_copy($final, $original);

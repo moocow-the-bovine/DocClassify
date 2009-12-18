@@ -22,11 +22,11 @@ use Storable;
 use PDL::IO::Storable;
 
 ##-- storable v2.18, v2.21 can't handle qr//-style Regexp regexes
-use Regexp::Copy;
+#use Regexp::Copy;     ##-- occasional segfaults with Regexp::Copy-0.06, Storable-2.21, perl-5.10.0 on SuSE x86-64
 #use Regexp::Storable; ##-- there's a bug in this; hack is in DocClassify::Utils
 
 use DocClassify::Logger;
-use DocClassify::Utils ':all';  ##-- load this AFTER Regexp::Copy, Regexp::Storable
+use DocClassify::Utils ':all';  ##-- load this AFTER Regexp::Copy, Regexp::Storable (and don't store compiled regexes!)
 use IO::File;
 use Carp;
 use strict;

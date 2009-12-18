@@ -113,7 +113,9 @@ sub addSig {
 ## $bool = $sig->lemmatized()
 ##  + check if sig has been lemmatized
 ##  + default just checks for $sig->{lf}
-sub lemmatized { return defined($_[0]{lf}); }
+sub lemmatized {
+  return defined($_[0]{lf});
+}
 
 ## $sig = $sig->unlemmatize()
 ##  + clears lemma-frequency hash

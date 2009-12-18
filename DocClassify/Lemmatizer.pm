@@ -37,7 +37,9 @@ BEGIN {
      vzsem => 'VzSem',
      vzSem => 'VzSem',
      ##
-     Default => 'VzContent',
+     #Default => 'VzContent',
+     #Default => 'VzSep',
+     Default => 'VzSem',
     );
   @ALIAS{map {lc($_)} keys(%ALIAS)} = values(%ALIAS);
 }
