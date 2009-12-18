@@ -28,11 +28,20 @@ our $verbose = setVerboseOptions(1);
 		   recursive=>1,
 		   inputFileMatch=>qr/\.xml$/,
 		  },
-	 corpusSave => { saveCats=>undef, saveSigs=>undef, },
+	 #corpusSave => { saveCats=>undef, saveSigs=>undef, },
+	 ##--
+	 #corpusSave => { %{$opts{corpusSave}}, saveCats=>1, saveSigs=>1 },
+	 ##--
+	 corpusSave => { %{$opts{corpusSave}}, saveCats=>undef, saveSigs=>undef },
+	 sigLoad => { %{$opts{sigLoad}}, mode=>undef, lemmatized=>0, verboseIO=>0 },
+	 sigSave => { %{$opts{sigSave}}, mode=>undef, lemmatized=>0, verboseIO=>0 },
+	 outputFile => '-',
+	 sigSuffix => '.sig.bin',
 	);
 
 
 our $inputCorpora = 0; ##-- where INPUTs are corpora or document files/dirs
+our $compile = undef;  ##-- default: true for new corpora, false for union
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -41,9 +50,12 @@ GetOptions(##-- common options
 	   dcOptions(),
 
 	   ##-- local options
-	   'union|merge|corpora|u|m|c!' => \$inputCorpora,
+	   'union|merge|join|corpora|u|m|j!' => \$inputCorpora,
+	   'compile|c!' => \$compile,
 	  );
 $verbose=$opts{verbose};
+$compile=1 if (!defined($compile) && !$inputCorpora);
+$opts{corpusSave}{saveCats}=$opts{corpusSave}{saveSigs}=1 if ($compile);
 $opts{fcNew}{outputFile} = $opts{outputFile};
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
@@ -85,6 +97,26 @@ push(@ARGV,'-') if (!@ARGV);
 $fc = DocClassify::FileChurner->new( newOpts('fc'), fileCallback=>\&fc_callback );
 $fc->churn(@ARGV);
 
+##-- compile
+if ($compile) {
+  DocClassify::Program->vlog('info', "compile()") if ($verbose);
+  foreach $doc (@{$corpus->{docs}}) {
+    DocClassify::Program->vlog('trace', "COMPILE: ", $doc->label) if ($verbose>=2);
+
+    ##-- compile: categories
+    if ($opts{corpusSave}{saveCats}) {
+      $doc->cats;
+    }
+
+    ##-- compile: signature
+    if ($opts{corpusSave}{saveSigs}) {
+      my $sigFile = $doc->{file}.$opts{sigSuffix};
+      $doc->saveSignature($sigFile, optsSave('sig'));
+      delete(@$doc{qw(sig xdoc)}); ##-- clear cache, in case of binary save
+    }
+  }
+}
+
 $corpus->saveFile($opts{outputFile}, saveOpts('corpus'));
 
 =pod
@@ -103,7 +135,9 @@ dc-corpus-create.perl - make a corpus directory (XML or binary)
   -union CORPUS          # load (additional) corpus data from CORPUS (multiples ok)
   -output-file FILE      # set corpus output file (default=-)
   -label LABEL           # set global corpus label
-  -cats , -nocats        # do/don't save category data (default=don't)
+  -compile , -nocompile  # do/don't (re-)compile corpus (default: false if -union, otherwise true)
+  -cats , -nocats        # do/don't save category data (default: true iff -compile)
+  -sigs , -nosigs        # do/don't save signature data (default: true iff -compile)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output corpus (default=guess or xml)
 

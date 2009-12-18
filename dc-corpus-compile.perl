@@ -68,7 +68,7 @@ foreach (@ARGV) {
 ##-- compile
 my ($doc);
 foreach $doc (@{$corpus->{docs}}) {
-  DocClassify::Program->vlog('trace', "DOC: ", $doc->label) if ($verbose);
+  DocClassify::Program->vlog('trace', "COMPILE: ", $doc->label) if ($verbose);
 
   ##-- compile: categories
   if ($opts{corpusSave}{saveCats}) { $doc->cats; }

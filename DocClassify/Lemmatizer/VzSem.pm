@@ -116,8 +116,10 @@ sub lemmatize {
     $lf->{$lemma} += $lemmaWt*$f;
 
     ##-- add separated raw lemma (on punct, '_' space)
-    foreach ($lemma =~ m/[^\_\s[:punct:]]+/g) {
-      $lf->{$_} += $sepLemmaWt*$f;
+    if ($lemma =~ m/[\_\s[:punct:]]/) { ##-- 2009-12-18: f('miiiiiiauuuuuu',test/group_13_441.xml)=3 (from 1)
+      foreach ($lemma =~ m/[^\_\s[:punct:]]+/g) {
+	$lf->{$_} += $sepLemmaWt*$f;
+      }
     }
 
     ##-- use tagh-separated lemma components
@@ -125,8 +127,10 @@ sub lemmatize {
     $lemmas =~ s/[\|\=]//g; ##-- e.g. Band/N#er|fahr/V~ung -> Band/N#erfahr/V~ung, aus=stell/V~ung -> ausstell/V~ung
     $lemmas =~ s/(?:\-)|(?:\/\w+)|(?:[\~\\]\w+)|(?:[\|\=\+])|(?:\#)/ /g;
     $lemmas = lc($lemmas) if ($lemma2lc);
-    foreach ($lemmas =~ m/\S+/g) {
-      $lf->{$_} += $sepLemmaWt*$f;
+    if ($lemmas =~ /\s/) { ##-- 2009-12-18: f('miiiiiiauuuuuu',test/group_13_441.xml)=3 (from 1)
+      foreach ($lemmas =~ m/\S+/g) {
+	$lf->{$_} += $sepLemmaWt*$f;
+      }
     }
 
     ##-- add semantic lemma (if defined and non-empty)
