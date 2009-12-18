@@ -31,6 +31,7 @@ BEGIN {
 ##  ##---- NEW for DocClassify::Lemmatizer::VzSem
 ##  semLemmaAttr => $attr,  ##-- semantic-lemma attribute (default='sem_lemma')
 ##  semLemmaWeight => $w,   ##-- weight for semantic lemma (default=10) [only used if (sem_lemma ne '')]
+##  lemmaWeight => $w,      ##-- OVERRIDE default=3
 ##  ##---- INHERITED for DocClassify::Lemmatizer::VzSep
 ##  sepLemmaAttr => $attr,  ##-- separated-lemma attribute (default='sep_lemma')
 ##  sepLemmaWeight => $w,   ##-- weight for lemma components (default=1)
@@ -53,6 +54,7 @@ sub new {
 			   ##-- new
 			   semLemmaAttr => 'sem_lemma',
 			   semLemmaWeight => 10,
+                           lemmaWeight => 3,
 
 			   ##-- user args
 			   @_
