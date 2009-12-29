@@ -1878,7 +1878,7 @@ BEGIN {
   our $plot2d = 1;
   our $plot3d = 1;
   ##
-  our $plot_hardcopy = 1;
+  our $plot_hardcopy = 0;
   our ($dev2d,$dev3d);
   if ($plot_hardcopy) {
     $dev2d = '/CPS';
@@ -2390,7 +2390,7 @@ sub test_load_eval {
   print STDERR "$0: test_load_xcheck() done: what now?\n";
   exit 0;
 }
-test_load_eval(@ARGV);
+#test_load_eval(@ARGV);
 
 
 
@@ -2425,6 +2425,385 @@ sub _Fb {
   my ($pr1,$rc1) = (li1($pr,$eps),li1($rc,$eps));
   my $Fb = (1+$beta**2) * ($pr1*$rc1) / ($beta**2 * $pr1 + $rc1);
 }
+
+
+##======================================================================
+sub test_load_eval_2 {
+  my ($efile) = @_;
+  if (!defined($efile)) {
+    #$efile = "data/train_data_2009_12_18_v3.eval.xml";
+    $efile = "data/test_data_2009_12_18_v3.eval.xml";
+  }
+  $efile = "$efile.bin" if (-r "$efile.bin");
+
+  ##----
+  print STDERR "$0: load($efile)\n";
+  my $eval = DocClassify::Eval->loadFile("$efile")
+    or die("$0: Eval->loadFile($efile) failed: $!");
+  $eval->saveFile("$efile.bin") if ($efile !~ /\.bin$/);
+
+  ##~~ vars
+  my $lab2docs = $eval->{lab2docs};
+
+  ##--------------------
+  ## create enums
+  my $denum  = MUDL::Enum->new;
+  @{$denum->{id2sym}} = keys %$lab2docs;
+  @{$denum->{sym2id}}{@{$denum->{id2sym}}} = (0..$#{$denum->{id2sym}});
+  my $d_sym2id = $denum->{sym2id};
+  my $ND = $denum->size;
+  ##
+  my $gcenum = MUDL::Enum->new;
+  my ($d12,$cat);
+  foreach $d12 (values(%$lab2docs)) {
+    foreach $cat (map {@{$_->{cats}}} @$d12) {
+      $cat->{id} = $1 if ($cat->{name} =~ /^(\d+)_/);
+      $gcenum->addIndexedSymbol(@$cat{qw(name id)});
+    }
+  }
+  my $lcenum = $gcenum->clone->compact;
+  my $lc_sym2id = $lcenum->{sym2id};
+  my $NC = $lcenum->size;
+
+  ##--------------------
+  ## compile $d2c
+  my $d2c = pdl([@$lc_sym2id{map {$lab2docs->{$_}[0]{cats}[0]{name}} @{$denum->{id2sym}}}]); ##-- [$di] -> $ci_wanted
+
+  ##--------------------
+  ## ... other vars
+  my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);             ##-- [$lci] -> $gci
+  my $lcids  = zeroes(long,$gcids->max+1); $lcids->index($gcids) .= $gcids->xvals;  ##-- [$gci] -> $lci
+  my $NCg    = $gcids->max+1;
+
+  ##--------------------
+  ## $dc_dist (from Mapper::LSI::loadCrossCheckEval()
+  my $dc_dist = zeroes($ND,$NC)+2; ##-- initialize to max
+  my ($lab,$dcats2,@dci,@dcdist,$di); #$d12
+  while (($lab,$d12)=each(%$lab2docs)) {
+    if (!defined($di = $d_sym2id->{$lab})) {
+      warn("$0: no internal ID for doc label '$lab' -- skipping");
+      next;
+    }
+    $dcats2 = $d12->[1]{cats};
+    @dci    = grep {defined($lc_sym2id->{$dcats2->[$_]{name}})} (0..$#$dcats2);
+    @dcdist = map {$dcats2->[$_]{dist_raw}} @dci;
+    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{map {$dcats2->[$_]{name}} @dci}])) .= pdl(\@dcdist);
+  }
+
+  ##--------------------
+  ## baseline accuracy
+  my $d2c_bydist = $dc_dist->xchg(0,1)->minimum_ind;
+  my $acc_bydist = ($d2c_bydist==$d2c)->nnz / $ND;
+
+  ##--------------------
+  ##-- get positive evidence
+  my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
+  my $dc_mask1  = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
+  $dc_mask1->indexND($dc_which1) .= 1;
+  my $dc_mask   = $dc_mask1; ##-- alias
+  my $dc_which0 = whichND(!$dc_mask1);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
+  my $nc  = $dc_mask1->long->sumover->double;            ##-- [$ci] -> |{ $di : $di \in     $ci }|
+  my $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
+
+  ##----------------------------------------------------
+  ## repeat of test_compile_xcheck()
+
+
+  ##--------------------
+  ##-- from testme.perl test_errors(), above
+  ## $dcdist_mu = pdl(1): global avg    dist($ci,$di)
+  ## $dcdist_sd = pdl(1): global stddev dist($ci,$di)
+  my $dcdist_mu = $dc_dist->flat->average;
+  my $dcdist_sd = (($dc_dist - $dcdist_mu)**2)->flat->average->sqrt;
+
+  my $nc_min = 2;#3; #10; #50; ##-- minimum #/docs to use fit
+
+  ##--------------------
+  ## $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ## $cdist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  my ($cdist_mu,$cdist_sd,$cdist_isgood,$cdist_sd_raw);
+  $cdist_mu = $dc_dist->average;
+  $cdist_sd = (($dc_dist - $cdist_mu->slice("*1,"))**2)->average->sqrt;
+  $cdist_isgood = ($cdist_sd->isfinite)&($cdist_sd>0);
+  $cdist_sd_raw = $cdist_sd->pdl;
+  ##
+  $cdist_sd->where(!$cdist_isgood) .= $cdist_sd->where($cdist_isgood)->minimum/2;
+
+  ##-- plots
+  our (%eplot);
+
+  ##--------------------
+  ## $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \in $ci
+  ## $c1dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ## $c1dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  ## $c1dist_mu0, $c1dist_sd0: global fit parameters
+  my ($dc1dist,$c1dist_mu,$c1dist_sd,$c1dist_sd_nan0,$c1dist_sd_bad0,$c1dist_isgood,$c1dist_mu_raw);
+  $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
+  $c1dist_mu0 = $dc1dist->_nzvals->average;
+  $c1dist_sd0 = (($dc1dist->_nzvals-$c1dist_mu0)**2)->average->sqrt;
+  $c1dist_mu = $dc1dist->average_nz->decode;
+  $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  $c1dist_mu_raw = $c1dist_mu->pdl;
+  $c1dist_sd_raw = $c1dist_sd->pdl;
+  $c1dist_isgood = (($c1dist_sd_raw->isfinite) & ($nc >= $nc_min));
+  #$c1dist_isgood = (($c1dist_sd_raw->isfinite));
+  ($c1dist_sd_nan0 = $c1dist_sd->pdl)->where(!$c1dist_sd->isfinite) .= 0;
+  ($c1dist_sd_bad0 = $c1dist_sd->pdl)->where(!$c1dist_isgood) .= 0;
+
+  ##--------------------
+  ## $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
+  ## $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
+  ## $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
+  ## $c0dist_mu0, $c0dist_sd0: global fit parameters
+  my ($dc0dist,$c0dist_mu,$c0dist_sd,$c0dist_sd_nan0,$c0dist_sd_bad0, $c0dist_isgood, $c0dist_sd_eps);
+  my ($c0dist_mu0,$c0dist_sd0,$c0dist_mu_raw);
+  $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
+  $c0dist_mu0 = $dc0dist->_nzvals->average;
+  $c0dist_sd0 = (($dc0dist->_nzvals-$c0dist_mu0)**2)->average->sqrt;
+  $c0dist_mu = $dc0dist->average_nz->decode;
+  $c0dist_sd = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  $c0dist_mu_raw = $c0dist_mu->pdl;
+  $c0dist_sd_raw = $c0dist_sd->pdl;
+  #$c0dist_isgood = (($c0dist_sd->isfinite) & ($nc >= $nc_min));
+  $c0dist_isgood = ($c0dist_sd_raw->isfinite);
+  ($c0dist_sd_nan0 = $c0dist_sd->pdl)->where(!$c0dist_sd->isfinite) .= 0;
+  ($c0dist_sd_bad0 = $c0dist_sd->pdl)->where(!$c0dist_isgood) .= 0;
+
+  ##--------------------
+  ##-- plots
+  if ($plot2d) {
+    _usepgplot($dev2d);
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ##
+    ploterrs({%eplot,title=>'Normal Fit by Category (Positives:black, Negatives:red)'},
+	     [$gcids-.1, $c1dist_mu,$c1dist_sd_nan0, {}],
+	     [$gcids+.1, $c0dist_mu,$c0dist_sd_nan0, {color=>'red'}]);
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
+  }
+
+  ##--------------------
+  ##-- hack mu, sd: positives
+  $c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu->where($c1dist_isgood)->minimum;
+  $c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd->where($c1dist_isgood)->minimum/2;
+
+  ##--------------------
+  ##-- hack mu, sd: negatives
+  $c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu->where($c0dist_isgood)->minimum;
+  $c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd->where($c0dist_isgood)->maximum;
+
+  ##--------------------
+  ##-- plot: hacked mu,sd
+  if ($plot2d) {
+    _usepgplot($dev2d);
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ploterrs({%eplot,title=>'Normal Fit by Category: Hacked (Positives:black, Negatives:red)'},
+	     [$gcids-.1, $c1dist_mu,$c1dist_sd, {}],
+	     [$gcids+.1, $c0dist_mu,$c0dist_sd, {color=>'red'}]);
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
+  }
+
+  ##--------------------
+  ## extend standard deviations (expect the unexpected)
+  my $c1dist_sd2 = $c1dist_sd * 10;
+  my $c0dist_sd2 = $c0dist_sd * 10;
+  if ($plot2d) {
+    _usepgplot($dev2d);
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ploterrs({%eplot,title=>'Normal Fit by Category: Hacked*2 (Positives:black, Negatives:red)'},
+	     [$gcids-.1, $c1dist_mu,$c1dist_sd2, {}],
+	     [$gcids+.1, $c0dist_mu,$c0dist_sd2, {color=>'red'}]);
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
+  }
+
+
+  ##--------------------
+  ## compute cdfs
+  my ($dc1_cdf0,$dc0_cdf0, $dc1_scdf0,$dc0_scdf0);
+  my ($dc_cdf,$dc1_cdf,$dc0_scdf,$dc1_scdf);
+  $dc_cdf = gausscdf($dc_dist, $cdist_mu->slice("*1,"), $cdist_sd->slice("*1,")); ##-- [$di,$ci] -> cdf:global(d,c)
+  ##
+  $dc1_cdf = gausscdf($dc_dist, $c1dist_mu->slice("*1,"), $c1dist_sd2->slice("*1,"));##-- [$di,$ci] -> cdf:pos(d,c)
+  $dc0_cdf = gausscdf($dc_dist, $c0dist_mu->slice("*1,"), $c0dist_sd2->slice("*1,"));##-- [$di,$ci] -> cdf:neg(d,c)
+  $dc1_scdf = li1($dc1_cdf,1e-5);
+  $dc0_scdf = li1($dc0_cdf,1e-5);
+
+  ##-- $dc10_p : [$di,$c1,$c0] -> p(1[$c1]=1|$di) ; p(1[$c0]=0|$di)
+  my $dc10_p = zeroes($ND,$NC,$NC);
+  #$dc10_p .= $dc0_scdf->slice(",,*$NC");
+  #$dc10_p->diagonal(1,2) .= (1-$dc1_scdf);
+  $dc10_p .= $dc0_cdf->slice(",,*$NC");
+  $dc10_p->diagonal(1,2) .= (1-$dc1_cdf);
+  my $dcx_p = $dc10_p->mv(0,-1)->prodover->mv(-1,0); ##-- [$di,$ci] -> p($ci|$di) * \prod_{$cj} p(!$cj|$di)
+
+  ##-- $dc10_pg : [$di,$c1,$c0] -> p(1[$c1]=1|$di) ; p(1[$c0]=0|$di), using global sd
+  my $dcdist_sd2 = $dcdist_sd * 10;
+  my $dc_cdf_g = gausscdf($dc_dist, $cdist_mu->slice("*1,"), $dcdist_sd2); ##-- [$di,$ci] -> cdf:global(d,c)
+  my $dc10_pg = zeroes($ND,$NC,$NC);
+  $dc10_pg .= $dc_cdf_g->slice(",,*$NC");
+  $dc10_pg->diagonal(1,2) .= (1-$dc_cdf_g);
+  my $dcx_pg = $dc10_pg->mv(0,-1)->prodover->mv(-1,0); ##-- [$di,$ci] -> p($ci|$di) * \prod_{$cj} p(!$cj|$di)
+
+  ##-- multiply by cat-prob (post-hoc)
+  my $pc1 = $nc/$nc->sum;
+  my $pc0 = 1-$pc1;
+  my $dcx_pp = $dcx_p*$pc1->slice("*1,");
+
+  ##--------------------
+  ##-- accuracies
+  my $acc = sub {
+    my ($expr,$minmax) = @_;
+    my $dc = eval $expr;
+    $minmax = 'min' if (!defined($minmax));
+    my $cats = $minmax eq 'max' ? $dc->xchg(0,1)->maximum_ind : $dc->xchg(0,1)->minimum_ind;
+    my $acc = ($cats == $d2c)->nnz / $ND;
+    print "$acc\tacc:${minmax}\t$expr\n";
+    return $acc;
+  };
+
+  ##--------------------
+  ##-- baseline
+  $acc->('$dc_dist'); ##-- .689, .716
+
+  ##-- stupid p-value tests
+  $acc->('$dc_cdf'); ##-- .434, .671
+  $acc->('$dc1_scdf',); ##-- .649, .702
+  $acc->('$dcx_p','max'); ##-- .564, .706
+  $acc->('$dcx_pg','max'); ##-- .557, .702
+  $acc->('$dcx_pp','max'); ##-- .527, .381
+
+  ##-- grr...
+  if ($plot3d) {
+    our $dc_raw_l = 2-$dc_dist; #-- sim=2-d; d=2-1-cos; -> d=2-sim -> sim=1+cos
+    our $dc_raw = zeroes($ND,$NCg)+$dc_raw_l->min;
+    $dc_raw->dice_axis(1,$gcids) .= $dc_raw_l;
+    ##
+    %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'doc', ytitle=>'cat');
+    _usepgplot($dev3d);
+    imag($dc_raw,{%iplot,title=>'Raw Similarity: 1+cos(LSI(doc),LSI(cat))'});
+    imag($dc_raw,{%iplot,title=>'Raw Similarity: 1+cos(LSI(doc),LSI(cat)) [log-scale]',itf=>'log'});
+    ##
+    our $dc_sim_l = $dcx_p;
+    our $dc_sim = zeroes($ND,$NCg)+$dc_sim_l->min;
+    $dc_sim->dice_axis(1,$gcids) .= $dc_sim_l;
+    imag($dc_sim,{%iplot,title=>'P-Similarity: p(d~ci) * PI_j(d!~cj)'});
+    imag($dc_sim,{%iplot,title=>'P-Similarity: p(d~ci) * PI_j(d!~cj) [log-scale]', itf=>'log'});
+    ##
+    our $cc_which1 = $d2c->cat($dc_which1->slice("(1),"))->xchg(0,1);
+    our $cc_which0 = $d2c->index($dc_which0->slice("(0)"))->cat($dc_which0->slice("(1),"))->xchg(0,1);
+    our $asim1_l = PDL::CCS::Nd->newFromWhich($cc_which1,$dc_sim_l->indexND($dc_which1))->dummy(0,1)->average_nz->_missing(0)->decode;
+    our $asim0_l = PDL::CCS::Nd->newFromWhich($cc_which0,$dc_sim_l->indexND($dc_which0))->dummy(0,1)->average_nz->_missing(0)->decode;
+    our $asim_l  = ($asim1_l+$asim0_l);
+    our $asim = zeroes($NCg,$NCg)+$asim_l->min;
+    $asim->dice_axis(0,$gcids)->dice_axis(1,$gcids) .= $asim_l;
+    ##
+    our $asim1_raw_l = PDL::CCS::Nd->newFromWhich($cc_which1,$dc_raw_l->indexND($dc_which1))->dummy(0,1)->average_nz->_missing(0)->decode;
+    our $asim0_raw_l = PDL::CCS::Nd->newFromWhich($cc_which0,$dc_raw_l->indexND($dc_which0))->dummy(0,1)->average_nz->_missing(0)->decode;
+    our $asim_raw_l = ($asim1_raw_l+$asim0_raw_l);
+    our $asim_raw   = zeroes($NCg,$NCg)+$asim_raw_l->min;
+    $asim_raw->dice_axis(0,$gcids)->dice_axis(1,$gcids) .= $asim_raw_l;
+    ##
+    %iplot = (%iplot,xtitle=>'c1 : wanted',ytitle=>'c2 : predicted');
+    imag($asim_raw,{%iplot,title=>'Avg Raw Similarity'});
+    imag($asim_raw,{%iplot,title=>'Avg Raw Similarity [sqrt-scale]',itf=>'sqrt'});
+    imag($asim_raw,{%iplot,title=>'Avg Raw Similarity [log-scale]',itf=>'log'});
+    imag($asim,{%iplot,title=>'Avg Adjusted Similarity'});
+    imag($asim,{%iplot,title=>'Avg Adjusted Similarity [sqrt-scale]',itf=>'sqrt'});
+    imag($asim,{%iplot,title=>'Avg Adjusted Similarity [log-scale]',itf=>'log'});
+    ##
+    our $asim_mask1_raw = ($asim_raw->maximum_ind->slice("*1,")==$asim_raw->xvals);
+    imag($asim_raw*$asim_mask1_raw,{%iplot,title=>'Best c1 by c2 ~ Precision [raw]',itf=>'linear'});
+    imag($asim_raw*$asim_mask1_raw,{%iplot,title=>'Best c1 by c2 ~ Precision [raw,log-scale]',itf=>'log'});
+    ##
+    our $asim_mask1 = ($asim->maximum_ind->slice("*1,")==$asim->xvals);
+    imag($asim*$asim_mask1,{%iplot,title=>'Best c1 by c2 ~ Precision [adjusted]'});
+    imag($asim*$asim_mask1,{%iplot,title=>'Best c1 by c2 ~ Precision [adjusted,log-scale]',itf=>'log'});
+    ##
+    our $asim_mask2_raw = ($asim_raw->xchg(0,1)->maximum_ind==$asim_raw->yvals);
+    imag($asim_raw*$asim_mask2_raw,{%iplot,title=>'Best c2 by c1 ~ Recall [raw]'});
+    imag($asim_raw*$asim_mask2_raw,{%iplot,title=>'Best c2 by c1 ~ Recall [raw,log-scale]',itf=>'log'});
+    ##
+    our $asim_mask2 = ($asim->xchg(0,1)->maximum_ind==$asim->yvals);
+    imag($asim*$asim_mask2,{%iplot,title=>'Best c2 by c1 ~ Recall [adjusted]'});
+    imag($asim*$asim_mask2,{%iplot,title=>'Best c2 by c1 ~ Recall [adjusted,log-scale]',itf=>'log'});
+  }
+
+  ##----------------------------------------------------
+  ## histogram confusion matrix, <=
+  ## $cc1_hist : [$c1,$c2] -> |{$d : $c1=wanted($d) && dist($d,$c2)<=dist($d,$c1)}|
+  my $d_dist1 = $dc_dist->index2d($d2c->xvals,$d2c); ##-- [$di] -> dist($c1) : $c1=wanted($di)
+  my $dc1_e_mask  = ($dc_dist <= $d_dist1);
+  my $dc1_e_which = whichND($dc1_e_mask);
+  my $cc1_e_which = $d2c->index($dc1_e_which->slice("(0),"))->cat($dc1_e_which->slice("(1),"))->xchg(0,1);
+  my $cc1_hist = PDL::CCS::Nd->newFromWhich($cc1_e_which,ones($cc1_e_which->dim(1)))->dummy(0,1)->sumover->decode;
+  my $cc1_p12  = $cc1_hist / $cc1_hist->sum;
+  my $cc1_p1g2 = ($cc1_hist / $cc1_hist->sumover->slice("*1,"))->inplace->setnantobad->inplace->setbadtoval(0);
+  my $cc1_p2g1 = ($cc1_hist / $cc1_hist->xchg(0,1)->sumover)->inplace->setnantobad->inplace->setbadtoval(0);
+
+  ## $cc0_hist : [$c1,$c2] -> |{$d : $c1=wanted($d) && dist($d,$c2) < dist($d,$c1)}|
+  my $dc0_e_mask  = ($dc_dist <  $d_dist1);
+  my $dc0_e_which = whichND($dc0_e_mask);
+  my $cc0_e_which = $d2c->index($dc0_e_which->slice("(0),"))->cat($dc0_e_which->slice("(1),"))->xchg(0,1);
+  my $cc0_hist = PDL::CCS::Nd->newFromWhich($cc0_e_which,ones($cc0_e_which->dim(1)))->dummy(0,1)->sumover->decode;
+  my $cc0_p12  = $cc0_hist / $cc0_hist->sum;
+  my $cc0_p1g2 = ($cc0_hist / $cc0_hist->sumover->slice("*1,"))->inplace->setnantobad->inplace->setbadtoval(0);
+  my $cc0_p2g1 = ($cc0_hist / $cc0_hist->xchg(0,1)->sumover)->inplace->setnantobad->inplace->setbadtoval(0);
+
+  ##-- plot
+  our (%iplot);
+  %iplot = (DrawWedge=>1, itf=>'sqrt', xtitle=>'c1 : wanted', ytitle=>'c2 : measured');
+  if ($plot3d) {
+    _usepgplot($dev3d);
+    imag($cc1_hist,{%iplot,title=>'Histogram: |{d : dist(d,c2) <= dist(d,c1)}|'});
+    imag($cc1_p12,{%iplot, title=>'p(dist(d,c2) <= dist(d,c1))'});
+    imag($cc1_p1g2,{%iplot,title=>'p(dist(d,c2) <= dist(d,c1) | c2)'});
+    imag($cc1_p2g1,{%iplot,title=>'p(dist(d,c2) <= dist(d,c1) | c1)'});
+    ##
+    imag($cc0_hist,{%iplot,title=>'Histogram: |{d : dist(d,c2) < dist(d,c1)}|'});
+    imag($cc0_p12,{%iplot, title=>'p(dist(d,c2) < dist(d,c1))'});
+    imag($cc0_p1g2,{%iplot,title=>'p(dist(d,c2) < dist(d,c1) | c2)'});
+    imag($cc0_p2g1,{%iplot,title=>'p(dist(d,c2) < dist(d,c1) | c1)'});
+  }
+  
+  ##----------------------------------------------------
+  ## histogram confusion matrix, min
+  ##  $ccg_hist : [$c1,$c2] -> |{$d : $c1=wanted($d) && $c2=got($d)}|
+  #my $d_dist1 = $dc_dist->index2d($d2c->xvals,$d2c); ##-- [$di] -> dist($c1) : $c1=wanted($di)
+  my $d_c2 = $d2c_bydist = $dc_dist->xchg(0,1)->minimum_ind;
+  my $d_c1 = $d2c;
+  #my $d_c2_mask   = zeroes(byte,$dc_dist->dims); $d_c2_mask->index2d(xvals(long,$ND),$d_c2) .= 1;
+  #my $dg_which = which($d_c1 != $d_c2);
+  my $dg_which = $d_c1->xvals;
+  my $ccg_which = $d_c1->index($dg_which)->cat($d_c2->index($dg_which))->xchg(0,1);
+  my $ccg_hist = PDL::CCS::Nd->newFromWhich($ccg_which,$dg_which->ones)->dummy(0,1)->sumover->decode;
+  my $ccg_p12  = $ccg_hist / $ccg_hist->sum;
+  my $ccg_p1g2 = ($ccg_hist / $ccg_hist->sumover->slice("*1,"))->inplace->setnantobad->inplace->setbadtoval(0);
+  my $ccg_p2g1 = ($ccg_hist / $ccg_hist->xchg(0,1)->sumover)->inplace->setnantobad->inplace->setbadtoval(0);
+
+  ##-- plot
+  #our (%iplot);
+  %iplot = (DrawWedge=>1, itf=>'linear', xtitle=>'c1 : wanted', ytitle=>'c2 : got');
+  if ($plot3d) {
+    _usepgplot($dev3d);
+    imag($ccg_hist,{%iplot,title=>'Histogram: |{ d : wanted(d)=c1 & got(d)=c2 }|'});
+    imag($ccg_p12,{%iplot, title=>'p(Wanted=c1,Got=c2)'});
+    imag($ccg_p1g2,{%iplot,title=>'p(Wanted=c1|Got=c2) ~ Precision'});
+    imag($ccg_p2g1,{%iplot,title=>'p(Got=c2|Wanted=c1) ~ Recall'});
+    imag(F1($ccg_p2g1,$ccg_p1g2), {%iplot,title=>'F1(p(Wanted=c1|Got=c2),p(Got=c2|Wanted=c1))'});
+  }
+  ##-- CONTINUE HERE: how to use this data at runtime ?!
+
+
+  print STDERR "$0: test_load_eval_2() done: what now?\n";
+  exit 0;
+}
+test_load_eval_2(@ARGV);
+
 
 ##======================================================================
 sub test_store_regex {
@@ -2581,7 +2960,7 @@ sub test_catambig {
 
   print STDERR "$0: test_catambig() done: what now?\n";
 }
-test_catambig(@ARGV);
+#test_catambig(@ARGV);
 
 ##======================================================================
 ## MAIN (dummy)
