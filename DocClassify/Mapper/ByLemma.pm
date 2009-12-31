@@ -434,7 +434,11 @@ sub compile_tdm0 {
   my $tenum_sym2id = $tenum->{sym2id};
   my $tenum_id2sym = $tenum->{id2sym};
   my $doc_wt = $map->{doc_wt} = []; ##-- [$docid] => pdl($nnz_doc) : [$nzi_doc] -> $ti : f($doc,$ti) defined
-  @$doc_wt = map { pdl(long, [grep {defined($_)} @$tenum_sym2id{keys %{$_->{lf}}}]) } @{$map->{sigs}};
+  my ($lf);
+  @$doc_wt = map {
+    $lf=$_->{lf};
+    pdl(long, [ grep {defined($_)} @$tenum_sym2id{grep {$lf->{$_}>0} keys(%$lf)} ])
+  } @{$map->{sigs}};
 
   ##-- step 2: count doc-term nnz
   $map->vlog('info',"compile_tdm0(): matrix: tdm0: Nnz") if ($map->{verbose});
@@ -458,7 +462,7 @@ sub compile_tdm0 {
   }
   my $tdm0_dims = pdl(long,$NT,$ND);
   my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm0_w,$tdm0_v,dims=>$tdm0_dims,missing=>0);
-  #->dummy(0,1)->sumover;
+  #$tdm0 = $map->{tdm0} = $tdm0->dummy(0,1)->sumover->recode; ##-- avoid dangling zeroes
 
   return $map;
 }
