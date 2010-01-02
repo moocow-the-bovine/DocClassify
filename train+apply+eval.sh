@@ -31,7 +31,7 @@ runcmd() {
 
 echo "##=================================================================="
 echo "## $0: TRAIN"
-runcmd ${progdir}dc-mapper-train.perl "$train.corpus.xml" "$@" -o "$train.$infix.bin" || exit 1
+runcmd ${progdir}dc-mapper-train.perl "$train.corpus.xml" "$@" -o "$train.$infix.map.bin" || exit 1
 
 echo ""
 echo "##=================================================================="
