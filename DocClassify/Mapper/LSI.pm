@@ -68,6 +68,7 @@ our $verbose = 3;
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
+##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -613,10 +614,16 @@ sub mapDocument {
   $cd_sim->inplace->clip(0,1e38);
 
   ##-- dump similarities to $doc->{cats}
-  my $cname;
+  my ($cname,$ename);
   @{$doc->{cats}} = map {
     $cname = $map->{lcenum}{id2sym}[$_];
-    {id=>$map->{gcenum}{sym2id}{$cname}, name=>$cname, sim=>$cd_sim->at($_,0), dist_raw=>$cd_dist->at($_,0)}
+    $ename = $cname eq '(null)' && defined($map->{nullCat}) ? $map->{nullCat} : $cname;
+    scalar({sim=>$cd_sim->at($_,0),
+	    dist_raw=>$cd_dist->at($_,0),
+	    name=>$ename,
+	    id  =>$map->{gcenum}{sym2id}{$ename},
+	    ($ename ne $cname ? (proto=>$cname) : qw()),
+	   })
   } $cd_sim->flat->qsorti->slice("-1:0")->list;
   $doc->{cats}[$_]{deg} = $_+1 foreach (0..$#{$doc->{cats}});
 

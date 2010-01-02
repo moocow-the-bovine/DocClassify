@@ -55,6 +55,7 @@ our $verbose = 3;
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=1)
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
+##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
@@ -98,6 +99,7 @@ sub new {
 			       byCat => 0,
 			       weightByCat => 1,
 			       dist => 'u',
+			       nullCat => undef,
 
 			       ##-- data: enums
 			       lcenum => MUDL::Enum->new,
@@ -378,6 +380,7 @@ sub compileTermEnum {
 sub compileCatEnum {
   my $map = shift;
   $map->vlog('info', "compileCatEnum()") if ($map->{verbose});
+  $map->{gcenum}->addSymbol('(null)') if (defined($map->{nullCat}));
   $map->{lcenum} = $map->{gcenum}->clone;
   $map->{lcenum}->compact; ##-- renumber local categories (no missing rows!)
   return $map;
