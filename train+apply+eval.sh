@@ -36,7 +36,7 @@ runcmd ${progdir}dc-mapper-train.perl "$train.corpus.xml" "$@" -o "$train.$infix
 echo ""
 echo "##=================================================================="
 echo "## $0: APPLY"
-runcmd ${progdir}dc-mapper-apply.perl "$train.$infix.bin" "$test.corpus.xml" -o "$test.$infix.out.xml" || exit 2
+runcmd ${progdir}dc-mapper-apply.perl "$train.$infix.map.bin" "$test.corpus.xml" -o "$test.$infix.out.xml" || exit 2
 
 echo ""
 echo "##=================================================================="
