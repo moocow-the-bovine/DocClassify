@@ -39,7 +39,7 @@ our $verbose = 3;
 ##  ##==== NEW in Mapper::LSI
 ##  ##-- options
 ##  svdr => $svdr,                   ##-- number of reduced dimensions (default=256)
-##  catProfile => $how,              ##-- cate profiling method ('fold-in','average', 'weighted-average'...): default='average'
+##  catProfile => $how,              ##-- cate profiling method ('fold-in','fold-avg','average','weighted-average'...): default='average'
 ##  xn => $xn,                       ##-- number of splits for compile-time cross-check (0 for none; default=3)
 ##  seed => $seed,                   ##-- random seed for corpus splitting (undef (default) for none)
 ##  conf_nofp => $conf,              ##-- confidence level for negative-evidence parameter fitting (.95)
@@ -514,7 +514,8 @@ sub catProfileMethod {
   my $map = shift;
   my $catProfile = $map->{catProfile};
   $catProfile = 'average' if (!defined($catProfile));
-  if ($catProfile =~ /^fold/) { $catProfile = 'fold-in'; }
+  if    ($catProfile =~ /^fold\-a/) { $catProfile = 'fold-avg'; }
+  elsif ($catProfile =~ /^fold/) { $catProfile = 'fold-in'; }
   elsif ($catProfile =~ /^a/) { $catProfile = 'average'; }
   elsif ($catProfile =~ /^w/) { $catProfile = 'weighted-average'; }
   else {
@@ -549,6 +550,13 @@ sub compile_xcm {
     $map->compile_tcm0() if (!defined($map->{tcm0}));
     $map->compile_tcm()  if (!defined($map->{tcm}));
     $map->{xcm} = $map->{svd}->apply($map->{tcm}->decode);
+  }
+  elsif ($catProfile eq 'fold-avg') {
+    $map->compile_tcm0() if (!defined($map->{tcm0}));
+    $map->compile_tcm()  if (!defined($map->{tcm}));
+    my $tcma = $map->{tcm}->decode;
+    my $cn   = ($map->{dcm}->decode != 0)->double->sumover;
+    $map->{xcm} = $map->{svd}->apply($tcma/$cn->slice("*1,"));
   }
   elsif ($catProfile eq 'average' || $catProfile eq 'weighted-average') {
     ##-- TODO: use MUDL::Cluster::Method::d2c_*() methods here!
