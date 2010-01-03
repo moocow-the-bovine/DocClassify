@@ -5,10 +5,14 @@ test=data/test_data_$dbase
 train=data/train_data_$dbase
 
 #d_vals="e b u"
+#d_vals="u e"
 d_vals="u"
+
 #r_vals="128 256 512 768"
 r_vals="256"
-null_vals="0 1"
+
+#null_vals="0 1"
+null_vals="1"
 
 
 for rv in $r_vals; do

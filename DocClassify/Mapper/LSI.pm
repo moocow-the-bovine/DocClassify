@@ -61,7 +61,7 @@ our $verbose = 3;
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
 ##  minFreq => $f,                   ##-- minimum global frequency f(t) for term-inclusion (default=0)
 ##  minDocFreq => $ndocs,            ##-- minimum number of docs with f(t,d)>0 for term-inclusion (default=0)
-##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1)
+##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1.00001)
 ##  termWeight => $how,              ##-- term "weighting" method ('uniform', 'entropy'): default='entropy'
 ##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
 ##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
@@ -101,6 +101,7 @@ sub new {
 			       seed => undef,
 			       conf_nofp=>.95,
 			       conf_nofn=>.95,
+			       smoothf=>1+1e-5,
 
 			       ##-- data: post-compile
 			       svd=>undef,
@@ -461,6 +462,9 @@ sub compileLocal {
   ##-- matrix: $map->{xcm}: (R=$map->{svdr} x NC=$NC) [R x Cat -> Sv]
   $map->compile_xcm(%opts);
 
+  ##-- epsilon (avoid null vectors)
+  #$map->compile_xeps(%opts);
+
   return $map;
 }
 
@@ -562,6 +566,10 @@ sub compile_xcm {
 	$c_id = $lc_sym2id->{$cat->{name}};
 	$xcm->slice(",$c_id") += $d_x;
       }
+    }
+    if (defined($map->{nullCat})) {
+      $c_id  = $map->{lcenum}{sym2id}{'(null)'};
+      $xcm->slice(",$c_id") .= $map->svdApply(zeroes($map->{tenum}->size,1));
     }
     $map->{xcm} = $xcm;
   }
