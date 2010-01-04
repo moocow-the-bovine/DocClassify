@@ -2889,7 +2889,9 @@ sub eval2dcdist {
   our $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
 
   ##--------------------
-  ## $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \in $ci
+  ## doc-cat distance matrix: by boolean membership
+  ##   $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di     \in $ci
+  ##   $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
   our $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
   our $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
 
@@ -2904,12 +2906,12 @@ sub eval2dcdist {
   ## fit parameters: by category
   ##   $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
   ##   $cdist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
-  ##   $cdist_sd_isgood: [$ci] -> isfinite($cddist_sd)
+  ##   $cdist_isgood: [$ci] -> isfinite($cddist_sd)
   our $cdist_mu = $dc_dist->average;
   our $cdist_sd = (($dc_dist - $cdist_mu->slice("*1,"))**2)->average->sqrt;
-  our $cdist_sd_isgood = ($cdist_sd->isfinite)&($cdist_sd>0);
+  our $cdist_isgood = ($cdist_sd->isfinite)&($cdist_sd>0);
   our $cdist_sd_raw = $cdist_sd->pdl;
-  $cdist_sd = fixvals($cdist_sd, $cdist_sd_isgood, $cdist_sd->where($cdist_sd_isgood)->minimum/2);
+  $cdist_sd = fixvals($cdist_sd, $cdist_isgood, $cdist_sd->where($cdist_isgood)->minimum/2);
 
   ##--------------------
   ## fit parameters: by boolean membership

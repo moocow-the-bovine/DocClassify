@@ -379,11 +379,13 @@ sub compileTermEnum {
 ##  + compiles $map->{lcenum} from $map->{gcenum}
 sub compileCatEnum {
   my $map = shift;
-  $map->vlog('info', "compileCatEnum() [nullCat=".(defined($map->{nullCat}) ? $map->{nullCat} : '(none)')) if ($map->{verbose});
+  $map->vlog('info', "compileCatEnum() [nullCat=".(defined($map->{nullCat}) ? $map->{nullCat} : '(none)')."]")
+    if ($map->{verbose});
+
   if (defined($map->{nullCat})) {
     if (!defined($map->{gcenum}{id2sym}[0])) {
       ##-- set id(nullCat) to zero if possible
-      $map->{gcenum}->addIndexedSymbol('(null)');
+      $map->{gcenum}->addIndexedSymbol('(null)',0);
     } else {
       $map->{gcenum}->addSymbol('(null)');
     }

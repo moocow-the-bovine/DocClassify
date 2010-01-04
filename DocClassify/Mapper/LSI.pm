@@ -40,10 +40,15 @@ our $verbose = 3;
 ##  ##-- options
 ##  svdr => $svdr,                   ##-- number of reduced dimensions (default=256)
 ##  catProfile => $how,              ##-- cate profiling method ('fold-in','fold-avg','average','weighted-average'...): default='average'
-##  xn => $xn,                       ##-- number of splits for compile-time cross-check (0 for none; default=3)
+##  xn => $xn,                       ##-- number of splits for compile-time cross-check (0 for none; default=0)#
 ##  seed => $seed,                   ##-- random seed for corpus splitting (undef (default) for none)
-##  conf_nofp => $conf,              ##-- confidence level for negative-evidence parameter fitting (.95)
-##  conf_nofn => $conf,              ##-- confidence level for positive-evidence parameter fitting (.95)
+##  #conf_nofp => $conf,              ##-- confidence level for negative-evidence parameter fitting (.95)
+##  #conf_nofn => $conf,              ##-- confidence level for positive-evidence parameter fitting (.95)
+##  cut0p => $p,                     ##-- confidence level for negative-sample cutoff fitting (0.5)
+##  cut1p => $p,                     ##-- confidence level for positive-sample cutoff fitting (0.5)
+##  cut1w => $w,                     ##-- positive weight (0<=$w<=1) for cutoff fitting (0.5)
+##  cutval => $val,                  ##-- constant to add if cutoff is exceeded (default=100)
+##  cutCat => $catName,              ##-- name of cutoff sink cat (default: cat with id=0 in $lcenum)
 ##  ##
 ##  ##-- data: post-compile()
 ##  svd => $svd,                     ##-- a MUDL::SVD object
@@ -53,6 +58,7 @@ our $verbose = 3;
 ##  c1dist_sd => $c1dist_sd,         ##-- dense PDL ($NC) : [$ci] -> stddev { dist($ci,$di) : $di  \in $ci }
 ##  c0dist_mu => $c0dist_mu,         ##-- dense PDL ($NC) : [$ci] ->    avg { dist($ci,$di) : $di !\in $ci }
 ##  c0dist_sd => $c0dist_sd,         ##-- dense PDL ($NC) : [$ci] -> stddev { dist($ci,$di) : $di !\in $ci }
+##  cutoff    => $cutoff,            ##-- dense PDL ($NC) : [$ci] ->    max { dist($ci,$di) : $di  \in $ci } : heuristic
 ##  ##
 ##  ##==== INHERITED from Mapper::ByLemma
 ##  ##-- options
@@ -97,11 +103,13 @@ sub new {
 			       svdr => 256,
 			       catProfile => 'average',
 			       termWeight  => 'entropy',
-			       xn => 3,
 			       seed => undef,
-			       conf_nofp=>.95,
-			       conf_nofn=>.95,
 			       smoothf=>1+1e-5,
+			       xn => 0,
+			       cut0p => 0.5,
+			       cut1p => 0.5,
+			       cut1w => 0.5,
+			       cutval => 100,
 
 			       ##-- data: post-compile
 			       svd=>undef,
@@ -111,6 +119,7 @@ sub new {
 			       c1dist_sd=>undef,
 			       c0dist_mu=>undef,
 			       c0dist_sd=>undef,
+			       cutoff=>undef,
 
 			       ##-- user args
 			       @_,
@@ -121,11 +130,11 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override appends qw(svd xdm xcm c1dist_mu c1dist_sd c0dist_mu c0dist_sd)
+##  + override appends qw(svd xdm xcm dc_dist c1dist_mu c1dist_sd c0dist_mu c0dist_sd cutoff)
 sub noShadowKeys {
   return ($_[0]->SUPER::noShadowKeys(@_[1..$#_]),
 	  qw(svd xdm xcm),
-	  qw(c1dist_mu c1dist_sd c0dist_mu c0dist_sd));
+	  qw(dc_dist c1dist_mu c1dist_sd c0dist_mu c0dist_sd cutoff));
 }
 
 ##==============================================================================
@@ -162,6 +171,7 @@ sub compile {
   ##-- training-internal cross-check
   $map->compileCrossCheck();
   $map->compileFit();
+  $map->compileCutoffs();
 
   ##-- local compilation (final)
   $map->compileLocal(%opts, label=>'FINAL', svdShrink=>1, svdCache=>1);
@@ -196,6 +206,39 @@ sub clearTrainingCache {
 ## Methods: Compilation: Utils
 ##  + see also Mapper::ByLemma
 
+## $map = $map->compileCutoffs()
+##  + compiles $map->{cutoff} from $map->{c(0|1)dist_(mu|sd)}, $map->{cut(0|1)p}, $map->{cut1w}
+sub compileCutoffs {
+  my $map = shift;
+  if (!defined($map->{c0dist_mu})) {
+    $map->vlog('warn', "compileFit(): no {c0dist_mu} vector defined; NOT computing cutoffs");
+    return $map;
+  }
+
+  ##-- vars: common
+  my $NC      = $map->{lcenum}->size;
+  my $cutval  = defined($map->{cutval}) ? $map->{cutval} : 100; ##-- psuedo-weight to add
+  my $cut0p   = defined($map->{cut0p})  ? $map->{cut0p}  : .5;
+  my $cut1p   = defined($map->{cut1p})  ? $map->{cut1p}  : .5;
+  my $wt1     = defined($map->{cut1w})  ? $map->{cut1w}  : .5;
+  my $wt0     = 1-$wt1;
+  my ($c0dist_mu,$c0dist_sd) = @$map{qw(c0dist_mu c0dist_sd)};
+  my ($c1dist_mu,$c1dist_sd) = @$map{qw(c1dist_mu c1dist_sd)};
+
+  ##-- cutoffs
+  my $cutoff0 = $c0dist_mu - _gausswidth($cut0p,$c0dist_mu,$c0dist_sd);
+  my $cutoff1 = $c1dist_mu + _gausswidth($cut1p,$c1dist_mu,$c1dist_sd);
+  my $cutoff  = ($wt0*$cutoff0) + ($wt1*$cutoff1);
+  my $nocutid = defined($map->{cutCat}) ? $map->{lcenum}{sym2id}{$map->{cutCat}} : 0;
+  $map->{cutCat} = $map->{lcenum}{id2sym}[$nocutid] if (!defined($map->{cutCat}));
+  $cutoff->slice("$nocutid") .= 1e38 if (defined($nocutid));; ##-- effectively no cutoff here
+
+  ##-- store cutoffs
+  $map->{cutoff} = $cutoff;
+
+  return $map;
+}
+
 ## $map = $map->compileFit()
 ##  + compiles fitting paramters from $map->{dc_dist}
 sub compileFit {
@@ -209,10 +252,6 @@ sub compileFit {
   ##-- vars
   my $lcenum = $map->{lcenum};
   my $NC     = $map->{lcenum}->size;
-  #my $gcenum = $map->{gcenum};
-  #my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);
-  #my $NCg    = $gcids->max+1;
-  #my $ND     = $map->{denum}->size;
   my $ND     = $map->{dc_dist}->dim(0); ##-- allow external cross-check loaded from eval data
   my $dcm    = $map->{dcm};
   my $dcm_z  = $dcm->missing->sclr;
@@ -220,114 +259,93 @@ sub compileFit {
   $dcm->missing($dcm_z);
   my $dc_dist = $map->{dc_dist};
 
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ##-- get positive, negative samples
+  ##--------------------
+  ##-- get positive & negative samples
   my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
-  my $dc_mask   = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
-  $dc_mask->indexND($dc_which1) .= 1;
-  my $dc_which0 = whichND(!$dc_mask);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
-  my $nc  = $dc_mask->long->sumover->double;             ##-- [$ci] -> |{ $di : $di \in     $ci }|
+  my $dc_mask1  = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
+  $dc_mask1->indexND($dc_which1) .= 1;
+  my $dc_mask = $dc_mask1; ##-- alias
+  my $dc_which0 = whichND(!$dc_mask1);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
+  my $nc  = $dc_mask1->long->sumover->double;            ##-- [$ci] -> |{ $di : $di \in     $ci }|
   my $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
 
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ## + from testme.perl test_compile_xcheck() (from test_errors())
-  ## $dcdist_mu = pdl(1): global avg    dist($ci,$di)
-  ## $dcdist_sd = pdl(1): global stddev dist($ci,$di)
+  ##--------------------
+  ## doc-cat distance matrix: by boolean membership
+  ##   $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di     \in $ci
+  ##   $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
+  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
+  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
+
+  ##--------------------
+  ## fit parameters: global
+  ##   $dcdist_mu = pdl(1): global avg    dist($ci,$di)
+  ##   $dcdist_sd = pdl(1): global stddev dist($ci,$di)
   my $dcdist_mu = $dc_dist->flat->average;
   my $dcdist_sd = (($dc_dist - $dcdist_mu)**2)->flat->average->sqrt;
-  my $nc_min = 10;#50; #3; #10; ##-- minimum #/cats to use fit
 
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ## $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
-  ## $cdist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
-  my ($cdist_mu,$cdist_sd,$cdist_isgood,$cdist_sd_raw);
-  $cdist_mu = $dc_dist->average;
-  $cdist_sd = (($dc_dist - $cdist_mu->slice("*1,"))**2)->average->sqrt;
-  $cdist_isgood = ($cdist_sd->isfinite)&($cdist_sd>0);
-  $cdist_sd_raw = $cdist_sd->pdl;
-  ##
-  $cdist_sd->where(!$cdist_isgood) .= $cdist_sd->where($cdist_isgood)->minimum/2;
+  ##--------------------
+  ## fit parameters: by category
+  ##   $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ##   $cdist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  ##   $cdist_isgood: [$ci] -> isfinite($cddist_sd)
+  my $cdist_mu = $dc_dist->average;
+  my $cdist_sd = (($dc_dist - $cdist_mu->slice("*1,"))**2)->average->sqrt;
+  my $cdist_isgood = ($cdist_sd->isfinite)&($cdist_sd>0);
+  my $cdist_sd_raw = $cdist_sd->pdl;
+  $cdist_sd = fixvals($cdist_sd, $cdist_isgood, $cdist_sd->where($cdist_isgood)->minimum/2);
 
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ## $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \in $ci
-  ## $c1dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
-  ## $c1dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
-  ## $c1dist_mu0, $c1dist_sd0: global fit parameters
-  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
+  ##--------------------
+  ## fit parameters: by boolean membership
+  ##   $c1dist_mu0: constant: [] ->    avg d($cat,$doc) : $doc     \in $cat
+  ##   $c1dist_sd0: constant: [] -> stddev d($cat,$doc) : $doc     \in $cat
+  ##   $c0dist_mu0: constant: [] ->    avg d($cat,$doc) : $doc \not\in $cat
+  ##   $c0dist_sd0: constant: [] -> stddev d($cat,$doc) : $doc \not\in $cat
   my $c1dist_mu0 = $dc1dist->_nzvals->average;
   my $c1dist_sd0 = (($dc1dist->_nzvals-$c1dist_mu0)**2)->average->sqrt;
+  my $c0dist_mu0 = $dc0dist->_nzvals->average;
+  my $c0dist_sd0 = (($dc0dist->_nzvals-$c0dist_mu0)**2)->average->sqrt;
+  ##
+  my $nc_min = 2;#3; #10; #50; ##-- minimum #/docs to use fit
+
+  ##--------------------
+  ## fit parameters: by category & boolean membership: positive
+  ##   $c1dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ##   $c1dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  ##   $c1dist_sd_nan0: like $c1dist_sd, but NaN->0
+  ##   $c1dist_sd_bad0: like $c1dist_sd, but (!$c1dist_sd_isgood)->0
   my $c1dist_mu = $dc1dist->average_nz->decode;
   my $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
   my $c1dist_mu_raw = $c1dist_mu->pdl;
   my $c1dist_sd_raw = $c1dist_sd->pdl;
   my $c1dist_isgood = (($c1dist_sd_raw->isfinite) & ($nc >= $nc_min));
-  #$c1dist_isgood = (($c1dist_sd_raw->isfinite));
-  #my ($c1dist_sd_nan0,$c1dist_sd_bad0);
-  #($c1dist_sd_nan0 = $c1dist_sd->pdl)->where(!$c1dist_sd->isfinite) .= 0;
-  #($c1dist_sd_bad0 = $c1dist_sd->pdl)->where(!$c1dist_isgood) .= 0;
+  my $c1dist_sd_nan0 = fixvals($c1dist_sd, $c1dist_sd->isfinite, 0);
+  my $c1dist_sd_bad0 = fixvals($c1dist_sd, $c1dist_isgood, 0);
+  $c1dist_mu = fixvals($c1dist_mu, $c1dist_isgood, $c1dist_mu->where($c1dist_isgood)->minimum);
+  $c1dist_sd = fixvals($c1dist_sd, $c1dist_isgood, $c1dist_sd->where($c1dist_isgood)->minimum/2);
 
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ## $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
-  ## $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
-  ## $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
-  ## $c0dist_mu0, $c0dist_sd0: global fit parameters
-  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
-  my $c0dist_mu0 = $dc0dist->_nzvals->average;
-  my $c0dist_sd0 = (($dc0dist->_nzvals-$c0dist_mu0)**2)->average->sqrt;
+  ##--------------------
+  ## fit parameters: by category & boolean membership: negative
+  ##   $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
+  ##   $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
+  ##   $c0dist_sd_nan0: like $c0dist_sd, but NaN->0
+  ##   $c0dist_sd_bad0: like $c0dist_sd, but (!$c0dist_sd_isgood)->0
   my $c0dist_mu = $dc0dist->average_nz->decode;
   my $c0dist_sd = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
   my $c0dist_mu_raw = $c0dist_mu->pdl;
   my $c0dist_sd_raw = $c0dist_sd->pdl;
-  #my $c0dist_isgood = (($c0dist_sd->isfinite) & ($nc >= $nc_min));
-  my $c0dist_isgood = ($c0dist_sd_raw->isfinite);
-  #my ($c0dist_sd_nan0,$c0dist_sd_bad0);
-  #($c0dist_sd_nan0 = $c0dist_sd->pdl)->where(!$c0dist_sd->isfinite) .= 0;
-  #($c0dist_sd_bad0 = $c0dist_sd->pdl)->where(!$c0dist_isgood) .= 0;
+  #my $c0dist_isgood = (($c0dist_sd_raw->isfinite) & ($nc >= $nc_min));
+  my $c0dist_isgood = $c0dist_sd_raw->isfinite;
+  my $c0dist_sd_nan0 = fixvals($c1dist_sd, $c1dist_sd->isfinite, 0);
+  my $c0dist_sd_bad0 = fixvals($c1dist_sd, $c1dist_isgood, 0);
+  $c0dist_mu = fixvals($c0dist_mu, $c0dist_isgood, $c0dist_mu->where($c0dist_isgood)->minimum);
+  $c0dist_sd = fixvals($c0dist_sd, $c0dist_isgood, $c0dist_sd->where($c0dist_isgood)->maximum);
 
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ##-- hack mu, sd (positives)
-  #$c1dist_mu->where(!$c1dist_sd->isfinite) .= 0;
-  $c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu->where($c1dist_isgood)->minimum;
-  #$c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu->where($c1dist_isgood)->minimum/2;
-  #$c1dist_mu->where(!$c1dist_isgood) .= $c1dist_mu0;
-  ##
-  #$c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd0;
-  #$c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd->where($c1dist_sd->isfinite)->minimum/2;
-  $c1dist_sd->where(!$c1dist_isgood) .= $c1dist_sd->where($c1dist_isgood)->minimum/2;
 
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ##-- hack mu, sd (negatives)
-  #$c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu->where($c0dist_isgood)->minimum/2;
-  #$c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu->where($c0dist_isgood)->maximum*2;
-  #$c0dist_mu->where(!$c0dist_isgood) .= $c0dist_mu0;
-  ##
-  #$c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd->where($c0dist_isgood)->minimum;
-  $c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd->where($c0dist_isgood)->maximum;
-  #$c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd->where($c0dist_isgood)->maximum*2;
-  #$c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd->where($c0dist_isgood)->average;
-  #$c0dist_sd->where(!$c0dist_isgood) .= $c0dist_sd0;
-
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  ##-- heuristically shovel around fit parameters ($d1)
-  my ($conf_nofp,$conf_nofn) = map {$_||.95} @$map{qw(conf_nofp conf_nofn)};
-  my $cutoff_w1 = ($nc/$nc->max);
-  ##
-  my $cutoff_nofp = $c0dist_mu - scalar(gausswidth($conf_nofp, $c0dist_mu,$c0dist_sd));
-  my $cutoff_nofn = $c1dist_mu + scalar(gausswidth($conf_nofn, $c1dist_mu,$c1dist_sd));
-  my $cutoff_avg  = ($cutoff_nofp + $cutoff_nofn)/2;
-  my $cutoff_wavg = (1-$cutoff_w1)*$cutoff_nofp + $cutoff_w1*$cutoff_nofn;
-  #my $cutoff_wavg = $nnc/$ND*$cutoff_nofp + $nc/$ND*$cutoff_nofn;
-  my $cutoff_ok   = ($cutoff_nofn < $cutoff_wavg) & ($cutoff_nofp > $cutoff_wavg);
-  my $c1dist_mu_save = $c1dist_mu->pdl;
-  my $c1dist_mu_adj = $c1dist_mu->pdl;
-  my $c0dist_mu_adj = $c0dist_mu->pdl;
-  $c1dist_mu_adj->where(!$cutoff_ok) .= ($cutoff_wavg - scalar(gausswidth($conf_nofn, $c1dist_mu,$c1dist_sd)))->where(!$cutoff_ok);
-
-  ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ##--------------------
   ## store final fit parameters
-  $map->{c1dist_mu} = $c1dist_mu_adj;
+  $map->{c1dist_mu} = $c1dist_mu;
   $map->{c1dist_sd} = $c1dist_sd;
-  $map->{c0dist_mu} = $c0dist_mu_adj;
+  $map->{c0dist_mu} = $c0dist_mu;
   $map->{c0dist_sd} = $c0dist_sd;
 
   return $map;
@@ -351,17 +369,17 @@ sub loadCrossCheckEval {
 
   ##-- get dc_dist
   my $dc_dist = zeroes($ND,$NC)+2; ##-- initialize to a meaningful maximum
-  my ($lab,$d12,$dcats2,@dci,@dcdist);
-  my $di = 0;
+  my ($lab,$d12,@dcats2,@dci,@dcdist,$di,@gotcat);
   while (($lab,$d12)=each(%{$eval->{lab2docs}})) {
     if (!defined($di = $d_sym2id->{$lab})) {
       $map->logwarn("loadCrossCheckEval(): no internal ID for doc label '$lab' -- skipping");
       next;
     }
-    $dcats2 = $d12->[1]{cats};
-    @dci    = grep {defined($lc_sym2id->{$dcats2->[$_]{name}})} (0..$#$dcats2);
-    @dcdist = map {$dcats2->[$_]{dist_raw}} @dci;
-    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{map {$dcats2->[$_]{name}} @dci}])) .= pdl(\@dcdist);
+    @gotcat = qw();
+    @dcats2 = grep {!$gotcat[$_->{id}] && ($gotcat[$_->{id}]=1)} @{$d12->[1]{cats}}; ##-- handle dup cats (e.g. nullCat)
+    @dci    = grep {defined($lc_sym2id->{$dcats2[$_]{name}})} (0..$#dcats2);
+    @dcdist = map  {$dcats2[$_]{dist_raw}} @dci;
+    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{map {$dcats2[$_]{name}} @dci}])) .= pdl(\@dcdist);
   }
 
   ##-- cache dc_dist
@@ -586,6 +604,20 @@ sub compile_xcm {
 }
 
 ##==============================================================================
+## Functions: Utils
+
+## $vals_fixed = fixvals($vals,$isgood_mask,$fixval)
+sub fixvals {
+  my ($vals,$isgood,$fixval) = @_;
+  $isgood = (($vals->isfinite)&($vals>0)) if (!defined($isgood) || $isgood->isnull);
+  $fixval = $vals->where($isgood)->average if (!defined($fixval));
+  my $fixed = $vals->pdl;
+  $fixed->where(!$isgood) .= $fixval;
+  return $fixed;
+}
+
+
+##==============================================================================
 ## Methods: API: Classification
 
 ## $corpus = $map->mapCorpus($corpus)
@@ -614,15 +646,21 @@ sub mapDocument {
   my $xdm   = $map->svdApply($tdm);
   my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$xdm,cdata=>$map->{xcm})->lclip(0);
 
+  ##-- apply cutoffs if available
+  if (defined($map->{cutoff})) {
+    $map->{cutval} = 100 if (!defined($map->{cutval}));
+    $cd_dist->where($cd_dist > $map->{cutoff}) += $map->{cutval};
+  }
+
   ##-- convert distance to similarity
   my ($cd_sim);
-  if (!defined($map->{c1dist_mu})) {
+  if (1 || !defined($map->{c1dist_mu})) {
     ##-- just invert $cdmat
     #$cd_sim = $cd_dist->max-$cd_dist;
     #$cd_sim  = 2-$cd_dist;
     $cd_sim = $cd_dist**-1;
   } else {
-    ##-- use fit parameters to estimate similarity
+    ##-- OBSOLETE: use fit parameters to estimate similarity
     my $cd_cdf1 = gausscdf($cd_dist, $map->{c1dist_mu}, $map->{c1dist_sd});
     my $cd_cdf0 = gausscdf($cd_dist, $map->{c0dist_mu}, $map->{c0dist_sd});
     $cd_sim = F1( (1-li1($cd_cdf1)), (1-li1($cd_cdf0)), 1e-5);

@@ -39,10 +39,7 @@ GetOptions(##-- General
 	   'verbose|v=i' => \$verbose,
 
 	   ##-- I/O
-	   #'recursive|recurse|r!' => \$fcopts{recursive},
 	   'output-file|outfile|out|of|o=s'=> \$outfile,
-	   #'output-suffix|os=s' => \$fcopts{outputFileSuffix},
-	   #'format|f=1' => \$format
 
 	   ##-- error summary
 	   'n-errors|nerrors|nerrs|ne=i' => \$saveopts{nErrors},
