@@ -636,6 +636,12 @@ sub loadXmlDoc {
 	$doc = $docs->[$d_i];
 	foreach $dc_node (@{$d_node->findnodes('cats[@n="'.($d_i+1).'"][1]/cat')}) {
 	  $cat = { map {($_->name=>$_->value)} $dc_node->attributes };
+	  if (0 && defined($cat->{proto}) && ($cat->{proto} ne $cat->{name})) {
+	    ##-- handle pseudo-cats (e.g. "(null)") literally
+	    $cat->{target} = $cat->{name};
+	    $cat->{name} = $cat->{proto};
+	    $cat->{id} = 0;
+	  }
 	  push(@{$doc->{cats}},$cat);
 	}
 	#$doc->cats(); ##-- should already be sorted in eval file

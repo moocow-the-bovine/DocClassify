@@ -379,8 +379,15 @@ sub compileTermEnum {
 ##  + compiles $map->{lcenum} from $map->{gcenum}
 sub compileCatEnum {
   my $map = shift;
-  $map->vlog('info', "compileCatEnum()") if ($map->{verbose});
-  $map->{gcenum}->addSymbol('(null)') if (defined($map->{nullCat}));
+  $map->vlog('info', "compileCatEnum() [nullCat=".(defined($map->{nullCat}) ? $map->{nullCat} : '(none)')) if ($map->{verbose});
+  if (defined($map->{nullCat})) {
+    if (!defined($map->{gcenum}{id2sym}[0])) {
+      ##-- set id(nullCat) to zero if possible
+      $map->{gcenum}->addIndexedSymbol('(null)');
+    } else {
+      $map->{gcenum}->addSymbol('(null)');
+    }
+  }
   $map->{lcenum} = $map->{gcenum}->clone;
   $map->{lcenum}->compact; ##-- renumber local categories (no missing rows!)
   return $map;

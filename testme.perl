@@ -2802,7 +2802,367 @@ sub test_load_eval_2 {
   print STDERR "$0: test_load_eval_2() done: what now?\n";
   exit 0;
 }
-test_load_eval_2(@ARGV);
+#test_load_eval_2(@ARGV);
+
+##======================================================================
+## EVAL: UTILS
+
+## $eval = load_eval($efile)
+##  + loads global $::eval from "$efile.bin" or "$efile"
+##  + saves "$efile.bin"
+sub load_eval {
+  my $efile = shift;
+  die("$0: load_eval(): \$efile undefined!") if (!defined($efile));
+  $efile = "$efile.bin" if (-r "$efile.bin");
+
+  print STDERR "$0: load_eval($efile)\n";
+  my $eval = DocClassify::Eval->loadFile("$efile")
+    or die("$0: Eval->loadFile($efile) failed: $!");
+  $eval->saveFile("$efile.bin") if ($efile !~ /\.bin$/);
+
+  return $eval;
+}
+
+## undef = eval2dcdist($eval)
+##  + load populates global vars from $eval:
+##    ...
+sub eval2dcdist {
+  my $eval = shift;
+
+  ##~~ vars
+  our $lab2docs = $eval->{lab2docs};
+
+  ##--------------------
+  ## create enums
+  our $denum  = MUDL::Enum->new;
+  @{$denum->{id2sym}} = keys %$lab2docs;
+  @{$denum->{sym2id}}{@{$denum->{id2sym}}} = (0..$#{$denum->{id2sym}});
+  our $d_sym2id = $denum->{sym2id};
+  our $ND = $denum->size;
+  ##
+  our $gcenum = MUDL::Enum->new;
+  my ($d12,$cat);
+  foreach $d12 (values(%$lab2docs)) {
+    foreach $cat (map {@{$_->{cats}}} @$d12) {
+      $cat->{id} = $1 if ($cat->{name} =~ /^(\d+)_/);
+      $gcenum->addIndexedSymbol(@$cat{qw(name id)});
+    }
+  }
+  our $lcenum = $gcenum->clone->compact;
+  our $lc_sym2id = $lcenum->{sym2id};
+  our $NC = $lcenum->size;
+
+  ##--------------------
+  ## compile $d2c
+  our $d2c = pdl([@$lc_sym2id{map {$lab2docs->{$_}[0]{cats}[0]{name}} @{$denum->{id2sym}}}]); ##-- [$di] -> $ci_wanted
+
+  ##--------------------
+  ## ... other vars
+  our $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);             ##-- [$lci] -> $gci
+  our $lcids  = zeroes(long,$gcids->max+1); $lcids->index($gcids) .= $gcids->xvals;  ##-- [$gci] -> $lci
+  our $NCg    = $gcids->max+1;
+
+  ##--------------------
+  ## $dc_dist (from Mapper::LSI::loadCrossCheckEval()
+  our $dc_dist = zeroes($ND,$NC)+2; ##-- initialize to max
+  my ($lab,@dcats2,@dci,@dcdist,$di,$got1); #$d12
+  while (($lab,$d12)=each(%$lab2docs)) {
+    if (!defined($di = $d_sym2id->{$lab})) {
+      warn("$0: no internal ID for doc label '$lab' -- skipping");
+      next;
+    }
+    $got1=0;
+    @dcats2 = grep {$_->{id}!=1 || ((!$got1) && ($got1=1))} @{$d12->[1]{cats}}; ##-- VZ-Specific HACK (only 1 cat w/ id==1)
+    @dci    = grep {defined($lc_sym2id->{$dcats2[$_]{name}})} (0..$#dcats2);
+    @dcdist = map {$dcats2[$_]{dist_raw}} @dci;
+    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{map {$dcats2[$_]{name}} @dci}])) .= pdl(\@dcdist);
+  }
+
+  ##--------------------
+  ##-- get positive & negative evidence
+  our $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
+  my $dc_mask1  = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
+  $dc_mask1->indexND($dc_which1) .= 1;
+  my $dc_mask   = $dc_mask1; ##-- alias
+  our $dc_which0 = whichND(!$dc_mask1);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
+  our $nc  = $dc_mask1->long->sumover->double;            ##-- [$ci] -> |{ $di : $di \in     $ci }|
+  our $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
+
+  ##--------------------
+  ## $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \in $ci
+  our $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
+  our $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
+
+  ##--------------------
+  ## fit parameters: global
+  ##   $dcdist_mu = pdl(1): global avg    dist($ci,$di)
+  ##   $dcdist_sd = pdl(1): global stddev dist($ci,$di)
+  our $dcdist_mu = $dc_dist->flat->average;
+  our $dcdist_sd = (($dc_dist - $dcdist_mu)**2)->flat->average->sqrt;
+
+  ##--------------------
+  ## fit parameters: by category
+  ##   $cdist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ##   $cdist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  ##   $cdist_sd_isgood: [$ci] -> isfinite($cddist_sd)
+  our $cdist_mu = $dc_dist->average;
+  our $cdist_sd = (($dc_dist - $cdist_mu->slice("*1,"))**2)->average->sqrt;
+  our $cdist_sd_isgood = ($cdist_sd->isfinite)&($cdist_sd>0);
+  our $cdist_sd_raw = $cdist_sd->pdl;
+  $cdist_sd = fixvals($cdist_sd, $cdist_sd_isgood, $cdist_sd->where($cdist_sd_isgood)->minimum/2);
+
+  ##--------------------
+  ## fit parameters: by boolean membership
+  ##   $c1dist_mu0: constant: [] ->    avg d($cat,$doc) : $doc     \in $cat
+  ##   $c1dist_sd0: constant: [] -> stddev d($cat,$doc) : $doc     \in $cat
+  ##   $c0dist_mu0: constant: [] ->    avg d($cat,$doc) : $doc \not\in $cat
+  ##   $c0dist_sd0: constant: [] -> stddev d($cat,$doc) : $doc \not\in $cat
+  our $c1dist_mu0 = $dc1dist->_nzvals->average;
+  our $c1dist_sd0 = (($dc1dist->_nzvals-$c1dist_mu0)**2)->average->sqrt;
+  our $c0dist_mu0 = $dc0dist->_nzvals->average;
+  our $c0dist_sd0 = (($dc0dist->_nzvals-$c0dist_mu0)**2)->average->sqrt;
+
+  our $nc_min = 2;#3; #10; #50; ##-- minimum #/docs to use fit
+
+  ##--------------------
+  ## fit parameters: by category & boolean membership: positive
+  ##   $c1dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \in $ci
+  ##   $c1dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \in $ci
+  ##   $c1dist_sd_nan0: like $c1dist_sd, but NaN->0
+  ##   $c1dist_sd_bad0: like $c1dist_sd, but (!$c1dist_sd_isgood)->0
+  our $c1dist_mu = $dc1dist->average_nz->decode;
+  our $c1dist_sd = (($dc1dist - $c1dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  our $c1dist_mu_raw = $c1dist_mu->pdl;
+  our $c1dist_sd_raw = $c1dist_sd->pdl;
+  our $c1dist_isgood = (($c1dist_sd_raw->isfinite) & ($nc >= $nc_min));
+  our $c1dist_sd_nan0 = fixvals($c1dist_sd, $c1dist_sd->isfinite, 0);
+  our $c1dist_sd_bad0 = fixvals($c1dist_sd, $c1dist_isgood, 0);
+  $c1dist_mu = fixvals($c1dist_mu, $c1dist_isgood, $c1dist_mu->where($c1dist_isgood)->minimum);
+  $c1dist_sd = fixvals($c1dist_sd, $c1dist_isgood, $c1dist_sd->where($c1dist_isgood)->minimum/2);
+
+  ##--------------------
+  ## fit parameters: by category & boolean membership: negative
+  ##   $c0dist_mu: dense: [$ci] ->    avg d($ci,$doc) : $doc \not\in $ci
+  ##   $c0dist_sd: dense: [$ci] -> stddev d($ci,$doc) : $doc \not\in $ci
+  ##   $c0dist_sd_nan0: like $c0dist_sd, but NaN->0
+  ##   $c0dist_sd_bad0: like $c0dist_sd, but (!$c0dist_sd_isgood)->0
+  our $c0dist_mu = $dc0dist->average_nz->decode;
+  our $c0dist_sd = (($dc0dist - $c0dist_mu->slice("*1,"))**2)->average_nz->decode->sqrt;
+  our $c0dist_mu_raw = $c0dist_mu->pdl;
+  our $c0dist_sd_raw = $c0dist_sd->pdl;
+  #our $c0dist_isgood = (($c0dist_sd_raw->isfinite) & ($nc >= $nc_min));
+  our $c0dist_isgood = $c0dist_sd_raw->isfinite;
+  our $c0dist_sd_nan0 = fixvals($c1dist_sd, $c1dist_sd->isfinite, 0);
+  our $c0dist_sd_bad0 = fixvals($c1dist_sd, $c1dist_isgood, 0);
+  $c0dist_mu = fixvals($c0dist_mu, $c0dist_isgood, $c0dist_mu->where($c0dist_isgood)->minimum);
+  $c0dist_sd = fixvals($c0dist_sd, $c0dist_isgood, $c0dist_sd->where($c0dist_isgood)->maximum);
+
+  return;
+}
+
+## $vals_fixed = fixvals($vals,$isgood_mask,$fixval)
+sub fixvals {
+  my ($vals,$isgood,$fixval) = @_;
+  $isgood = (($vals->isfinite)&($vals>0)) if (!defined($isgood) || $isgood->isnull);
+  $fixval = $vals->where($isgood)->average if (!defined($fixval));
+  my $fixed = $vals->pdl;
+  $fixed->where(!$isgood) .= $fixval;
+  return $fixed;
+}
+
+## $acc = testacc($expr)
+## $acc = testacc($expr,'max')
+##  + test accuracy of class-predictor $expr, which should return a pdl (dense or CCS): [$di,$ci] -> $dist
+##  + requires defined $d2c pdl (e.g. call eval2dcdist($eval) first)
+sub testacc {
+  my ($expr,$minmax) = @_;
+  $minmax  = 'min' if (!defined($minmax));
+  my $cdm  = (eval $expr)->xchg(0,1);
+  my $cats = $minmax eq 'max' ? $cdm->maximum_ind : $cdm->minimum_ind;
+  our ($d2c);
+  my $ND   = $cdm->dim(1);
+  my $acc  = ($cats == $d2c)->nnz / $ND;
+  print "$acc\tacc:${minmax}\t$expr\n";
+  return $acc;
+}
+
+##======================================================================
+sub test_eval_cutoff {
+  my ($efile) = @_;
+  if (!defined($efile)) {
+    #$efile = "data/train_data_2009_12_30_v2a.r256-null0-du.eval.xml";
+    #$efile = "data/test_data_2009_12_30_v2a.r256-null0-du.eval.xml";
+    ##--
+    $efile = "data/test_data_2009_12_30_v2a.r256-null1-du.eval.xml";
+  }
+
+  ##--- load & populate eval
+  my $eval = load_eval($efile);
+  eval2dcdist($eval);
+
+  ##--------------------
+  ## plots: basic fit
+  if ($plot2d) {
+    _usepgplot($dev2d);
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ##
+    ploterrs({%eplot,title=>'Normal Fit by Category (Positives:black, Negatives:red)'},
+	     [$gcids-.1, $c1dist_mu,$c1dist_sd_nan0, {}],
+	     [$gcids+.1, $c0dist_mu,$c0dist_sd_nan0, {color=>'red'}]);
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
+    ##
+    ploterrs({%eplot,title=>'Normal Fit by Category: Hacked (Positives:black, Negatives:red)'},
+	     [$gcids-.1, $c1dist_mu,$c1dist_sd, {}],
+	     [$gcids+.1, $c0dist_mu,$c0dist_sd, {color=>'red'}]);
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    release();
+  }
+
+  ##--------------------
+  ##-- cutoffs
+  my $cutval   = 10;             ##-- pseudo-distance value to add on cutoff
+  my $dcd_raw  = $dc_dist;       ##-- raw data (alias)
+  ##
+  ##-- cutoffs: global, by negative evidence
+  my $dcd_gn = cutoff($dc_dist, $c0dist_mu0-_gausswidth(.80, $c0dist_mu0,$c0dist_sd0));
+  testacc('$dc_dist'); ##-- .747, .767
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.80, $c0dist_mu0,$c0dist_sd0))'); ##-- .760     , .7758
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.85, $c0dist_mu0,$c0dist_sd0))'); ##-- .76216   , .7758
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.90, $c0dist_mu0,$c0dist_sd0))'); ##-- .76380   , .7758
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.91, $c0dist_mu0,$c0dist_sd0))'); ##-- .76435 * , .7763 *
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.92, $c0dist_mu0,$c0dist_sd0))'); ##-- .76435 * , .7747
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.93, $c0dist_mu0,$c0dist_sd0))'); ##-- .73632   , .7763 *
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.95, $c0dist_mu0,$c0dist_sd0))'); ##-- .76271   , .7747
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.97, $c0dist_mu0,$c0dist_sd0))'); ##-- .76216   , .7714
+  testacc('cutoff($dc_dist, $c0dist_mu0-_gausswidth(.99, $c0dist_mu0,$c0dist_sd0))'); ##-- .757     , .7670
+
+  ##-- cutoffs: cat-local, by negative evidence
+  print STDERR (("#" x 64), "\n");
+  my $dcd_cn = cutoff($dc_dist, ($c0dist_mu-_gausswidth(.80, $c0dist_mu,$c0dist_sd))->slice("*1,"));
+  testacc('$dc_dist');                                     ##-- .747    , .7676
+  testacc('cutoff($dc_dist, cutoff0(.80)->slice("*1,"))'); ##-- .7545   , .7709
+  testacc('cutoff($dc_dist, cutoff0(.90)->slice("*1,"))'); ##-- .7561   , .7709
+  testacc('cutoff($dc_dist, cutoff0(.95)->slice("*1,"))'); ##-- .7594   , .7714 *
+  testacc('cutoff($dc_dist, cutoff0(.99)->slice("*1,"))'); ##-- .7648 * , .7698
+  testacc('cutoff($dc_dist, cutoff0(.999)->slice("*1,"))');##-- .7577   , .7621
+
+  ##-- cutoffs: cat-local, by positive evidence
+  print STDERR (("#" x 64), "\n");
+  my $dcd_cp = cutoff($dc_dist, ($c1dist_mu+_gausswidth(.80, $c1dist_mu,$c1dist_sd))->slice("*1,"));
+  testacc('$dc_dist');                                     ##-- .747    , .7676
+  testacc('cutoff($dc_dist, cutoff1(.80)->slice("*1,"))'); ##-- .7545   , .7731
+  testacc('cutoff($dc_dist, cutoff1(.90)->slice("*1,"))'); ##-- .7495   , .7709
+  testacc('cutoff($dc_dist, cutoff1(.70)->slice("*1,"))'); ##-- .7648   , .7791
+  testacc('cutoff($dc_dist, cutoff1(.60)->slice("*1,"))'); ##-- .7709   , .7802
+  testacc('cutoff($dc_dist, cutoff1(.61)->slice("*1,"))'); ##-- .7698   , .7813 *
+  testacc('cutoff($dc_dist, cutoff1(.62)->slice("*1,"))'); ##-- .7714 * , .7813 *
+  testacc('cutoff($dc_dist, cutoff1(.63)->slice("*1,"))'); ##-- .7698   , .7813 *
+  testacc('cutoff($dc_dist, cutoff1(.50)->slice("*1,"))'); ##-- .7698   , .7741
+  testacc('cutoff($dc_dist, cutoff1(.49)->slice("*1,"))'); ##-- .7698   , .7736
+  testacc('cutoff($dc_dist, cutoff1(.48)->slice("*1,"))'); ##-- .7709   , .7736
+  testacc('cutoff($dc_dist, cutoff1(.47)->slice("*1,"))'); ##-- .7714 * , .7752
+  testacc('cutoff($dc_dist, cutoff1(.45)->slice("*1,"))'); ##-- .7709   , .7731
+  testacc('cutoff($dc_dist, cutoff1(.42)->slice("*1,"))'); ##-- .7659   , .7714
+  testacc('cutoff($dc_dist, cutoff1(.40)->slice("*1,"))'); ##-- .7648   , .7681
+  testacc('cutoff($dc_dist, cutoff1(.30)->slice("*1,"))'); ##-- .7627   , .7659
+  testacc('cutoff($dc_dist, cutoff1(.25)->slice("*1,"))'); ##-- .7605   , .7643
+
+  ##-- cutoffs: cat-local, by weighted positive and negative evidence
+  print STDERR (("#" x 64), "\n");
+  my $dcd_pn = cutoff2($dc_dist, .5,.5, .5);
+  testacc('$dc_dist');                         ##-- .747    , .7676
+  testacc('cutoff2($dc_dist, .50,.50, .50)');  ##-- .767    , .7780
+  testacc('cutoff2($dc_dist, .50,.50, .60)');  ##-- .7687   , .7796
+  testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  testacc('cutoff2($dc_dist, .50,.50, .66)');  ##-- .7752 * , .7840
+  testacc('cutoff2($dc_dist, .50,.50, .67)');  ##-- .7747   , .7840
+  testacc('cutoff2($dc_dist, .50,.50, .70)');  ##-- .7752 * , .7823
+  testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752 * , .7829
+  testacc('cutoff2($dc_dist, .50,.50, .72)');  ##-- .7752 * , .7834
+  testacc('cutoff2($dc_dist, .50,.50, .73)');  ##-- .7747   , .7818
+  testacc('cutoff2($dc_dist, .50,.50, .75)');  ##-- .7747   , .7807
+  testacc('cutoff2($dc_dist, .50,.50, .76)');  ##-- .7741   , .7796
+  testacc('cutoff2($dc_dist, .50,.50, .77)');  ##-- .7736   , .7796
+  testacc('cutoff2($dc_dist, .50,.50, .80)');  ##-- .7731   , .7791
+  testacc('cutoff2($dc_dist, .50,.50, .85)');  ##-- .7692   , .7747
+  testacc('cutoff2($dc_dist, .50,.50, .95)');  ##-- .7681   , .7747
+  ##
+  #testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752  *, -
+  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  testacc('cutoff2($dc_dist, .66,.66, .71)');  ##-- .7643   , .7780
+  testacc('cutoff2($dc_dist, .99,.47, .50)');  ##-- .7692   , .7725
+  ##
+  #testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752  *, -
+  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  testacc('cutoff2($dc_dist, .90,.50, .40)');  ##-- .7709   , .7796
+  testacc('cutoff2($dc_dist, .90,.50, .50)');  ##-- .7720   , .7807
+  testacc('cutoff2($dc_dist, .90,.50, .52)');  ##-- .7720   , .7813 +
+  testacc('cutoff2($dc_dist, .90,.50, .55)');  ##-- .7731 + , .7813 +
+  testacc('cutoff2($dc_dist, .90,.50, .60)');  ##-- .7725   , .7791
+  testacc('cutoff2($dc_dist, .90,.50, .70)');  ##-- .7720   , .7769
+  testacc('cutoff2($dc_dist, .90,.50, .75)');  ##-- .7676   , .7758
+  ##
+  #testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752  *, -
+  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  testacc('cutoff2($dc_dist, .80,.60, .50)');  ##-- .7670   , .7785
+  testacc('cutoff2($dc_dist, .80,.60, .75)');  ##-- .7703   , .7802
+  testacc('cutoff2($dc_dist, .80,.60, .95)');  ##-- .7714   , .7807
+  testacc('cutoff2($dc_dist, .80,.60, .999)'); ##-- .7736 + , .7802
+  ##
+  #testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752  *, -
+  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  testacc('cutoff2($dc_dist, .90,.60, .30)');  ##-- .7665   , .7736
+  testacc('cutoff2($dc_dist, .90,.60, .40)');  ##-- .7687   , .7763
+  testacc('cutoff2($dc_dist, .90,.60, .50)');  ##-- .7670   , .7769
+  testacc('cutoff2($dc_dist, .90,.60, .67)');  ##-- .7709   , .7818
+  testacc('cutoff2($dc_dist, .90,.60, .70)');  ##-- .7714   , .7829 +
+  testacc('cutoff2($dc_dist, .90,.60, .75)');  ##-- .7731 + , .7823
+  testacc('cutoff2($dc_dist, .90,.60, .77)');  ##-- .7714   , .7813
+  testacc('cutoff2($dc_dist, .90,.60, .80)');  ##-- .7725   , .7807
+
+  print STDERR "$0: test_eval_cutoff() done: what now?\n";
+  exit 0;
+}
+test_eval_cutoff(@ARGV);
+
+
+## $dc_dist_pseudo = cutoff($dc_dist,$cutoff)
+sub cutoff {
+  my ($dc_dist,$cutoff) = @_;
+  my $cutcname = '1_Sonstiges';                ##-- don't cutoff this cat
+  my $cutcid   = $lcenum->{sym2id}{$cutcname};
+  my $cutval   = 10;                           ##-- pseudo-distance value to add on cutoff
+  ##
+  my $dc_cut   = $dc_dist->pdl;
+  $dc_cut->where( ($dc_cut>$cutoff) & (yvals(long,1,$dc_cut->dim(1))!=$cutcid) ) += $cutval;
+  return $dc_cut;
+}
+
+## $cutoff_flat = cutoff1($conf_pos)
+##   + uses globals: $c1dist_mu, $c1dist_sd
+sub cutoff1 { return $c1dist_mu+_gausswidth($_[0],$c1dist_mu,$c1dist_sd); }
+
+## $cutoff_flat = cutoff0($conf_neg)
+##   + uses globals: $c1dist_mu, $c1dist_sd
+sub cutoff0 { return $c0dist_mu-_gausswidth($_[0],$c0dist_mu,$c0dist_sd); }
+
+## $weighted_cutoff_flat = wcutoff($conf_neg,$conf_pos,$wt_pos)
+##  + uses globals: $c0dist_mu,$c0dist_sd, $c1dist_mu,$c1dist_sd
+sub wcutoff {
+  my ($conf0,$conf1,$wt1) = @_;
+  $wt1 = .5 if (!defined($wt1));
+  return ((1-$wt1)*cutoff0($conf0)) + ($wt1*cutoff1($conf1));
+}
+
+## $dc_dist_pseudo = cutoff2($dc_dist,$conf0,$conf1,$wt1)
+sub cutoff2 {
+  my ($dc_dist,$conf0,$conf1,$wt1) = @_;
+  my $cut = wcutoff($conf0,$conf1,$wt1)->slice("*1,");
+  return cutoff($dc_dist,$cut);
+}
 
 
 ##======================================================================
