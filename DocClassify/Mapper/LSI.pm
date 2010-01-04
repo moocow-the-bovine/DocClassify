@@ -54,6 +54,9 @@ our $verbose = 3;
 ##  svd => $svd,                     ##-- a MUDL::SVD object
 ##  xdm => $xdm_pdl,                 ##-- dense PDL ($svdr,$ND) = $svd->apply( $tdm_pdl )
 ##  xcm => $xcm_pdl,                 ##-- dense PDL ($svdr,$NC) = $svd->apply( $TERM_CAT_MATRIX($NT,$NC) )
+##  dc_dist => $dc_dist,             ##-- dense PDL ($NDx,$NC) : [$dxi,$ci] -> dist($ci,$dxi)
+##  dc_d2c  => $dc_d2c,              ##-- dense PDL ($NDx)     : [$dxi]     -> $ci : $dxi \in $ci
+##                                   ##   + NOTE: $NDx may be != $ND
 ##  c1dist_mu => $c1dist_mu,         ##-- dense PDL ($NC) : [$ci] ->    avg { dist($ci,$di) : $di  \in $ci }
 ##  c1dist_sd => $c1dist_sd,         ##-- dense PDL ($NC) : [$ci] -> stddev { dist($ci,$di) : $di  \in $ci }
 ##  c0dist_mu => $c0dist_mu,         ##-- dense PDL ($NC) : [$ci] ->    avg { dist($ci,$di) : $di !\in $ci }
@@ -130,11 +133,11 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override appends qw(svd xdm xcm dc_dist c1dist_mu c1dist_sd c0dist_mu c0dist_sd cutoff)
+##  + override appends qw(svd xdm xcm dc_dist dc_d2c c1dist_mu c1dist_sd c0dist_mu c0dist_sd cutoff)
 sub noShadowKeys {
   return ($_[0]->SUPER::noShadowKeys(@_[1..$#_]),
 	  qw(svd xdm xcm),
-	  qw(dc_dist c1dist_mu c1dist_sd c0dist_mu c0dist_sd cutoff));
+	  qw(dc_dist dc_d2c c1dist_mu c1dist_sd c0dist_mu c0dist_sd cutoff));
 }
 
 ##==============================================================================
@@ -206,21 +209,28 @@ sub clearTrainingCache {
 ## Methods: Compilation: Utils
 ##  + see also Mapper::ByLemma
 
-## $map = $map->compileCutoffs()
+## $map = $map->compileCutoffs(%opts)
 ##  + compiles $map->{cutoff} from $map->{c(0|1)dist_(mu|sd)}, $map->{cut(0|1)p}, $map->{cut1w}
+##  + %opts: overrides @$map{cut*}
 sub compileCutoffs {
-  my $map = shift;
+  my ($map,%opts) = @_;
   if (!defined($map->{c0dist_mu})) {
-    $map->vlog('warn', "compileFit(): no {c0dist_mu} vector defined; NOT computing cutoffs");
+    $map->vlog('warn', "compileCutoffs(): no {c0dist_mu} vector defined; NOT computing cutoffs");
     return $map;
   }
 
+  ##-- map options, defaults
+  my %defaults = (cutval=>100,cut0p=>.5,cut1p=>.5,cut1w=>.5);
+  $map->{$_} = $opts{$_} foreach (grep {/^cut/} keys %opts);
+  $map->{$_} = $defaults{$_} foreach (grep {!defined($map->{$_})} keys(%defaults));
+  $map->vlog('info', "compileCutoffs(): [v=$map->{cutval},p0=$map->{cut0p},p1=$map->{cut1p},w1=$map->{cut1w}]");
+
   ##-- vars: common
   my $NC      = $map->{lcenum}->size;
-  my $cutval  = defined($map->{cutval}) ? $map->{cutval} : 100; ##-- psuedo-weight to add
-  my $cut0p   = defined($map->{cut0p})  ? $map->{cut0p}  : .5;
-  my $cut1p   = defined($map->{cut1p})  ? $map->{cut1p}  : .5;
-  my $wt1     = defined($map->{cut1w})  ? $map->{cut1w}  : .5;
+  my $cutval  = $map->{cutval}; ##-- psuedo-weight to add
+  my $cut0p   = $map->{cut0p};
+  my $cut1p   = $map->{cut1p};
+  my $wt1     = $map->{cut1w};
   my $wt0     = 1-$wt1;
   my ($c0dist_mu,$c0dist_sd) = @$map{qw(c0dist_mu c0dist_sd)};
   my ($c1dist_mu,$c1dist_sd) = @$map{qw(c1dist_mu c1dist_sd)};
@@ -229,7 +239,11 @@ sub compileCutoffs {
   my $cutoff0 = $c0dist_mu - _gausswidth($cut0p,$c0dist_mu,$c0dist_sd);
   my $cutoff1 = $c1dist_mu + _gausswidth($cut1p,$c1dist_mu,$c1dist_sd);
   my $cutoff  = ($wt0*$cutoff0) + ($wt1*$cutoff1);
-  my $nocutid = defined($map->{cutCat}) ? $map->{lcenum}{sym2id}{$map->{cutCat}} : 0;
+  my $nocutid = (defined($map->{cutCat})
+		 ? $map->{lcenum}{sym2id}{$map->{cutCat}}
+		 : (defined($map->{nullCat})
+		    ? $map->{lcenum}{sym2id}{$map->{nullCat}}
+		    : 0));
   $map->{cutCat} = $map->{lcenum}{id2sym}[$nocutid] if (!defined($map->{cutCat}));
   $cutoff->slice("$nocutid") .= 1e38 if (defined($nocutid));; ##-- effectively no cutoff here
 
@@ -240,7 +254,7 @@ sub compileCutoffs {
 }
 
 ## $map = $map->compileFit()
-##  + compiles fitting paramters from $map->{dc_dist}
+##  + compiles fitting paramters from $map->{dc_dist}, ($map->{dc_d2c} or $map->{dcm})
 sub compileFit {
   my $map = shift;
 
@@ -248,20 +262,38 @@ sub compileFit {
     $map->vlog('warn', "compileFit(): no {dc_dist} matrix defined; NOT computing fit paramters");
     return $map;
   }
+  $map->vlog('info', "compileFit()");
 
   ##-- vars
   my $lcenum = $map->{lcenum};
   my $NC     = $map->{lcenum}->size;
   my $ND     = $map->{dc_dist}->dim(0); ##-- allow external cross-check loaded from eval data
-  my $dcm    = $map->{dcm};
-  my $dcm_z  = $dcm->missing->sclr;
-  my $d2c    = $dcm->xchg(0,1)->_missing('inf')->minimum_ind->decode;  ##-- [$di] -> $ci_best
-  $dcm->missing($dcm_z);
+  my $d2c    = $map->{dc_d2c};
+  if (!defined($d2c)) {
+    ##-- no d2c: try to use $dcm
+    if ($ND == $map->{denum}->size) {
+      my $dcm    = $map->{dcm};
+      my $dcm_z  = $dcm->missing->sclr;
+      $d2c       = $dcm->xchg(0,1)->_missing('inf')->minimum_ind->decode;  ##-- [$di] -> $ci_best
+      $dcm->missing($dcm_z);
+    } else {
+      ##-- bail out
+      $map->vlog('warn',"compileFit(): doc-set size mismatch: {dc_dist}->dim(0) = $ND != {denum}->size = ".$map->{denum}->size.", and no {dc_d2c} defined! -- NOT computing fit paramters");
+      return $map;
+    }
+  }
   my $dc_dist = $map->{dc_dist};
 
   ##--------------------
   ##-- get positive & negative samples
   my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
+  if (defined($map->{nullCat})) {
+    ##-- hack positives for null cat
+    my $cid_null_src = $map->{lcenum}{sym2id}{'(null)'};
+    my $cid_null_dst = $map->{lcenum}{sym2id}{$map->{nullCat}};
+    my $which_dst    = which($d2c==$cid_null_dst);
+    $dc_which1 = $dc_which1->glue(1,$which_dst->cat(pdl(long,$cid_null_src))->xchg(0,1));
+  }
   my $dc_mask1  = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
   $dc_mask1->indexND($dc_which1) .= 1;
   my $dc_mask = $dc_mask1; ##-- alias
@@ -273,8 +305,8 @@ sub compileFit {
   ## doc-cat distance matrix: by boolean membership
   ##   $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di     \in $ci
   ##   $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
-  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1));
-  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0));
+  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1),dims=>pdl(long,[$dc_dist->dims]));
+  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0),dims=>pdl(long,[$dc_dist->dims]));
 
   ##--------------------
   ## fit parameters: global
@@ -360,30 +392,40 @@ sub loadCrossCheckEval {
 
   ##-- vars
   my $lcenum = $map->{lcenum};
-  my $denum = $map->{denum};
-  my $ND = $map->{denum}->size;
   my $NC = $lcenum->size;
   my $lc_sym2id = $lcenum->{sym2id};
-  my $d_sym2id  = $denum->{sym2id};
   my $lab2docs  = $eval->{lab2docs};
 
-  ##-- get dc_dist
-  my $dc_dist = zeroes($ND,$NC)+2; ##-- initialize to a meaningful maximum
-  my ($lab,$d12,@dcats2,@dci,@dcdist,$di,@gotcat);
+  ##-- eval-local $denum
+  my $denum = MUDL::Enum->new;
+  @{$denum->{id2sym}} = keys %$lab2docs;
+  @{$denum->{sym2id}}{@{$denum->{id2sym}}} = (0..$#{$denum->{id2sym}});
+  my $d_sym2id = $denum->{sym2id};
+  my $NDx = $denum->size;
+
+  ##-- $dc_d2c: pdl($NDx): [$di] -> $ci_wanted
+  my $d2c = pdl(long,[@$lc_sym2id{map {$lab2docs->{$_}[0]{cats}[0]{name}} @{$denum->{id2sym}}}]);
+
+  ##-- $dc_dist: pdl($NDx,$NC): [$dix,$ci] -> dist($ci,$di)
+  my $dc_dist = zeroes($NDx,$NC)+2; ##-- initialize to a meaningful maximum
+  my ($lab,$d12,@dcats2,@dcname,@dci,@dcdist,$di);
   while (($lab,$d12)=each(%{$eval->{lab2docs}})) {
     if (!defined($di = $d_sym2id->{$lab})) {
-      $map->logwarn("loadCrossCheckEval(): no internal ID for doc label '$lab' -- skipping");
+      $map->logwarn("loadCrossCheckEval(): no ID for doc label '$lab' -- skipping");
       next;
     }
-    @gotcat = qw();
-    @dcats2 = grep {!$gotcat[$_->{id}] && ($gotcat[$_->{id}]=1)} @{$d12->[1]{cats}}; ##-- handle dup cats (e.g. nullCat)
-    @dci    = grep {defined($lc_sym2id->{$dcats2[$_]{name}})} (0..$#dcats2);
+    #@dcats2 = grep {!$gotcat[$_->{id}] && ($gotcat[$_->{id}]=1)} @{$d12->[1]{cats}}; ##-- handle dup cats (e.g. nullCat)
+    @dcats2 = @{$d12->[1]{cats}}; ##-- ... or don't
+    @dcname = map  {$_->{proto} ? $_->{proto} : $_->{name}} @dcats2;
+    @dci    = grep {defined($lc_sym2id->{$dcname[$_]})} (0..$#dcats2);
     @dcdist = map  {$dcats2[$_]{dist_raw}} @dci;
-    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{map {$dcats2[$_]{name}} @dci}])) .= pdl(\@dcdist);
+    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{@dcname[@dci]}])) .= pdl(\@dcdist);
   }
 
-  ##-- cache dc_dist
+  ##-- cache values: {dc_dist}, {dc_d2c}
   $map->{dc_dist} = $dc_dist;
+  $map->{dc_d2c}  = $d2c;
+
   return $map;
 }
 

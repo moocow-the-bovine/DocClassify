@@ -2983,7 +2983,7 @@ sub testacc {
   my $cats = $minmax eq 'max' ? $cdm->maximum_ind : $cdm->minimum_ind;
   our ($d2c);
   my $ND   = $cdm->dim(1);
-  my $acc  = ($cats == $d2c)->nnz / $ND;
+  my $acc  = ($cats == $d2c)->nnz->double / $ND;
   print "$acc\tacc:${minmax}\t$expr\n";
   return $acc;
 }
@@ -3128,10 +3128,11 @@ sub test_eval_cutoff {
   print STDERR "$0: test_eval_cutoff() done: what now?\n";
   exit 0;
 }
-test_eval_cutoff(@ARGV);
+#test_eval_cutoff(@ARGV);
 
 
 ## $dc_dist_pseudo = cutoff($dc_dist,$cutoff)
+##  + requires globals: $lcenum
 sub cutoff {
   my ($dc_dist,$cutoff) = @_;
   my $cutcname = '1_Sonstiges';                ##-- don't cutoff this cat
@@ -3164,6 +3165,86 @@ sub cutoff2 {
   my ($dc_dist,$conf0,$conf1,$wt1) = @_;
   my $cut = wcutoff($conf0,$conf1,$wt1)->slice("*1,");
   return cutoff($dc_dist,$cut);
+}
+
+##======================================================================
+sub test_map_cutoff {
+  my ($mfile,$efile) = @_;
+  if (!defined($mfile)) {
+    $mfile = 'tmp.map.bin';
+  }
+  if (!defined($efile)) {
+    $efile = 'tmp.test.eval.xml';
+  }
+  $efile = "$efile.bin" if (-f "$efile.bin"); ##-- prefer binary eval files
+
+  ##--- load map, eval
+  my $map  = DocClassify::Mapper->loadFile($mfile) or die("$0: Mapper->load($mfile) failed: $!");
+  my $eval = DocClassify::Eval->loadFile($efile) or die("$0: Eval->load($efile) failed: $!");
+  $eval->saveFile("$efile.bin") if ($efile !~ /\.bin$/); ##-- cache binary
+
+  ##--------------------
+  ##-- train fit
+  $map->loadCrossCheckEval($eval);
+  $map->compileFit();
+  $map->compileCutoffs();
+
+  ##--------------------
+  ## test cutoffs: vars
+  our $lcenum = $map->{lcenum}; ##-- required for cutoff() util, above
+  our ($dc_dist,$d2c) = @$map{qw(dc_dist dc_d2c)};
+  our ($c0dist_mu,$c0dist_sd,$c1dist_mu,$c1dist_sd) = @$map{qw(c0dist_mu c0dist_sd c1dist_mu c1dist_sd)};
+  our $cutoff = $map->{cutoff};
+  our $c0dist_mu0 = $c0dist_mu->average;
+  our $c1dist_mu0 = $c1dist_mu->average;
+  our $gcids = pdl(long,[@{$map->{gcenum}{sym2id}}{@{$map->{lcenum}{id2sym}}}]);
+
+  ##--------------------
+  ## plots: fit + cutoffs
+  if ($plot2d) {
+    _usepgplot($dev2d);
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ##
+    ploterrs({%eplot,title=>'Normal Fit by Category: Hacked (Positives:black, Negatives:red, Cutoffs:blue)'},
+	     [$gcids-.1, $c1dist_mu,$c1dist_sd, {}],
+	     [$gcids+.1, $c0dist_mu,$c0dist_sd, {color=>'red'}]);
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    hold(); points($gcids, $gcids->zeroes+$map->{cutoff}, {plotline=>1,symbol=>'plus',color=>'blue',charsize=>2});
+    release();
+  }
+
+  ##-- test accuracy
+  my %xlate = qw();
+  $xlate{$map->{lcenum}{sym2id}{'(null)'}} = $map->{lcenum}{sym2id}{$map->{nullCat}}
+    if (defined($map->{nullCat}));
+  testaccx('$dc_dist', undef, %xlate);          ##-- .7676
+  testaccx('cutoff2($dc_dist, .50,.50, .65)');  ##-- x
+
+  print STDERR "$0: test_eval_cutoff() done: what now?\n";
+  exit 0;
+}
+test_map_cutoff(@ARGV);
+
+## $acc = testaccx($expr)
+## $acc = testaccx($expr, $minOrMax)
+## $acc = testaccx($expr, $minOrMax, $fromCatId,$toCatId, ...)
+##  + like testacc() but maps minimum_ind==0 to 1 (nullCat hack)
+##  + requires defined $d2c pdl (e.g. call eval2dcdist($eval) first)
+sub testaccx {
+  my ($expr,$minmax) = (shift,shift);
+  $minmax = 'min' if (!defined($minmax));
+  my $cdm  = (eval $expr)->xchg(0,1);
+  my $cats = $minmax eq 'max' ? $cdm->maximum_ind : $cdm->minimum_ind;
+  while (@_) {
+    my ($from,$to)=(shift,shift);
+    $cats->where($cats==$from) .= $to;
+  }
+  our ($d2c);
+  my $ND   = $cdm->dim(1);
+  my $acc  = ($cats == $d2c)->nnz->double / $ND;
+  print "$acc\taccx:${minmax}\t$expr\n";
+  return $acc;
 }
 
 
