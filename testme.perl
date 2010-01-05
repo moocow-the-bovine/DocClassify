@@ -1057,7 +1057,7 @@ sub test_compile_xcheck {
   ##-- cross-check env
   my $lcenum = $map->{lcenum};
   my $gcenum = $map->{gcenum};
-  my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);
+  my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]); ##-- [$ci_local] -> $ci_global
   my $NC     = $map->{lcenum}->size;   my $NCg    = $gcids->max+1;
   my $ND     = $map->{denum}->size;
   my $dcm   = $map->{dcm};
@@ -3093,12 +3093,12 @@ sub test_eval_cutoff {
   testacc('cutoff2($dc_dist, .50,.50, .95)');  ##-- .7681   , .7747
   ##
   #testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752  *, -
-  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 **
   testacc('cutoff2($dc_dist, .66,.66, .71)');  ##-- .7643   , .7780
   testacc('cutoff2($dc_dist, .99,.47, .50)');  ##-- .7692   , .7725
   ##
   #testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752  *, -
-  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 **
   testacc('cutoff2($dc_dist, .90,.50, .40)');  ##-- .7709   , .7796
   testacc('cutoff2($dc_dist, .90,.50, .50)');  ##-- .7720   , .7807
   testacc('cutoff2($dc_dist, .90,.50, .52)');  ##-- .7720   , .7813 +
@@ -3108,7 +3108,7 @@ sub test_eval_cutoff {
   testacc('cutoff2($dc_dist, .90,.50, .75)');  ##-- .7676   , .7758
   ##
   #testacc('cutoff2($dc_dist, .50,.50, .71)');  ##-- .7752  *, -
-  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 *
+  #testacc('cutoff2($dc_dist, .50,.50, .65)');  ##-- .7741   , .7845 **
   testacc('cutoff2($dc_dist, .80,.60, .50)');  ##-- .7670   , .7785
   testacc('cutoff2($dc_dist, .80,.60, .75)');  ##-- .7703   , .7802
   testacc('cutoff2($dc_dist, .80,.60, .95)');  ##-- .7714   , .7807
@@ -3140,7 +3140,12 @@ sub cutoff {
   my $cutval   = 10;                           ##-- pseudo-distance value to add on cutoff
   ##
   my $dc_cut   = $dc_dist->pdl;
-  $dc_cut->where( ($dc_cut>$cutoff) & (yvals(long,1,$dc_cut->dim(1))!=$cutcid) ) += $cutval;
+  my $cut_mask = ($dc_cut>$cutoff);
+  $cut_mask->slice(",$cutcid") .= 0;           ##-- don't cut here
+  if (0 && defined($lcenum->{sym2id}{'(null)'})) {
+    $cut_mask->slice(",".$lcenum->{sym2id}{'(null)'}) .= 0; ##-- ... don't cut here either ?
+  }
+  $dc_cut->where($cut_mask) += $cutval;
   return $dc_cut;
 }
 
@@ -3167,6 +3172,18 @@ sub cutoff2 {
   return cutoff($dc_dist,$cut);
 }
 
+## $dc_dist_pseudo = cutoff2_old($dc_dist,$conf0,$conf1,$wt1)
+sub cutoff2_old {
+  local $c0dist_mu = $c0dist_mu_old;
+  local $c0dist_sd = $c0dist_sd_old;
+  local $c1dist_mu = $c1dist_mu_old;
+  local $c1dist_sd = $c1dist_sd_old;
+  local $d2c = $d2c_old;
+  local $lcenum = $lcenum_old;
+  return cutoff2($dc_dist_old, @_);
+}
+
+
 ##======================================================================
 sub test_map_cutoff {
   my ($mfile,$efile) = @_;
@@ -3183,11 +3200,36 @@ sub test_map_cutoff {
   my $eval = DocClassify::Eval->loadFile($efile) or die("$0: Eval->load($efile) failed: $!");
   $eval->saveFile("$efile.bin") if ($efile !~ /\.bin$/); ##-- cache binary
 
+  ##--- DEBUG: populate dc_dist globals
+  if (1) {
+    eval2dcdist($eval);
+    our $dc_dist_old = $dc_dist;
+    ##
+    our $c1dist_mu_old = $c1dist_mu;
+    our $c1dist_sd_old = $c1dist_sd;
+    our $c1dist_mu0_old = $c1dist_mu0;
+    our $c1dist_sd0_old = $c1dist_sd0;
+    ##
+    our $c0dist_mu_old = $c0dist_mu;
+    our $c0dist_sd_old = $c0dist_sd;
+    our $c0dist_mu0_old = $c0dist_mu0;
+    our $c0dist_sd0_old = $c0dist_sd0;
+    ##
+    our $denum_old = $denum;
+    our $lcenum_old = $lcenum;
+    our $gcenum_old = $gcenum;
+    ##
+    our $d2c_old = $d2c;
+    our $gcids_old = pdl(long,[map {$_||0} @{$map->{gcenum}{sym2id}}{map {$_||''} @{$lcenum_old->{id2sym}}}]);
+    our $lcids_old = pdl(long,[map {$_||0} @{$lcenum_old->{sym2id}}{map {$_||''} @{$map->{gcenum}{id2sym}}}]);
+  }
+
   ##--------------------
   ##-- train fit
   $map->loadCrossCheckEval($eval);
   $map->compileFit();
-  $map->compileCutoffs();
+  #$map->compileCutoffs();
+  $map->compileCutoffs(cut0p=>.5,cut1p=>.5,cut1w=>.65);
 
   ##--------------------
   ## test cutoffs: vars
@@ -3195,13 +3237,20 @@ sub test_map_cutoff {
   our ($dc_dist,$d2c) = @$map{qw(dc_dist dc_d2c)};
   our ($c0dist_mu,$c0dist_sd,$c1dist_mu,$c1dist_sd) = @$map{qw(c0dist_mu c0dist_sd c1dist_mu c1dist_sd)};
   our $cutoff = $map->{cutoff};
+  our $map_cutoff = $cutoff;
   our $c0dist_mu0 = $c0dist_mu->average;
   our $c1dist_mu0 = $c1dist_mu->average;
   our $gcids = pdl(long,[@{$map->{gcenum}{sym2id}}{@{$map->{lcenum}{id2sym}}}]);
 
+  ##-- DEBUG
+  if (defined($lcids_old)) {
+    our $lcids_new2old = pdl(long,[map {$_||0} @{$lcenum_old->{sym2id}}{@{$lcenum->{id2sym}}}]); ##-- [$ci_new] -> $ci_old
+    our $lcids_old2new = pdl(long,[map {$_||0} @{$lcenum->{sym2id}}{@{$lcenum_old->{id2sym}}}]); ##-- [$ci_old] -> $ci_new
+  }
+
   ##--------------------
   ## plots: fit + cutoffs
-  if ($plot2d) {
+  if (0 && $plot2d) {
     _usepgplot($dev2d);
     %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
     ##
@@ -3214,12 +3263,37 @@ sub test_map_cutoff {
     release();
   }
 
+  ##--------------------
+  ## plots: old vs. new fit
+  if (0 && $plot2d) {
+    _usepgplot($dev2d);
+    %eplot = (symbol=>'circle',xtitle=>'cat',ytitle=>'mu +/- sigma : dist(cat,doc)');
+    ##
+    ploterrs({%eplot,title=>'Normal Fit by Category: Hacked (Positives:black, Negatives:red, Cutoffs:blue)'},
+	     [$gcids_old-.2, $c1dist_mu_old,$c1dist_sd_old, {linestyle=>'dotted'}],
+	     [$gcids_old+.2, $c0dist_mu_old,$c0dist_sd_old, {linestyle=>'dotted',color=>'red'}],
+	     [$gcids-.1, $c1dist_mu,$c1dist_sd, {}],
+	     [$gcids+.1, $c0dist_mu,$c0dist_sd, {color=>'red'}],
+	    );
+    hold(); line($gcids_old, $gcids_old->zeroes+$c1dist_mu0_old, {linestyle=>'dotted'});
+    hold(); line($gcids_old, $gcids_old->zeroes+$c0dist_mu0_old, {linestyle=>'dotted',color=>'red'});
+    ##
+    hold(); line($gcids, $gcids->zeroes+$c1dist_mu0, {linestyle=>'dashed'});
+    hold(); line($gcids, $gcids->zeroes+$c0dist_mu0, {linestyle=>'dashed',color=>'red'});
+    ##
+    hold(); points($gcids, $gcids->zeroes+$map->{cutoff}, {plotline=>1,symbol=>'plus',color=>'blue',charsize=>2});
+    release();
+  }
+
+
   ##-- test accuracy
   my %xlate = qw();
   $xlate{$map->{lcenum}{sym2id}{'(null)'}} = $map->{lcenum}{sym2id}{$map->{nullCat}}
     if (defined($map->{nullCat}));
-  testaccx('$dc_dist', undef, %xlate);          ##-- .7676
-  testaccx('cutoff2($dc_dist, .50,.50, .65)');  ##-- x
+  testaccx('$dc_dist', %xlate);                         ##-- .7676
+  testaccx('cutoff2($dc_dist, .50,.50, .50)', %xlate);  ##-- .7774
+  testaccx('cutoff2($dc_dist, .50,.50, .65)', %xlate);  ##-- .7845 **
+  testaccx('cutoff($dc_dist,$map_cutoff->slice("*1,"))', %xlate);  ##-- .7845
 
   print STDERR "$0: test_eval_cutoff() done: what now?\n";
   exit 0;
@@ -3227,15 +3301,13 @@ sub test_map_cutoff {
 test_map_cutoff(@ARGV);
 
 ## $acc = testaccx($expr)
-## $acc = testaccx($expr, $minOrMax)
-## $acc = testaccx($expr, $minOrMax, $fromCatId,$toCatId, ...)
+## $acc = testaccx($expr, $fromCatId,$toCatId, ...)
 ##  + like testacc() but maps minimum_ind==0 to 1 (nullCat hack)
 ##  + requires defined $d2c pdl (e.g. call eval2dcdist($eval) first)
 sub testaccx {
-  my ($expr,$minmax) = (shift,shift);
-  $minmax = 'min' if (!defined($minmax));
+  my $expr = shift;
   my $cdm  = (eval $expr)->xchg(0,1);
-  my $cats = $minmax eq 'max' ? $cdm->maximum_ind : $cdm->minimum_ind;
+  my $cats = $cdm->minimum_ind;
   while (@_) {
     my ($from,$to)=(shift,shift);
     $cats->where($cats==$from) .= $to;
@@ -3243,7 +3315,7 @@ sub testaccx {
   our ($d2c);
   my $ND   = $cdm->dim(1);
   my $acc  = ($cats == $d2c)->nnz->double / $ND;
-  print "$acc\taccx:${minmax}\t$expr\n";
+  print "$acc\taccx:min\t$expr\n";
   return $acc;
 }
 
