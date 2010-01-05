@@ -105,7 +105,7 @@ our %opts =
    cutoffNew => {
 		 cut0p => 0.5,                     ##-- confidence level for negative-sample cutoff fitting (0.5)
 		 cut1p => 0.5,                     ##-- confidence level for positive-sample cutoff fitting (0.5)
-		 cut1w => 0.5,                     ##-- positive weight (0<=$w<=1) for cutoff fitting (0.5)
+		 cut1w => 0.65,                    ##-- positive weight (0<=$w<=1) for cutoff fitting (0.65)
 		 cutval => 100,                    ##-- constant to add if cutoff is exceeded (default=100)
 		 cutCat => undef,                  ##-- name of cutoff sink cat (default: cat with id=0 in $lcenum)
 		},

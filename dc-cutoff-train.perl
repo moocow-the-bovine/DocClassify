@@ -101,7 +101,7 @@ dc-cutoff-train.perl - train DocClassify::Mapper::Cutoff pseudo-mapper from eval
  Cutoff Options:
   -cut0p   P             # confidence level for negative-sample (0.5)
   -cut1p   P             # confidence level for positive-sample (0.5)
-  -cut1w   W             # weight (0<=W<=1) for positive-point (0.5)
+  -cut1w   W             # weight (0<=W<=1) for positive-point (0.65)
   -cut-val ADD           # constant to add if cutoff is exceeded (100)
   -cut-cat CAT           # name of cutoff sink cat (default: cat with id=0 in $lcenum)
 
