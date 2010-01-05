@@ -31,17 +31,17 @@ runcmd() {
 
 echo "##=================================================================="
 echo "## $0: RAW: TRAIN"
-#runcmd ${progdir}dc-mapper-train.perl "$train.corpus.xml" "$@" -o "$train.$infix.map.bin" || exit 1
+runcmd ${progdir}dc-mapper-train.perl "$train.corpus.xml" "$@" -o "$train.$infix.map.bin" || exit 1
 
 echo ""
 echo "##=================================================================="
 echo "## $0: RAW: APPLY"
-#runcmd ${progdir}dc-mapper-apply.perl "$train.$infix.map.bin" "$test.corpus.xml" -o "$test.$infix.out.xml" || exit 2
+runcmd ${progdir}dc-mapper-apply.perl "$train.$infix.map.bin" "$test.corpus.xml" -o "$test.$infix.out.xml" || exit 2
 
 echo ""
 echo "##=================================================================="
 echo "## $0: RAW: EVAL"
-#runcmd ${progdir}dc-mapper-eval.perl "$test.corpus.xml" "$test.$infix.out.xml" -o "$test.$infix.eval.xml" || exit 3
+runcmd ${progdir}dc-mapper-eval.perl "$test.corpus.xml" "$test.$infix.out.xml" -o "$test.$infix.eval.xml" || exit 3
 
 echo ""
 echo "##=================================================================="
