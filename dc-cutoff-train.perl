@@ -36,13 +36,6 @@ our $verbose = setVerboseOptions(2);
 ##------------------------------------------------------------------------------
 GetOptions(##-- common options
 	   dcOptions(),
-
-	   ##-- cutoff options
-	   'cut-negative-p|cnp|cut0p|c0p|c0=f' => \$opts{cutoffNew}{cut0p},
-	   'cut-positive-p|cpp|cut1p|c1p|c1=f' => \$opts{cutoffNew}{cut1p},
-	   'cut-positive-weight|cpw|cut1w|c1w|cw=f' => \$opts{cutoffNew}{cut1w},
-	   'cut-value|cut-add|cut-val|cutval|cv|ca=f' => \$opts{cutoffNew}{cutval},
-	   'cut-sink-cat|cut-cat|cutcat|ccat|cc=s' => \$opts{cutoffNew}{cutCat},
 	  );
 
 $verbose = $opts{verbose};

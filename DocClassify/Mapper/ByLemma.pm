@@ -55,7 +55,7 @@ our $verbose = 3;
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=1)
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
-##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'
+##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'; '(auto)': use min id; false for none
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NC=$catEnum->size())
@@ -379,10 +379,15 @@ sub compileTermEnum {
 ##  + compiles $map->{lcenum} from $map->{gcenum}
 sub compileCatEnum {
   my $map = shift;
-  $map->vlog('info', "compileCatEnum() [nullCat=".(defined($map->{nullCat}) ? $map->{nullCat} : '(none)')."]")
+  $map->vlog('info', "compileCatEnum(): nullCat='".($map->{nullCat} || '(none)')."'")
     if ($map->{verbose});
 
-  if (defined($map->{nullCat})) {
+  if ($map->{nullCat}) {
+    if ($map->{nullCat} eq '(auto)') {
+      ##-- check for & expand auto null-cat
+      $map->{nullCat} = (grep {defined($_)} @{$map->{gcenum}{id2sym}})[0];
+      $map->vlog('info', "compileCatEnum(): nullCat -> '$map->{nullCat}'") if ($map->{verbose});
+    }
     if (!defined($map->{gcenum}{id2sym}[0])) {
       ##-- set id(nullCat) to zero if possible
       $map->{gcenum}->addIndexedSymbol('(null)',0);
@@ -442,7 +447,7 @@ sub compile_tdm0 {
   $map->vlog('info', "compile_tdm0(): matrix: tdm0: (NT=$NT x ND=$ND) [Term x Doc -> Freq]") if ($map->{verbose});
 
   ##-- step 1: @$doc_wt: doc-wise term ids
-  $map->vlog('info',"compile_tdm0(): matrix: tdm0: doc_wt: [Doc -> Terms]") if ($map->{verbose});
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: doc_wt [Doc -> Terms]") if ($map->{verbose});
   my $tenum_sym2id = $tenum->{sym2id};
   my $tenum_id2sym = $tenum->{id2sym};
   my $doc_wt = $map->{doc_wt} = []; ##-- [$docid] => pdl($nnz_doc) : [$nzi_doc] -> $ti : f($doc,$ti) defined
@@ -642,7 +647,7 @@ sub compile_tw {
 
   ##-- guts
   if ($map->{verbose}) {
-    $map->vlog('info',"compile_tw(): vector: tw: ($NT): [Term -> Weight]");
+    $map->vlog('info',"compile_tw(): vector: tw: (NT=$NT) [Term -> Weight]");
     $map->vlog('info',"compile_tw(): tw=$termWeight, weightByCat=".($map->{weightByCat} ? 1 : 0)) ;
   }
   my ($tw);
@@ -858,7 +863,9 @@ sub mapDocument {
   ##-- get doc pdl
   my $tdm = $map->docPdlRaw($doc);
   my $tdN = $tdm->sum;
-  $map->logwarn("mapDocument(): null vector for document '$doc->{label}'") if ($map->{verbose} && $tdN==0);
+  if ($map->{verbose} && $tdN==0) {
+    $map->logwarn("mapDocument(): null vector for document '$doc->{label}'");
+  }
 
   ##-- compute distance to each centroid
   my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$tdm,cdata=>$tcm)->lclip(0);

@@ -100,6 +100,8 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
  Mapper Options:
   -mapper-class CLASS    # set mapper class (default='LSI')
   -label LABEL           # set global mapper label
+  -null-cat              # set target cat for null prototype (default='(auto)' -> cat with min id)
+  -no-null-cat           # disable null cat prototype (alias for -null-cat='')
   -lz-class LZ_CLASS     # set lemmatizer subclass (default='default')
   -lz-option OPT=VALUE   # set lemmatizer option OPT to VAL (default=none)
   -max-tpd NTERMS        # set maximum #/terms per doc (default=0 [no limit])

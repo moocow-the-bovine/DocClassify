@@ -71,7 +71,7 @@ our $verbose = 3;
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
-##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'
+##  nullCat => $catName,             ##-- cat name for null prototype (default='(auto)': use min id); enum name='(null)'; false for none
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NC=$catEnum->size())
@@ -103,6 +103,7 @@ sub new {
 			       seed => undef,
 			       smoothf=>1+1e-5,
 			       xn => 0,
+			       nullCat => '(auto)',
 
 			       ##-- data: post-compile
 			       svd=>undef,
@@ -227,7 +228,7 @@ sub compileCutoffs {
   my $cutoff  = ($wt0*$cutoff0) + ($wt1*$cutoff1);
   my $nocutid = (defined($map->{cutCat})
 		 ? $map->{lcenum}{sym2id}{$map->{cutCat}}
-		 : (defined($map->{nullCat})
+		 : ($map->{nullCat}
 		    ? $map->{lcenum}{sym2id}{$map->{nullCat}}
 		    : 0));
   $map->{cutCat} = $map->{lcenum}{id2sym}[$nocutid] if (!defined($map->{cutCat}));
@@ -274,7 +275,7 @@ sub compileFit {
   ##--------------------
   ##-- get positive & negative samples
   my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
-  if (defined($map->{nullCat})) {
+  if ($map->{nullCat}) {
     ##-- hack positives for null cat
     my $cid_null_src = $map->{lcenum}{sym2id}{'(null)'};
     my $cid_null_dst = $map->{lcenum}{sym2id}{$map->{nullCat}};
@@ -624,7 +625,7 @@ sub compile_xcm {
 	$xcm->slice(",$c_id") += $d_x;
       }
     }
-    if (defined($map->{nullCat})) {
+    if ($map->{nullCat}) {
       $c_id  = $map->{lcenum}{sym2id}{'(null)'};
       $xcm->slice(",$c_id") .= $map->svdApply(zeroes($map->{tenum}->size,1));
     }
@@ -697,7 +698,7 @@ sub mapDocument {
   my ($cname,$ename);
   @{$doc->{cats}} = map {
     $cname = $map->{lcenum}{id2sym}[$_];
-    $ename = $cname eq '(null)' && defined($map->{nullCat}) ? $map->{nullCat} : $cname;
+    $ename = $cname eq '(null)' && $map->{nullCat} ? $map->{nullCat} : $cname;
     scalar({sim=>$cd_sim->at($_,0),
 	    dist_raw=>$cd_dist->at($_,0),
 	    name=>$ename,

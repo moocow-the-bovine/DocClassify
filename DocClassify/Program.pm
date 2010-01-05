@@ -93,6 +93,7 @@ our %opts =
 	      termWeight => 'entropy',    ##-- how to do term weighting
 	      xn => 0,                    ##-- number of splits for parameter-fitting cross-check
 	      seed =>0,    		  ##-- random seed for x-check
+	      nullCat => '(auto)',        ##-- null-prototype target category; false for none
 
 	      ##-- program-local options
 	      clearCache => 1,
@@ -189,9 +190,18 @@ sub dcOptions {
    #'random-seed|seed|rs=i' => \$opts{mapNew}{seed},
    'clear-training-cache|clear-cache|clear!' => \$opts{mapNew}{clearCache},
    'mapper-option|map-option|mapopt|mo=s%' => $opts{mapNew},
+   'null-cat|nullcat|null|nc=s' => \$opts{mapNew}{nullCat},
+   'no-null-cat|no-nullcat|nonullcat|nonull' => sub { $opts{mapNew}{nullCat}=undef; },
    #'compile|c!' => \$compileMap,
    'mapper-input-mode|mim=s' => \$opts{mapLoad}{mode},
    'mapper-output-mode|mom=s' => \$opts{mapSave}{mode},
+
+   ##-- cutoff options
+   'cut-negative-p|cnp|cut0p|c0p|c0=f' => \$opts{cutoffNew}{cut0p},
+   'cut-positive-p|cpp|cut1p|c1p|c1=f' => \$opts{cutoffNew}{cut1p},
+   'cut-positive-weight|cpw|cut1w|c1w|cw=f' => \$opts{cutoffNew}{cut1w},
+   'cut-value|cut-add|cut-val|cutval|cv|ca=f' => \$opts{cutoffNew}{cutval},
+   'cut-sink-cat|cut-cat|cutcat|ccat|cc=s' => \$opts{cutoffNew}{cutCat},
 
    ##-- Corpus-Split Options
    'random-seed|seed|rs=i' => sub { $opts{mapNew}{seed}=$opts{split}{seed}=$_[1]; },
