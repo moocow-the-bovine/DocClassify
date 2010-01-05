@@ -388,6 +388,7 @@ sub mapDocument {
   ##-- apply cutoffs
   my $lcenum  = $map->{lcenum};
   my $cutoff  = $map->{cutoff};
+  $map->{cutCatId} ||= 0;
   my ($cname,$cid);
   foreach (@{$doc->{cats}}) {
     $cname = $_->{name};
