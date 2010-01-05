@@ -180,6 +180,7 @@ sub cats {
   $_->{deg} = 1 foreach (grep {!defined($_->{deg})} @{$doc->{cats}});
   @{$doc->{cats}} =
     sort {($a->{deg}<=>$b->{deg}
+	   || ($a->{cut}||0) <=> ($b->{cut}||0)
 	   || ($b->{sim}||0) <=> ($a->{sim}||0)
 	   || ($a->{dist}||0) <=> ($b->{dist}||0)
 	   || ($a->{dist_raw}||0) <=> ($b->{dist_raw}||0)

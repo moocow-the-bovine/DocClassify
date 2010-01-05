@@ -44,24 +44,18 @@ our $verbose = 3;
 ##  seed => $seed,                   ##-- random seed for corpus splitting (undef (default) for none)
 ##  #conf_nofp => $conf,              ##-- confidence level for negative-evidence parameter fitting (.95)
 ##  #conf_nofn => $conf,              ##-- confidence level for positive-evidence parameter fitting (.95)
-##  cut0p => $p,                     ##-- confidence level for negative-sample cutoff fitting (0.5)
-##  cut1p => $p,                     ##-- confidence level for positive-sample cutoff fitting (0.5)
-##  cut1w => $w,                     ##-- positive weight (0<=$w<=1) for cutoff fitting (0.5)
-##  cutval => $val,                  ##-- constant to add if cutoff is exceeded (default=100)
-##  cutCat => $catName,              ##-- name of cutoff sink cat (default: cat with id=0 in $lcenum)
 ##  ##
 ##  ##-- data: post-compile()
 ##  svd => $svd,                     ##-- a MUDL::SVD object
 ##  xdm => $xdm_pdl,                 ##-- dense PDL ($svdr,$ND) = $svd->apply( $tdm_pdl )
 ##  xcm => $xcm_pdl,                 ##-- dense PDL ($svdr,$NC) = $svd->apply( $TERM_CAT_MATRIX($NT,$NC) )
-##  dc_dist => $dc_dist,             ##-- dense PDL ($NDx,$NC) : [$dxi,$ci] -> dist($ci,$dxi)
-##  dc_d2c  => $dc_d2c,              ##-- dense PDL ($NDx)     : [$dxi]     -> $ci : $dxi \in $ci
-##                                   ##   + NOTE: $NDx may be != $ND
-##  c1dist_mu => $c1dist_mu,         ##-- dense PDL ($NC) : [$ci] ->    avg { dist($ci,$di) : $di  \in $ci }
-##  c1dist_sd => $c1dist_sd,         ##-- dense PDL ($NC) : [$ci] -> stddev { dist($ci,$di) : $di  \in $ci }
-##  c0dist_mu => $c0dist_mu,         ##-- dense PDL ($NC) : [$ci] ->    avg { dist($ci,$di) : $di !\in $ci }
-##  c0dist_sd => $c0dist_sd,         ##-- dense PDL ($NC) : [$ci] -> stddev { dist($ci,$di) : $di !\in $ci }
-##  cutoff    => $cutoff,            ##-- dense PDL ($NC) : [$ci] ->    max { dist($ci,$di) : $di  \in $ci } : heuristic
+##  #dc_dist => $dc_dist,             ##-- dense PDL ($NDx,$NC) : [$dxi,$ci] -> dist($ci,$dxi)
+##  #dc_d2c  => $dc_d2c,              ##-- dense PDL ($NDx)     : [$dxi]     -> $ci : $dxi \in $ci
+##  #                                 ##   + NOTE: $NDx may be != $ND
+##  #c1dist_mu => $c1dist_mu,         ##-- dense PDL ($NC) : [$ci] ->    avg { dist($ci,$di) : $di  \in $ci }
+##  #c1dist_sd => $c1dist_sd,         ##-- dense PDL ($NC) : [$ci] -> stddev { dist($ci,$di) : $di  \in $ci }
+##  #c0dist_mu => $c0dist_mu,         ##-- dense PDL ($NC) : [$ci] ->    avg { dist($ci,$di) : $di !\in $ci }
+##  #c0dist_sd => $c0dist_sd,         ##-- dense PDL ($NC) : [$ci] -> stddev { dist($ci,$di) : $di !\in $ci }
 ##  ##
 ##  ##==== INHERITED from Mapper::ByLemma
 ##  ##-- options
@@ -80,8 +74,8 @@ our $verbose = 3;
 ##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'
 ##  ##
 ##  ##-- data: enums
-##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
-##  gcenum => $localCatEnum,         ##-- global cat enum         ($NC=$catEnum->size())
+##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NC=$catEnum->size())
+##  gcenum => $localCatEnum,         ##-- global cat enum         ($NCg=$globalCatEnum->size())
 ##  tenum => $termEnum,              ##-- term (lemma) enum       ($NT=$termEnum->size())
 ##  denum => $docEnum,               ##-- document (label) enum   ($ND=$docEnum->size()=scalar(@docs))
 ##  ##
@@ -109,20 +103,11 @@ sub new {
 			       seed => undef,
 			       smoothf=>1+1e-5,
 			       xn => 0,
-			       cut0p => 0.5,
-			       cut1p => 0.5,
-			       cut1w => 0.5,
-			       cutval => 100,
 
 			       ##-- data: post-compile
 			       svd=>undef,
 			       xdm=>undef,
 			       xcm=>undef,
-			       c1dist_mu=>undef,
-			       c1dist_sd=>undef,
-			       c0dist_mu=>undef,
-			       c0dist_sd=>undef,
-			       cutoff=>undef,
 
 			       ##-- user args
 			       @_,
@@ -172,9 +157,9 @@ sub compile {
   #@{$map->{docs}} = qw();
 
   ##-- training-internal cross-check
-  $map->compileCrossCheck();
-  $map->compileFit();
-  $map->compileCutoffs();
+  #$map->compileCrossCheck();
+  #$map->compileFit();
+  #$map->compileCutoffs();
 
   ##-- local compilation (final)
   $map->compileLocal(%opts, label=>'FINAL', svdShrink=>1, svdCache=>1);
@@ -212,6 +197,7 @@ sub clearTrainingCache {
 ## $map = $map->compileCutoffs(%opts)
 ##  + compiles $map->{cutoff} from $map->{c(0|1)dist_(mu|sd)}, $map->{cut(0|1)p}, $map->{cut1w}
 ##  + %opts: overrides @$map{cut*}
+##  + OBSOLETE
 sub compileCutoffs {
   my ($map,%opts) = @_;
   if (!defined($map->{c0dist_mu})) {
@@ -255,6 +241,7 @@ sub compileCutoffs {
 
 ## $map = $map->compileFit()
 ##  + compiles fitting paramters from $map->{dc_dist}, ($map->{dc_d2c} or $map->{dcm})
+##  + OBSOLETE
 sub compileFit {
   my $map = shift;
 
@@ -386,6 +373,7 @@ sub compileFit {
 ## $map = $map->loadCrossCheckEval($eval)
 ##  + populates $map->{dc_dist} from a DocClassify::Eval object
 ##  + cross-check data should have been created on a subset of the corpus used to train this mapper!
+##  + OBSOLETE
 sub loadCrossCheckEval {
   my ($map,$eval) = @_;
   $map->vlog('info',"loadCrossCheckEval(): ".($eval->{label}||'')) if ($map->{verbose});
@@ -408,7 +396,7 @@ sub loadCrossCheckEval {
 
   ##-- $dc_dist: pdl($NDx,$NC): [$dix,$ci] -> dist($ci,$di)
   my $dc_dist = zeroes($NDx,$NC)+2; ##-- initialize to a meaningful maximum
-  my ($lab,$d12,@dcats2,@dcname,@dci,@dcdist,$di);
+  my ($lab,$d12,@dcats2,@gotcat,@dcname,@dci,@dcdist,$di);
   while (($lab,$d12)=each(%{$eval->{lab2docs}})) {
     if (!defined($di = $d_sym2id->{$lab})) {
       $map->logwarn("loadCrossCheckEval(): no ID for doc label '$lab' -- skipping");
@@ -432,6 +420,7 @@ sub loadCrossCheckEval {
 ## $map = $map->compileCrossCheck()
 ##  + does cross-checking for training data
 ##  + caches $map->{dc_dist}: dense pdl [$di,$ci] -> dist($di,$ci)
+##  + OBSOLETE
 sub compileCrossCheck {
   my $map = shift;
   my $xcn = $map->{xn};
@@ -649,6 +638,7 @@ sub compile_xcm {
 ## Functions: Utils
 
 ## $vals_fixed = fixvals($vals,$isgood_mask,$fixval)
+##  + OBSOLETE?
 sub fixvals {
   my ($vals,$isgood,$fixval) = @_;
   $isgood = (($vals->isfinite)&($vals>0)) if (!defined($isgood) || $isgood->isnull);
@@ -687,12 +677,6 @@ sub mapDocument {
   ##-- compute distance to each centroid
   my $xdm   = $map->svdApply($tdm);
   my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$xdm,cdata=>$map->{xcm})->lclip(0);
-
-  ##-- apply cutoffs if available
-  if (defined($map->{cutoff})) {
-    $map->{cutval} = 100 if (!defined($map->{cutval}));
-    $cd_dist->where($cd_dist > $map->{cutoff}) += $map->{cutval};
-  }
 
   ##-- convert distance to similarity
   my ($cd_sim);

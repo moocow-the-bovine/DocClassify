@@ -24,6 +24,7 @@ use DocClassify::Mapper::ByLemma;
 use DocClassify::Mapper::LSI;
 use DocClassify::Mapper::LSI::KNN;
 use DocClassify::Mapper::LSI::ByCat;
+use DocClassify::Mapper::Cutoff;
 
 use DocClassify::Eval;
 

@@ -79,7 +79,7 @@ sub trainCorpus {
 ##  + REQUIRED
 sub trainDocument {
   my ($map,$doc) = @_;
-  confess(ref($map)."::trainDocument(): not implemented!");
+  $map->logconfess("trainDocument(): not implemented!");
   return $map;
 }
 
@@ -122,7 +122,7 @@ sub mapCorpus {
 ##  + REQUIRED
 sub mapDocument {
   my ($map,$doc) = @_;
-  confess(ref($map)."::mapDocument(): not implemented!");
+  $map->logconfess("mapDocument(): not implemented!");
   return $doc;
 }
 

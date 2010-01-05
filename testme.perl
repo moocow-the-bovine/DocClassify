@@ -2829,7 +2829,8 @@ sub load_eval {
 sub eval2dcdist {
   my $eval = shift;
 
-  ##~~ vars
+  ##--------------------
+  ## vars
   our $lab2docs = $eval->{lab2docs};
 
   ##--------------------
@@ -2865,14 +2866,14 @@ sub eval2dcdist {
   ##--------------------
   ## $dc_dist (from Mapper::LSI::loadCrossCheckEval()
   our $dc_dist = zeroes($ND,$NC)+2; ##-- initialize to max
-  my ($lab,@dcats2,@dci,@dcdist,$di,$got1); #$d12
+  my ($lab,@dcats2,@dci,@dcdist,@gotcat,$di); #$d12
   while (($lab,$d12)=each(%$lab2docs)) {
     if (!defined($di = $d_sym2id->{$lab})) {
       warn("$0: no internal ID for doc label '$lab' -- skipping");
       next;
     }
-    $got1=0;
-    @dcats2 = grep {$_->{id}!=1 || ((!$got1) && ($got1=1))} @{$d12->[1]{cats}}; ##-- VZ-Specific HACK (only 1 cat w/ id==1)
+    @gotcat = qw();
+    @dcats2 = grep {!$gotcat[$_->{id}] && ($gotcat[$_->{id}]=1)} @{$d12->[1]{cats}}; ##-- handle dup cats (e.g. nullCat)
     @dci    = grep {defined($lc_sym2id->{$dcats2[$_]{name}})} (0..$#dcats2);
     @dcdist = map {$dcats2[$_]{dist_raw}} @dci;
     $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{map {$dcats2[$_]{name}} @dci}])) .= pdl(\@dcdist);

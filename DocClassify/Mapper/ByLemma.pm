@@ -58,8 +58,8 @@ our $verbose = 3;
 ##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'
 ##  ##
 ##  ##-- data: enums
-##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NCg=$globalCatEnum->size())
-##  gcenum => $localCatEnum,         ##-- global cat enum         ($NC=$catEnum->size())
+##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NC=$catEnum->size())
+##  gcenum => $localCatEnum,         ##-- global cat enum         ($NCg=$globalCatEnum->size())
 ##  tenum => $termEnum,              ##-- term (lemma) enum       ($NT=$termEnum->size())
 ##  denum => $docEnum,               ##-- document (label) enum   ($ND=$docEnum->size()=scalar(@docs))
 ##  docids => $docIdPdl,             ##-- document id subset: pdl($ND_local): [$doc_pdl_index] -> $docid_denum

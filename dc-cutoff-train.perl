@@ -26,6 +26,9 @@ our $verbose = setVerboseOptions(2);
 
 	 #corpusLoad=>{optsLoad('corpus'),verboseIO=>0},
 	 #corpusSave=>{optsSave('corpus'),verboseIO=>0},
+
+	 evalLoad=>{optsLoad('eval'), verboseIO=>1},
+	 cutoffSave=>{optsSave('cutoff'), verboseIO=>1},
 	);
 
 ##------------------------------------------------------------------------------
@@ -33,13 +36,20 @@ our $verbose = setVerboseOptions(2);
 ##------------------------------------------------------------------------------
 GetOptions(##-- common options
 	   dcOptions(),
+
+	   ##-- cutoff options
+	   'cut-negative-p|cnp|cut0p|c0p|c0=f' => \$opts{cutoffNew}{cut0p},
+	   'cut-positive-p|cpp|cut1p|c1p|c1=f' => \$opts{cutoffNew}{cut1p},
+	   'cut-positive-weight|cpw|cut1w|c1w|cw=f' => \$opts{cutoffNew}{cut1w},
+	   'cut-value|cut-add|cut-val|cutval|cv|ca=f' => \$opts{cutoffNew}{cutval},
+	   'cut-sink-cat|cut-cat|cutcat|ccat|cc=s' => \$opts{cutoffNew}{cutCat},
 	  );
 
 $verbose = $opts{verbose};
 our $outfile = $opts{outputFile};
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
-pod2usage({-exitval=>1, -verbose=>0, -msg=>'No Mapper file specified!'}) if (!@ARGV);
+#pod2usage({-exitval=>1, -verbose=>0, -msg=>'No Mapper file specified!'}) if (!@ARGV);
 
 
 ##------------------------------------------------------------------------------
@@ -54,56 +64,56 @@ pod2usage({-exitval=>1, -verbose=>0, -msg=>'No Mapper file specified!'}) if (!@A
 ##-- vars: logger
 our $logger = 'DocClassify::Program';
 
-##-- vars: mapper
-our $mapfile = shift(@ARGV);
-our %mapopts = optsLoad('map');
-our $map = DocClassify::Mapper->loadFile($mapfile,optsLoad('map'))
-  or die("$0: Mapper->load() failed for '$mapfile': $!");
-
-##-- map: override cutoff options
-our %cutopts = optsNew('map');
-delete(@cutopts{grep {$_ !~ /^cut/} keys(%cutopts)});
-@$map{keys %cutopts} = values %cutopts;
+##-- vars: cutoff pseudo-mapper
+our %cutopts = optsLoad('map');
+our $map = DocClassify::Mapper::Cutoff->new(optsNew('cutoff'))
+  or die("$0: Cutoff->new() failed: $!");
 
 ##-- map: override verbosity options
 $map->{verbose} = $verbose;
 
-##-- load input eval file
+##-- load input eval file(s)
+$logger->info("train()") if ($verbose);
 push(@ARGV,'-') if (!@ARGV);
-our $efile = shift(@ARGV);
-our $eval = DocClassify::Eval->new(optsNew('eval'))->loadFile($efile, optsLoad('eval'))
-  or die("$0: Eval->loadFile() failed for '$efile': $!");
+foreach my $efile (@ARGV) {
+  my $eval = DocClassify::Eval->new(optsNew('eval'))->loadFile($efile, optsLoad('eval'))
+    or die("$0: Eval->loadFile() failed for '$efile': $!");
+  $map->trainEval($eval);
+}
 
 ##-- compile cutoffs
-$map->loadCrossCheckEval($eval)
-  or die("$0: Mapper->loadCrossCheckEval() failed: $!");
-$map->compileFit()
-  or die("$0: Mapper->compileFit() failed: $!");
-$map->compileCutoffs()
-  or die("$0: Mapper->compileCutoffs() failed: $!");
+$logger->info("compile()") if ($verbose);
+$map->compile();
+
+$logger->info("clearTrainingCache()") if ($verbose);
+$map->clearTrainingCache() if ($opts{mapNew}{clearCache});
 
 ##-- save
-$map->saveFile($outfile, optsSave('map'));
+$map->saveFile($outfile, optsSave('cutoff'));
 
 =pod
 
 =head1 NAME
 
-dc-mapper-cutoffs.perl - train DocClassify::Mapper::LSI cutoffs from an eval file
+dc-cutoff-train.perl - train DocClassify::Mapper::Cutoff pseudo-mapper from eval file(s)
 
 =head1 SYNOPSIS
 
- dc-mapper-cutoffs.perl [OPTIONS] [CORPUS...]
+ dc-cutoff-train.perl [OPTIONS] [CORPUS...]
 
  General Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
 
- Mapper Options:
-  -mapper-option OPT=VAL # set generic (class-specific) mapper option
+ Cutoff Options:
+  -cut0p   P             # confidence level for negative-sample (0.5)
+  -cut1p   P             # confidence level for positive-sample (0.5)
+  -cut1w   W             # weight (0<=W<=1) for positive-point (0.5)
+  -cut-val ADD           # constant to add if cutoff is exceeded (100)
+  -cut-cat CAT           # name of cutoff sink cat (default: cat with id=0 in $lcenum)
 
  I/O Options:
-  -output-mode MODE      # I/O mode for output mapper (default=guess)
+  -output-mode MODE      # I/O mode for output pseudo-mapper (default=guess)
   -output-file FILE      # set corpus output file (default=-)
 
 =cut
