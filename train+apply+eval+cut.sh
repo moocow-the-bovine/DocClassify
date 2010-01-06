@@ -29,6 +29,7 @@ runcmd() {
   test -n "$DUMMY" || "$@" || rc=1
 }
 
+echo ""
 echo "##=================================================================="
 echo "## $0: RAW: TRAIN"
 runcmd ${progdir}dc-mapper-train.perl "$train.corpus.xml" "$@" -o "$train.$infix.map.bin" || exit 1
@@ -58,4 +59,7 @@ echo "##=================================================================="
 echo "## $0: CUTOFF: EVAL"
 runcmd ${progdir}dc-mapper-eval.perl "$test.corpus.xml" "$test.$infix.cut.out.xml" -o "$test.$infix.cut.eval.xml" || exit 6
 
+echo ""
+echo "##=================================================================="
+echo "## $0: DONE"
 exit 0
