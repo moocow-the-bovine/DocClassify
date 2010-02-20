@@ -14,7 +14,7 @@ WriteMakefile
 		    ##
 		    'MUDL' => undef, ##-- TODO: factor this out
 		    'PDL::CCS' => undef,
-		    'PDL::Ngrams' => undef,
+		    #'PDL::Ngrams' => undef,
 		    'PDL::VectorValued' => undef,
 		    ##
 		    'Cwd' => undef,

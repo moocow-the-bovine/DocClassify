@@ -8,7 +8,7 @@ package DocClassify::Utils;
 
 use PDL;
 use PDL::VectorValued;
-use PDL::Ngrams;
+#use PDL::Ngrams;
 use PDL::CCS;
 #use PDL::Fit::Linfit; ##-- weirdness in tests (DynaLoader crashes on PDL::Slatec sub-dependency)
 use IO::Handle;
