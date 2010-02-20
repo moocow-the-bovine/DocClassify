@@ -99,7 +99,7 @@ sub prepareSignalHandlers {
     $srv->logdie("caught signal SIG$signame - exiting");
   };
   my ($sig);
-  foreach $sig (qw(HUP TERM KILL)) {
+  foreach $sig (qw(HUP TERM KILL __DIE__)) {
     $SIG{$sig} = $catcher;
   }
   return $catcher;
