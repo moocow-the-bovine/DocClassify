@@ -63,6 +63,16 @@ sub noShadowKeys {
 }
 
 ##==============================================================================
+## Methods: API: Messages
+
+## $name = $map->name()
+##  + returns a symbolic name for this mapper (default=$map->{name} || "$map")
+sub name {
+  return ($_[0]{name} || "$_[0]");
+}
+
+
+##==============================================================================
 ## Methods: API: Training
 
 ## $map = $map->trainCorpus($corpus)
