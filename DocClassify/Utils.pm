@@ -13,6 +13,7 @@ use PDL::CCS;
 #use PDL::Fit::Linfit; ##-- weirdness in tests (DynaLoader crashes on PDL::Slatec sub-dependency)
 use IO::Handle;
 use IO::File;
+use Encode qw(encode decode);
 use Exporter;
 
 use XML::LibXML;
@@ -36,6 +37,7 @@ our %EXPORT_TAGS =
    libxml=>[qw(libxmlParser)],
    libxslt=>[qw(xsl_stylesheet)],
    plot=>[qw(usepgplot)],
+   encode => [qw(deep_encode deep_decode deep_recode deep_utf8_upgrade)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
@@ -333,6 +335,95 @@ BEGIN {
     my $final = ($thaw) ? qr/$thaw/ : qr//;
     Regexp::Copy::re_copy($final, $original);
   }
+}
+
+##==============================================================================
+## Functions: Deep recoding
+##==============================================================================
+
+## $decoded = deep_decode($encoding,$thingy,%options)
+##  + %options:
+##     force    => $bool,   ##-- decode even if the utf8 flag is set
+##     skipvals => \@vals,  ##-- don't decode (or recurse into)  $val (overrides $force)
+##     skiprefs => \@refs,  ##-- don't decode (or recurse into) $$ref (overrides $force)
+##     skippkgs => \@pkgs,  ##-- don't decode (or recurse into) anything of package $pkg (overrides $force)
+sub deep_decode {
+  my ($enc,$thingy,%opts) = @_;
+  my %skipvals = defined($opts{skipvals}) ? (map {($_=>undef)} @{$opts{skipvals}}) : qw();
+  my %skiprefs = defined($opts{skiprefs}) ? (map {($_=>undef)} @{$opts{skiprefs}}) : qw();
+  my %skippkgs = defined($opts{skippkgs}) ? (map {($_=>undef)} @{$opts{skippkgs}}) : qw();
+  my $force    = $opts{force};
+  my @queue = (\$thingy);
+  my ($ar);
+  while (defined($ar=shift(@queue))) {
+    if (exists($skiprefs{$ar}) || exists($skipvals{$$ar}) || (ref($$ar) && exists($skippkgs{ref($$ar)}))) {
+      next;
+    } elsif (UNIVERSAL::isa($$ar,'ARRAY')) {
+      push(@queue, map { \$_ } @{$$ar});
+    } elsif (UNIVERSAL::isa($$ar,'HASH')) {
+      push(@queue, map { \$_ } values %{$$ar});
+    } elsif (UNIVERSAL::isa($$ar, 'SCALAR') || UNIVERSAL::isa($$ar,'REF')) {
+      push(@queue, $$ar);
+    } elsif (!ref($$ar)) {
+      $$ar = decode($enc,$$ar) if (defined($$ar) && ($force || !utf8::is_utf8($$ar)));
+    }
+  }
+  return $thingy;
+}
+
+## $encoded = deep_encode($encoding,$thingy,%opts)
+##  + %opts:
+##     force => $bool,            ##-- encode even if the utf8 flag is NOT set
+##     skipvals => \@vals,        ##-- don't encode (or recurse into)  $val (overrides $force)
+##     skiprefs => \@refs,        ##-- don't encode (or recurse into) $$ref (overrides $force)
+##     skippkgs => \@pkgs,        ##-- don't encode (or recurse into) anything of package $pkg (overrides $force)
+sub deep_encode {
+  my ($enc,$thingy,%opts) = @_;
+  my %skipvals = defined($opts{skipvals}) ? (map {($_=>undef)} @{$opts{skipvals}}) : qw();
+  my %skiprefs = defined($opts{skiprefs}) ? (map {($_=>undef)} @{$opts{skiprefs}}) : qw();
+  my %skippkgs = defined($opts{skippkgs}) ? (map {($_=>undef)} @{$opts{skippkgs}}) : qw();
+  my $force    = $opts{force};
+  my @queue = (\$thingy);
+  my ($ar);
+  while (defined($ar=shift(@queue))) {
+    if (exists($skiprefs{$ar}) || !defined($$ar) || exists($skipvals{$$ar}) || (ref($$ar) && exists($skippkgs{ref($$ar)}))) {
+      next;
+    } elsif (UNIVERSAL::isa($$ar,'ARRAY')) {
+      push(@queue, map { \$_ } @{$$ar});
+    } elsif (UNIVERSAL::isa($$ar,'HASH')) {
+      push(@queue, map { \$_ } values %{$$ar});
+    } elsif (UNIVERSAL::isa($$ar, 'SCALAR') || UNIVERSAL::isa($$ar,'REF')) {
+      push(@queue, $$ar);
+    } elsif (!ref($$ar)) {
+      $$ar = encode($enc,$$ar) if (defined($$ar) && ($force || utf8::is_utf8($$ar)));
+    }
+  }
+  return $thingy;
+}
+
+## $recoded = deep_recode($from,$to,$thingy, %opts);
+sub deep_recode {
+  my ($from,$to,$thingy,%opts) = @_;
+  return deep_encode($to,deep_decode($from,$thingy,%opts),%opts);
+}
+
+## $upgraded = deep_utf8_upgrade($thingy)
+sub deep_utf8_upgrade {
+  my ($thingy) = @_;
+  my @queue = (\$thingy);
+  my ($ar);
+  while (defined($ar=shift(@queue))) {
+    if (UNIVERSAL::isa($$ar,'ARRAY')) {
+      push(@queue, map { \$_ } @{$$ar});
+    } elsif (UNIVERSAL::isa($$ar,'HASH')) {
+      push(@queue, map { \$_ } values %{$$ar});
+    } elsif (UNIVERSAL::isa($$ar, 'SCALAR') || UNIVERSAL::isa($$ar,'REF')) {
+      push(@queue, $$ar);
+    } elsif (!ref($$ar)) {
+      utf8::upgrade($$ar) if (defined($$ar));
+    }
+  }
+  return $thingy;
 }
 
 

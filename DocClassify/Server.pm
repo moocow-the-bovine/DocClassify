@@ -68,14 +68,19 @@ sub prepare {
     $pidfh->close()
   }
 
-  ##-- prepare: mappers
-  foreach (@{$srv->{maps}}) {
-    $srv->info("initializing mapper '".$_->name."'");
-    if (!$_->ensureLoaded) {
-      $srv->logconfess("initialization failed for analyzer '".$_->name."'; skipping");
-      $rc = 0;
-    }
+  ##-- prepare: mappers (NYI)
+  #foreach (@{$srv->{maps}}) {
+  #  $srv->info("initializing mapper '".$_->name."'");
+  #  if (!$_->ensureLoaded) {
+  #    $srv->logconfess("initialization failed for analyzer '".$_->name."'; skipping");
+  #    $rc = 0;
+  #  }
+  #}
+  ##-- check: mappers
+  if (!$srv->{maps} || !@{$srv->{maps}}) {
+    $srv->logconfess("prepare(): no mapers defined!");
   }
+  @{$srv->{maps}} = grep {defined($_)} @{$srv->{maps}};
 
   ##-- prepare: signal handlers
   $rc &&= $srv->prepareSignalHandlers();
@@ -96,7 +101,8 @@ sub prepareSignalHandlers {
   my $catcher = sub {
     my $signame = shift;
     $srv->finish();
-    $srv->logdie("caught signal SIG$signame - exiting");
+    $srv->fatal("caught signal '$signame' - exiting");
+    exit(255);
   };
   my ($sig);
   foreach $sig (qw(HUP TERM KILL __DIE__)) {
@@ -124,6 +130,7 @@ sub run {
 sub finish {
   my $srv = shift;
   unlink($srv->{pidfile}) if ($srv->{pidfile});
+  delete @SIG{qw(HUP TERM KILL __DIE__)}; ##-- unset signal handlers
   return 1;
 }
 

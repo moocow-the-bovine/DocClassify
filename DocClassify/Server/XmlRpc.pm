@@ -78,11 +78,10 @@ sub new {
 ## Methods: Encoding Hacks
 ##==============================================================================
 
-##-- CONTINUE HERE!
-
 ## \%rpcProcHash = $srv->wrapMethodEncoding(\%rpcProcHash)
 ##  + wraps an RPC::XML::procedure spec into $srv->{encoding}-safe code,
 ##    only if $rpcProcHash{wrapEncoding} is set to a true value
+##  + UNUSED
 sub wrapMethodEncoding {
   my $srv = shift;
   if (defined($srv->{encoding}) && $_[0]{wrapEncoding}) {
@@ -109,49 +108,31 @@ sub prepareLocal {
   ##-- get RPC::XML object
   my $xsrv = $srv->{xsrv} = RPC::XML::Server->new(%{$srv->{xopt}});
   if (!ref($xsrv)) {
-    $srv->logcroak("could not create underlying server object: $xsrv\n");
+    $srv->logconfess("could not create underlying server object: $xsrv\n");
   }
 
   ##-- hack: set server encoding
   if (defined($srv->{encoding})) {
-    $srv->info("(hack) setting RPC::XML::ENCODING = $srv->{encoding}");
+    $srv->info("setting RPC::XML::ENCODING = $srv->{encoding}");
     $RPC::XML::ENCODING = $srv->{encoding};
   }
   ##-- hack: set $RPC::XML::FORCE_STRING_ENCODINTG
-  $srv->info("(hack) setting RPC::XML::FORCE_STRING_ENCODING = 1");
+  $srv->debug("setting RPC::XML::FORCE_STRING_ENCODING = 1");
   $RPC::XML::FORCE_STRING_ENCODING = 1;
 
-  ##-- register analysis methods
-  my ($aname,$a,$aopts, $xp, $proc);
-  while (($aname,$a)=each(%{$srv->{as}})) {
-    $aopts = $srv->{aos}{$aname};
-    $aopts = RPC::XML::struct->new($aopts) if ($aopts);
-    foreach ($a->xmlRpcMethods) {
-      if (UNIVERSAL::isa($_,'HASH')) {
-	##-- hack method 'name'
-	$_->{name} = 'analyze' if (!defined($_->{name}));
-	$_->{name} = $aname.'.'.$_->{name} if ($aname);
-	$_->{name} = $srv->{procNamePrefix}.$_->{name} if ($srv->{procNamePrefix});
-	$_->{opts} = $aopts;
-	$srv->wrapMethodEncoding($_); ##-- hack encoding?
-      }
-      $xp = DocClassify::Server::XmlRpc::Procedure->new($_);
-      $xp = $xsrv->add_method($xp);
-      if (!ref($xp)) {
-	$srv->error("could not register XML-RPC procedure ".(ref($_) ? "$_->{name}()" : "'$_'")." for analyzer '$aname'\n",
-		    " + RPC::XML::Server error: $xp\n",
+  ##-- register analysis method(s)
+  my ($xp);
+  foreach ($srv->xmlRpcMethods) {
+    $xp = DocClassify::Server::XmlRpc::Procedure->new($_);
+    $xp = $xsrv->add_method($xp);
+    if (!ref($xp)) {
+      $srv->error("could not register XML-RPC procedure ".(ref($_) ? "$_->{name}()" : "'$_'")."\n",
+		  " + RPC::XML::Server error: $xp\n",
 		   );
-      } else {
-	$srv->info("registered XML-RPC procedure $_->{name}() for analyzer '$aname'\n");
-      }
+    } else {
+      $srv->info("registered XML-RPC procedure $_->{name}()\n");
     }
   }
-
-  ##-- register 'listAnalyzers' method
-  my $listproc = $srv->listAnalyzersProc;
-  $xsrv->add_proc( DocClassify::Server::XmlRpc::Procedure->new($listproc) );
-  $srv->info("registered XML-RPC listing procedure $listproc->{name}()\n");
-
   return 1;
 }
 
@@ -171,18 +152,95 @@ sub run {
 ## Methods: Additional
 ##==============================================================================
 
-## \%procSpec = $srv->listAnalyzersProc()
-sub listAnalyzersProc {
+## \@procs = $srv->xmlRpcMethods()
+##  + returns an array-ref of valid XML-RPC method-specs
+##    { name=>$name, code=>$code, signature=>\@sigs, help=>$str, ... }
+##  + see RPC::XML(3perl) for details
+##  + Signatures are:
+##    [ "$returnType1 $argType1_1 $argType1_2 ...", ..., "$returnTypeN ..." ]
+##  + known types (see http://www.xmlrpc.com/spec):
+##    Tag	          Type                                             Example
+##    "i4" or "int"	  four-byte signed integer                         42
+##    "boolean"	          0 (false) or 1 (true)                            1
+##    "string"	          string                                           hello world
+##    "double"            double-precision signed floating point number    -24.7
+##    "dateTime.iso8601"  date/time	                                   19980717T14:08:55
+##    "base64"	          base64-encoded binary                            eW91IGNhbid0IHJlYWQgdGhpcyE=
+##    "struct"            complex structure                                { x=>42, y=>24 }
+sub xmlRpcMethods {
   my $srv = shift;
-  my $anames = DocClassify::Utils::deep_encode($srv->{encoding},
-					    [ map {($srv->{procNamePrefix}||'').$_ } keys(%{$srv->{as}}) ]
-					   );
-  return {
-	  name => ($srv->{procNamePrefix}||'').'listAnalyzers',
-	  code => sub { return $anames; },
-	  help => 'list registered analyzer names',
-	  signature => [ 'array' ],
-	 };
+  my $prefix = $srv->{procNamePrefix};
+
+  return
+    (
+     {
+      ##-- Analyze Document
+      name => "${prefix}analyzeDocument",
+      code => $srv->analyzeDocumentSub,
+      signature => [
+		    'struct array', 'struct array struct',   ## array ?opts -> struct
+		    'struct struct', 'struct struct struct', ## struct ?opts -> struct
+		   ],
+      help => 'Analyze a single document (array of sentences or struct with "body" array field)',
+     },
+
+     {
+      ##-- test die
+      name => "${prefix}die",
+      code => sub { $srv->logconfess("I am slain!"); },
+      signature => [ 'string' ],
+      help => 'test die()',
+     },
+    );
+}
+
+## \&code = $srv->analyzeDocumentSub()
+##  + XML-RPC coderef
+##  + returns cached $srv->{_analyzeDocumentSub} if defined, otherwise caches it
+sub analyzeDocumentSub {
+  return $_[0]{_analyzeDocumentSub} if ($_[0]{_analyzeDocumentSub});
+
+  ##-- closure variables
+  my $srv = shift;
+  my $maps = $srv->{maps};
+  my $dcdoc = DocClassify::Document->new(string=>"<doc type=\"dummy\" src=\"$srv\"/>\n",label=>(ref($srv)." dummy document"));
+  my $dcsig = DocClassify::Signature->new();
+  my $sig_tf = $dcsig->{tf};
+  my $sig_Nr = \$dcsig->{N};
+
+  ##-- analysis sub
+  my ($indoc,$body,$s,$sl,$w,$wkey, $map);
+  my $sub = sub {
+    ##-- traverse input document, building signature (ignore any refs in input tokens)
+    $indoc = { body=>$indoc } if (UNIVERSAL::isa($indoc,'ARRAY'));  ##-- DTA::CAB compatibility hack
+    foreach $s (@{$indoc->{body}}) {
+      $sl = UNIVERSAL::isa($s,'ARRAY') ? $s : $s->{tokens};         ##-- DTA::CAB compatibility hack
+      foreach $w (@$sl) {
+	$wkey = join("\t", map {"$_=$w->{$_}"} grep {!ref($w->{$_})} sort keys(%$w));
+	$sig_tf->{$wkey}++;
+	$$sig_Nr++;
+      }
+    }
+
+    ##-- map & anntoate
+    $dcdoc->{sig} = $dcsig;
+    foreach $map (@$maps) {
+      $map->mapDocument($dcdoc);
+      $indoc->{$map->name} = [ $dcdoc->cats() ];
+    }
+    delete($indoc->{body}); ##-- don't bother returning this
+
+    ##-- cleanup
+    @{$dcdoc->{cats}} = qw();
+    $dcdoc->clearCache();
+    $dcsig->clear();
+
+    ##-- return
+    $indoc = DocClassify::Utils::deep_encode($srv->{encoding},$indoc) if ($srv->{encoding});
+    return $indoc;
+  };
+
+  return $srv->{_analyzeDocumentSub} = $sub;
 }
 
 ##========================================================================
@@ -259,11 +317,6 @@ DocClassify::Server::XmlRpc - DocClassify XML-RPC server using RPC::XML
  $rc = $srv->prepareLocal();
  $rc = $srv->run();
  
- ##========================================================================
- ## Methods: Additional
- 
- \%procSpec = $srv->listAnalyzersProc();
-
 =cut
 
 ##========================================================================
@@ -320,7 +373,7 @@ Constructor.
  encoding => $enc,          ##-- sets $RPC::XML::ENCODING on prepare(), used by underlying server
  ##
  ##-- (inherited from DocClassify::Server)
- as => \%analyzers,         ##-- ($name => $cab_analyzer_obj, ...)
+ maps => \@maps
 
 =back
 
@@ -340,7 +393,7 @@ Constructor.
 
 Wraps an RPC::XML::procedure spec into $srv-E<gt>{encoding}-safe code,
 only if $rpcProcHash{wrapEncoding} is set to a true value.
-This is a hack to which we resort because RPC::XML is so stupid.
+This is a hack to which we may need to resort because RPC::XML is so stupid.
 
 =back
 
@@ -373,26 +426,6 @@ Doesn't return until the server dies (or is killed).
 
 =cut
 
-##----------------------------------------------------------------
-## DESCRIPTION: DocClassify::Server::XmlRpc: Methods: Additional
-=pod
-
-=head2 Methods: Additional
-
-=over 4
-
-=item listAnalyzersProc
-
- \%procSpec = $srv->listAnalyzersProc();
-
-Returns an RPC::XML specification for the 'listAnalyzers' method,
-which just returns an array containing the names of all known analyzers.
-Used by L</prepareLocal>().
-
-=back
-
-=cut
-
 ##========================================================================
 ## END POD DOCUMENTATION, auto-generated by podextract.perl
 
@@ -403,17 +436,15 @@ Used by L</prepareLocal>().
 
 =head1 AUTHOR
 
-Bryan Jurish E<lt>jurish@bbaw.deE<gt>
+Bryan Jurish E<lt>jurish@retresco.deE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009 by Bryan Jurish
+Copyright (C) 2009-2010 by Bryan Jurish
 
 This package is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.4 or,
 at your option, any later version of Perl 5 you may have available.
-
-
 
 
 =cut
