@@ -183,14 +183,6 @@ sub xmlRpcMethods {
 		   ],
       help => 'Analyze a single document (array of sentences or struct with "body" array field)',
      },
-
-     {
-      ##-- test die
-      name => "${prefix}die",
-      code => sub { $srv->logconfess("I am slain!"); },
-      signature => [ 'string' ],
-      help => 'test die()',
-     },
     );
 }
 
