@@ -204,6 +204,7 @@ sub analyzeDocumentSub {
   my ($indoc,$body,$s,$sl,$w,$wkey, $map);
   my $sub = sub {
     ##-- traverse input document, building signature (ignore any refs in input tokens)
+    $indoc = shift;
     $indoc = { body=>$indoc } if (UNIVERSAL::isa($indoc,'ARRAY'));  ##-- DTA::CAB compatibility hack
     foreach $s (@{$indoc->{body}}) {
       $sl = UNIVERSAL::isa($s,'ARRAY') ? $s : $s->{tokens};         ##-- DTA::CAB compatibility hack
@@ -218,9 +219,10 @@ sub analyzeDocumentSub {
     $dcdoc->{sig} = $dcsig;
     foreach $map (@$maps) {
       $map->mapDocument($dcdoc);
-      $indoc->{$map->name} = [ $dcdoc->cats() ];
+      $indoc->{cats} = [ $dcdoc->cats() ];
     }
-    delete($indoc->{body}); ##-- don't bother returning this
+    #delete($indoc->{body});  ##-- don't bother returning this (except that some DTA::CAB formats puke without it)
+    @{$indoc->{body}} = qw(); ##   ... so we just clear it instead
 
     ##-- cleanup
     @{$dcdoc->{cats}} = qw();
