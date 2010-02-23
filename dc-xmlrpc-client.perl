@@ -40,7 +40,7 @@ our $timeout = 65535;   ##-- wait for a *long* time (65535 = 2**16-1 ~ 18.2 hour
 
 ##-- Analysis & Action Options
 our $analyzer = 'dc';
-our $action = 'doc';
+our $action = 'document';
 our @req    = qw(); ##-- request for 'request' mode
 our $doProfile = 1;
 
