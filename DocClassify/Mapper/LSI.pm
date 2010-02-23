@@ -60,6 +60,7 @@ our $verbose = 3;
 ##  ##==== INHERITED from Mapper::ByLemma
 ##  ##-- options
 ##  verbose => $vlevel,              ##-- verbosity level (default=$verbose)
+##  warnOnNullDoc => $bool,          ##-- do/don't warn about null docs (default=do)
 ##  lemmatize => \%opts,             ##-- options for $doc->typeSignature->lemmatize()
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
 ##  minFreq => $f,                   ##-- minimum global frequency f(t) for term-inclusion (default=0)
@@ -109,6 +110,9 @@ sub new {
 			       svd=>undef,
 			       xdm=>undef,
 			       xcm=>undef,
+
+			       ##-- warnings
+			       warnOnNullDoc => 1,
 
 			       ##-- user args
 			       @_,
@@ -673,7 +677,8 @@ sub mapDocument {
   ##-- get doc pdl
   my $tdm = $map->docPdlRaw($doc);
   my $tdN = $tdm->sum;
-  $map->logwarn("mapDocument(): null vector for document '$doc->{label}'") if ($map->{verbose} && $tdN==0);
+  $map->logwarn("mapDocument(): null vector for document '$doc->{label}'")
+    if ($map->{verbose} && $map->{warnOnNullDoc} && $tdN==0);
 
   ##-- compute distance to each centroid
   my $xdm   = $map->svdApply($tdm);
