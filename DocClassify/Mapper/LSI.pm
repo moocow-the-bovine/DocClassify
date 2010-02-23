@@ -704,7 +704,8 @@ sub mapDocument {
   @{$doc->{cats}} = map {
     $cname = $map->{lcenum}{id2sym}[$_];
     $ename = $cname eq '(null)' && $map->{nullCat} ? $map->{nullCat} : $cname;
-    scalar({sim=>$cd_sim->at($_,0),
+    scalar({
+	    sim=>$cd_sim->at($_,0),
 	    dist_raw=>$cd_dist->at($_,0),
 	    name=>$ename,
 	    id  =>$map->{gcenum}{sym2id}{$ename},

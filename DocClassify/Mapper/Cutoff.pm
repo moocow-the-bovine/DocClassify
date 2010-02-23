@@ -385,16 +385,40 @@ sub mapDocument {
     return $doc;
   }
 
-  ##-- apply cutoffs
+  ##-- preparation
   my $lcenum  = $map->{lcenum};
   my $cutoff  = $map->{cutoff};
   $map->{cutCatId} ||= 0;
-  my ($cname,$cid);
+
+  ##-- distribution stuff
+  my ($mu0,$sd0,$mu1,$sd1) = @$map{qw(c0dist_mu c0dist_sd c1dist_mu c1dist_sd)};
+  my $NC       = $mu0->nelem;
+  my $dist_ids = pdl(long, [@{$lcenum->{sym2id}}{map {$_->{name}} @{$doc->{cats}}}]);
+  my $dist_raw = zeroes($NC);
+  $dist_raw->index($dist_ids) .= pdl(double,[map {$_->{dist_raw}} @{$doc->{cats}}]);
+  ##
+  my $p1       = 1-_gausscdf($dist_raw,$mu1,$sd1);
+  #my $p1e      = $p1/$NC;
+  #my $p0       =   _gausscdf($dist_raw,$mu1,$sd1);
+  #my $p0e      = $p0/$NC;
+  #my $p0avg    = $p0e->sumover;
+
+  ##-- apply cutoffs
+  my ($cid);
   foreach (@{$doc->{cats}}) {
-    $cname = $_->{name};
     $_->{cut} = 0;
     $_->{deg} = 0;
-    next if (!defined($cid=$lcenum->{sym2id}{$cname}) || $cid==$map->{cutCatId} || $_->{dist_raw} <= $cutoff->at($cid));
+    next if (!defined($cid=$lcenum->{sym2id}{$_->{name}}));
+
+    ##-- mark "confidence" value
+    #$_->{confp} = ($p0avg + $p1e->at($cid) - $p0e->at($cid))->sclr;
+    ##--
+    $_->{confp} = $p1->at($cid);
+    ##
+    ##-- ... and quantize it too
+    $_->{confi} = int($_->{confp}*10);
+
+    next if ($cid==$map->{cutCatId} || $_->{dist_raw} <= $cutoff->at($cid)); ##-- no cutoff
     #$_->{dist_raw} += $map->{cutval};
     $_->{cut}       = 1;
   }
