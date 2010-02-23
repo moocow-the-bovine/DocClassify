@@ -36,6 +36,7 @@ use strict;
 ## Globals & Constants
 
 our $VERSION = 0.04;
+our @ISA = ('DocClassify::Logger'); ##-- for convenience
 
 ##==============================================================================
 ## Constructors etc.
