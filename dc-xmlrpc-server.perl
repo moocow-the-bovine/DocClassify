@@ -65,7 +65,7 @@ GetOptions(##-- General
 	   'pid-file|pidfile|pid|P=s'  => \$pidFile,
 
 	   ##-- Log4perl stuff
-	   'verbose|v|log-level|loglevel|ll|L=s'  => sub { $logLevel=uc($_[1]); },
+	   'verbose|v|log-level|loglevel|ll|L=s'  => sub { $logOpts{level}=uc($_[1]); },
 	   'log-config|logconfig|lc|l=s' => \$logConfigFile,
 	   'log-watch|logwatch|watch|lw|w!' => \$logWatch,
 	   'log-stderr|stderr|ls!' => \$logOpts{stderr},
