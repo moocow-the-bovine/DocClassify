@@ -7,6 +7,7 @@
 package DocClassify::Logger;
 use Carp;
 use Log::Log4perl;
+use Log::Log4perl::Level;
 use File::Basename;
 use strict;
 
@@ -16,22 +17,48 @@ use strict;
 
 our @ISA = qw();
 
+our ($MIN_LEVEL); ##-- minimum log level
+BEGIN {
+  $MIN_LEVEL = $Log::Log4perl::Level::LEVELS{(sort {$a<=>$b} keys(%Log::Log4perl::Level::LEVELS))[0]};
+}
+
 ## $DEFAULT_LOG_CONF = PACKAGE->defaultLogConf(%opts)
 ##  + default configuration for Log::Log4perl
 ##  + see Log::Log4perl(3pm), Log::Log4perl::Config(3pm) for details
 ##  + %opts:
-##     rootLevel => $LEVEL_OR_UNDEF,
-##     level     => $LEVEL_OR_UNDEF,
+##     rootLevel => $LEVEL_OR_UNDEF,  ##-- min root log level (default='WARN' or 'FATAL', depending on $^W)
+##     level     => $LEVEL_OR_UNDEF,  ##-- min log level (default=$MIN_LEVEL or 'INFO', depending on $^W)
+##     stderr    => $bool,            ##-- whether to log to stderr (default=1)
+##     file      => $filename,        ##-- log to $filename if true
+##     rotate    => $bool,            ##-- use Log::Dispatch::FileRotate if available and $filename is true
 sub defaultLogConf {
   my ($that,%opts) = @_;
-  $opts{rootLevel} = ($^W ? 'WARN'  : 'FATAL')  if (!exists($opts{rootLevel}));
-  $opts{level}     = ($^W ? 'TRACE' : 'DEBUG')  if (!exists($opts{level}));
+  $opts{rootLevel} = ($^W ? 'WARN'  : 'FATAL')    if (!exists($opts{rootLevel}));
+  $opts{level}     = ($^W ? $MIN_LEVEL : 'INFO')  if (!exists($opts{level}));
+  $opts{stderr}    = 1 if (!exists($opts{stderr}));
+  $opts{rotate}    = haveFileRotate() if ($opts{file} && $opts{rotate});
+
+  ##-- generate base config
   my $cfg = "
 ##-- Loggers
 log4perl.oneMessagePerAppender = 1     ##-- suppress duplicate messages to the same appender
-".($opts{rootLevel} ? "log4perl.rootLogger = $opts{rootLevel}, AppStderr" : '')."
-".($opts{level} ? "log4perl.logger.DocClassify = $opts{level}, AppStderr" : '')."
+";
 
+  if ($opts{rootLevel}) {
+    ##-- root logger
+    $cfg .= "log4perl.rootLogger = $opts{rootLevel}, AppStderr\n";
+  }
+
+  if ($opts{level} && ($opts{stderr} || $opts{file})) {
+    ##-- package logger
+    $cfg .= "log4perl.logger.DocClassify = $opts{level}, ".join(", ",
+								($opts{stderr} ? 'AppStderr' : qw()),
+								($opts{file}   ? 'AppFile'   : qw()),
+							       )."\n";
+  }
+
+  ##-- appenders: utils
+  $cfg .= "
 ##-- Appenders: Utilities
 log4perl.PatternLayout.cspec.G = sub { return File::Basename::basename(\"$::0\"); }
 
@@ -40,10 +67,54 @@ log4perl.appender.AppStderr = Log::Log4perl::Appender::Screen
 log4perl.appender.AppStderr.stderr = 1
 log4perl.appender.AppStderr.layout = Log::Log4perl::Layout::PatternLayout
 log4perl.appender.AppStderr.layout.ConversionPattern = %G[%P] %p: %c: %m%n
-#log4perl.appender.AppStderr.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss} %G[%P] %p: %c: %m%n
 ";
+
+  if ($opts{file} && $opts{rotate}) {
+    ##-- rotating file appender
+    $cfg .= "
+##-- Appender: AppFile: rotating file appender
+log4perl.appender.AppFileR = Log::Dispatch::FileRotate
+log4perl.appender.AppFileR.min_level = debug
+log4perl.appender.AppFileR.filename = $opts{file}
+log4perl.appender.AppFileR.mode = append
+log4perl.appender.AppFileR.size = 10485760
+log4perl.appender.AppFileR.max  = 10
+log4perl.appender.AppFileR.layout = Log::Log4perl::Layout::PatternLayout
+log4perl.appender.AppFileR.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss} [%P] (%p) %c: %m%n
+";
+  }
+  elsif ($opts{file}) {
+    ##-- raw file appender
+    $cfg .= "
+##-- Appender: AppFile: raw file appender
+log4perl.appender.AppFile = Log::Log4perl::Appender::File
+log4perl.appender.AppFile.filename = $opts{file}
+log4perl.appender.AppFile.mode = append
+log4perl.appender.AppFile.utf8 = 1
+log4perl.appender.AppFile.layout = Log::Log4perl::Layout::PatternLayout
+log4perl.appender.AppFile.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss} [%P] (%p) %c: %m%n
+";
+  }
+
   return $cfg;
 }
+
+##-- want vars:
+## LOG_STDERR : bool: log to stderr?
+## LOG_LEVEL  : DocClassify log-level
+## LOG_FILE   : log to (plain) file?
+## LOG_FILER  : log to (rotated) file?
+
+## $bool = CLASS::haveFileRotate()
+##  + returns true if Log::Dispatch::FileRotate is available
+sub haveFileRotate {
+  return 1 if (defined($Log::Dispatch::FileRotate));
+  eval "use Log::Dispatch::FileRotate;";
+  return 1 if (defined($Log::Dispatch::FileRotate) && !$@);
+  $@='';
+  return 0;
+}
+
 
 ##==============================================================================
 ## Functions: Initialization

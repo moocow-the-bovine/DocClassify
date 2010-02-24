@@ -34,11 +34,17 @@ our $daemonMode = 0;       ##-- do a fork() ?
 our $pidFile  = undef;     ##-- save PID to a file?
 
 ##-- Log config
-#our $logLevel = 'TRACE';   ##-- default log level for internal configuration (no 'TRACE' not in log4perl 1.07)
-our $logLevel = 'INFO';
-our $rootLevel = 'WARN';   ##-- root log level internal configuration
 our $logConfigFile = undef;
 our $logWatch = undef;
+
+our %logOpts = (
+		rootLevel=>'WARN',
+		#level=>'TRACE',     ##-- default log level for internal configuration (no 'TRACE' not in log4perl 1.07)
+		level=>'INFO',
+		stderr=>1,
+		file=>undef,
+		rotate=>1,
+	       );
 
 ##==============================================================================
 ## Command-line
@@ -62,6 +68,9 @@ GetOptions(##-- General
 	   'verbose|v|log-level|loglevel|ll|L=s'  => sub { $logLevel=uc($_[1]); },
 	   'log-config|logconfig|lc|l=s' => \$logConfigFile,
 	   'log-watch|logwatch|watch|lw|w!' => \$logWatch,
+	   'log-stderr|stderr|ls!' => \$logOpts{stderr},
+	   'log-file|lf=s' => \$logOpts{file},
+	   'log-rotate|rotate|lr!' => \$logOpts{rotate},
 	  );
 
 if ($version) {
@@ -106,7 +115,7 @@ sub CHLD_REAPER {
 if (defined($logConfigFile)) {
   DocClassify::Logger->logInit($logConfigFile,$logWatch);
 } else {
-  DocClassify::Logger->logInit(undef, rootLevel=>$rootLevel, level=>$logLevel);
+  DocClassify::Logger->logInit(undef, %logOpts);
 }
 
 ##-- create / load server object
@@ -174,9 +183,12 @@ dc-xmlrpc-server.perl - XML-RPC server for DocClassify queries
   -pidfile FILE                   ##-- save server PID to FILE
 
  Logging Options:                 ##-- see Log::Log4perl(3pm)
-  -log-level LEVEL                ##-- set minimum log level (internal config only)
-  -log-config L4PFILE             ##-- override log4perl config file
-  -log-watch , -nowatch           ##-- do/don't watch log4perl config file
+  -log-level LEVEL                ##-- set minimum log level (default=INFO)
+  -log-stderr , -nolog-stderr     ##-- do/don't log to stderr (default=true)
+  -log-file FILE                  ##-- log to FILE (default=none)
+  -log-rotate , -nolog-rotate     ##-- do/don't auto-rotate log files (default=true)
+  -log-config L4PFILE             ##-- log4perl config file (overrides -log-stderr, etc.)
+  -log-watch , -nowatch           ##-- do/don't watch log4perl config file (default=false)
 
 =cut
 
@@ -312,11 +324,26 @@ on the general logging mechanism.
 Set minimum log level.  Has no effect if you also specify L</-log-config>.
 Known levels: (trace|debug|info|warn|error|fatal).
 
+=item -log-stderr , -nolog-stderr
+
+Do/don't send log output log to stderr (default=true).
+
+=item -log-file FILE
+
+Send log output to FILE (default=none).
+
+=item -log-rotate , -nolog-rotate
+
+Do/don't auto-rotate log files (default=true).
+Auto-rotation only works if Log::Dispatch::FileRotate is installed on your system.
+
 =item -log-config L4PFILE
 
 User log4perl config file L4PFILE.
 Default behavior uses the log configuration
 string returned by L<DocClassify::Logger-E<gt>defaultLogConf()|DocClassify::Logger/item_defaultLogConf>.
+If specified, the log4perl configuration file L4PFILE overrides
+the logging options set with e.g. the -log-stderr, -log-file, and/or -log-rotate options.
 
 =item -log-watch , -nowatch
 
