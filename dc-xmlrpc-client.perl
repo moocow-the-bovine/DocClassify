@@ -229,7 +229,7 @@ sub si_str {
   return sprintf("%.2fT", $x/10**12) if ($x >= 10**12);
   return sprintf("%.2f", $x);
 }
-if ($doProfile) {
+if ($doProfile && $ndocs>0) {
   profile_stop();
   my $elapsed = profile_elapsed();
   my $docsPerSec = si_str($ndocs>0 && $elapsed>0 ? ($ndocs/$elapsed) : 0);

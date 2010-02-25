@@ -6,6 +6,8 @@
 
 package DocClassify::Server;
 use DocClassify;
+use DocClassify::Utils (':perms');
+use English;
 use IO::File;
 use Carp;
 use strict;
@@ -26,6 +28,8 @@ our @ISA = qw(DocClassify::Object DocClassify::Logger);
 ##     maps => \@maps,       ##-- chain of DocClassify::Mapper objects
 ##     pidfile => $pidfile,  ##-- if defined, process PID will be written to $pidfile on prepare()
 ##     pid => $pid,          ##-- server PID (default=$$) to write to $pidfile
+##     user => $user,        ##-- set real & effective user ids to $user (if defined)
+##     group => $group,      ##-- set real & effective group ids to $group (if defined)
 ##     #...
 ##    }
 sub new {
@@ -65,7 +69,8 @@ sub prepare {
     my $pidfh = IO::File->new(">$srv->{pidfile}")
       or $srv->logconfess("prepare(): could not write PID file '$srv->{pidfile}': $!");
     $pidfh->print(($srv->{pid} || $$), "\n");
-    $pidfh->close()
+    $pidfh->close();
+    $srv->debug("saved PID=".($srv->{pid} || $$)." to file '$srv->{pidfile}'");
   }
 
   ##-- prepare: mappers (NYI)
@@ -87,6 +92,18 @@ sub prepare {
 
   ##-- prepare: subclass-local
   $rc &&= $srv->prepareLocal(@_);
+
+  ##-- prepare: setgid, setuid
+  if (defined($srv->{group})) {
+    $srv->debug("before setgids($srv->{group}): EGID=".($EGID+0).", GID=".($GID+0));
+    $rc &&= defined(setgids($srv->{group}));
+    $srv->info("after setgids($srv->{group}): EGID=".($EGID+0).", GID=".($GID+0));
+  }
+  if (defined($srv->{user})) {
+    $srv->debug("before setuids($srv->{user}): EUID=".($EUID+0).", UID=".($UID+0));
+    $rc &&= defined(setuids($srv->{user}));
+    $srv->info("after setuids($srv->{user}): EUID=".($EUID+0).", UID=".($UID+0));
+  }
 
   ##-- log & return
   $srv->debug("initialization complete");

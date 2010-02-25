@@ -26,6 +26,7 @@ WriteMakefile
 		    #'Regexp::Copy' => undef, ##-- segfaults with Regexp::Copy-0.06, Storable v2.21, perl v5.10.0 / SuSE x86-64xo
 		    'XML::LibXML' => undef,
 		    'XML::LibXSLT' => undef,
+		    #'POSIX' => undef, # setuid, setgid
 		   },
 
    EXE_FILES   => [ glob('dc-*.perl'), ],

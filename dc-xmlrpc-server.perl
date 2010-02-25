@@ -3,6 +3,7 @@
 use lib qw(.);
 use DocClassify;
 use DocClassify::Server::XmlRpc;
+use DocClassify::Utils;
 use Encode qw(encode decode);
 use File::Basename qw(basename);
 use Getopt::Long qw(:config no_ignore_case);
@@ -32,6 +33,8 @@ our $serverEncoding = undef;
 ##-- Daemon mode options
 our $daemonMode = 0;       ##-- do a fork() ?
 our $pidFile  = undef;     ##-- save PID to a file?
+our $user = undef;         ##-- if set, switch real & effective uid to $user
+our $group = undef;        ##-- if set, switch real & effective gid to $group
 
 ##-- Log config
 our $logConfigFile = undef;
@@ -70,6 +73,8 @@ GetOptions(##-- General
 	   ##-- Daemon mode options
 	   'daemon|d!'                 => \$daemonMode,
 	   'pid-file|pidfile|pid|P=s'  => \$pidFile,
+	   'user|uid|u=s' => \$user,
+	   'group|gid|g=s' => \$group,
 
 	   ##-- Log4perl stuff
 	   'verbose|v|log-level|loglevel|ll|L=s'  => sub { $logOpts{level}=uc($_[1]); },
@@ -77,6 +82,7 @@ GetOptions(##-- General
 	   'log-watch|logwatch|watch|lw|w!' => \$logWatch,
 	   'log-stderr|stderr|le!' => \$logOpts{stderr},
 	   'log-file|lf=s' => \$logOpts{file},
+	   'nolog-file|nolf' => sub { delete($logOpts{file}); },
 	   'log-rotate|rotate|lr!' => \$logOpts{rotate},
 	   'log-syslog|syslog|ls!' => \$logOpts{syslog},
 	  );
@@ -128,7 +134,9 @@ if (defined($logConfigFile)) {
 
 ##-- create / load server object
 our $srv = DocClassify::Server::XmlRpc->loadFile($serverConfigFile);
-$srv->{pidfile} = $pidFile if (!$srv->{pidfile} && $pidFile);
+$srv->{user} = $user if (defined($user) && $user ne '');
+$srv->{group} = $group if (defined($group) && $group ne '');
+$srv->{pidfile} = $pidFile if ($pidFile);
 $srv->{xopt}{host} = $serverHost if (defined($serverHost));
 $srv->{xopt}{port} = $serverPort if (defined($serverPort));
 $srv->{encoding}   = $serverEncoding if (defined($serverEncoding));
@@ -188,13 +196,15 @@ dc-xmlrpc-server.perl - XML-RPC server for DocClassify queries
 
  Daemon Mode Options:
   -daemon , -nodaemon             ##-- do/don't fork() a server subprocess
-  -pidfile FILE                   ##-- save server PID to FILE
+  -pidfile PIDFILE                ##-- save server PID to PIDFILE
+  -user USER                      ##-- run server setuid as USER
+  -group GROUP                    ##-- run server setgid as GROUP
 
  Logging Options:                 ##-- see Log::Log4perl(3pm)
   -log-level LEVEL                ##-- set minimum log level (default=INFO)
   -log-stderr , -nolog-stderr     ##-- do/don't log to stderr (default=true)
   -log-syslog , -nolog-syslog     ##-- do/don't log to syslog (default=false)
-  -log-file FILE                  ##-- log directly to FILE (default=none)
+  -log-file LOGFILE               ##-- log directly to FILE (default=none)
   -log-rotate , -nolog-rotate     ##-- do/don't auto-rotate log files (default=true)
   -log-config L4PFILE             ##-- log4perl config file (overrides -log-stderr, etc.)
   -log-watch  , -nowatch          ##-- do/don't watch log4perl config file (default=false)
@@ -304,12 +314,36 @@ a single server subprocess and exit, reporting the PID
 of the child process.
 
 Useful for starting persistent servers from system-wide
-init scripts.  See also L</"-pidfile FILE">.
+init scripts.  See also the other options in this section.
 
-=item -pidfile FILE
+=item -pidfile PIDFILE
 
-Writes PID of the server process to FILE before running the
-server.  Useful for system init scripts.
+Writes PID of the server process to PIDFILE before running the server.
+PIDFILE and the directory containing it must be writable by the
+user invoking the server.
+
+=item -user USER
+
+Run server setuid (real and effective) as USER, which may
+be either a user name as accepted by getpwnam() or a numeric UID.
+Useful if the server is invoked by root, e.g. via a system init script,
+to distinguish between the priviledged user (e.g. root) I<invoking>
+the server and a non-privileged user (e.g. daemon) associated
+with the I<running> server.
+
+Caveat: running setuid is inherently dangerous.  Use of the
+C<-user> and C<-group> options should serve to eliminate the
+worst security risks associated with invoking this server as
+root, but some risk remains (exactly how much depends on your
+system, kernel, etc.).  The truly paranoid will ignore these
+options altogether and just invoke the server as a non-privileged
+user in the first place.
+
+=item -group GROUP
+
+Run server setgid (real and effective) as GROUP, which may be
+either a group name as accepted by getgrnam() or a numeric GID.
+See the caveats above under L</"-user USER">.
 
 =back
 
@@ -341,9 +375,13 @@ Do/don't send log output log to stderr (default=true).
 
 Do/don't send log output log to syslog (default=false).
 
-=item -log-file FILE
+=item -log-file LOGFILE
 
-Send log output directly to FILE (default=none).
+Send log output directly to LOGFILE (default=none).
+LOGFILE (and the directory containing it, if it doesn't yet exist or if you're
+using the -log-rotate option) must be writable by the
+user owning the running server - see the L</"-user"> and L</"-group"> options
+for details.
 
 =item -log-rotate , -nolog-rotate
 

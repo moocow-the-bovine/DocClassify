@@ -106,9 +106,12 @@ sub prepareLocal {
   my $srv = shift;
 
   ##-- get RPC::XML object
-  my $xsrv = $srv->{xsrv} = RPC::XML::Server->new(%{$srv->{xopt}});
+  #my $xsrv = $srv->{xsrv} = RPC::XML::Server->new(%{$srv->{xopt}});
+  my $xsrv = $srv->{xsrv} = DocClassify::Server::XmlRpc::RPC::XML::Server->new(%{$srv->{xopt}});
   if (!ref($xsrv)) {
-    $srv->logconfess("could not create underlying server object: $xsrv\n");
+    $srv->fatal("could not create underlying RPC::XML::Server object"
+		." (is port ".($srv->{xopt}{port}||80)." already bound?)");
+    $srv->logconfess("RPC::XML->new returned: $xsrv\n");
   }
 
   ##-- hack: set server encoding
@@ -252,6 +255,19 @@ sub analyzeDocumentSub {
   return $srv->{_analyzeDocumentSub} = $sub;
 }
 
+
+##========================================================================
+## PACKAGE: DocClassify::Server::XmlRpc::RPC::XML::Server
+##  + wraps RPC::XML::Server, so that system.identity() etc. come out nicely
+package DocClassify::Server::XmlRpc::RPC::XML::Server;
+use RPC::XML::Server;
+use strict;
+our @ISA = qw(RPC::XML::Server);
+
+sub version { return "$DocClassify::VERSION+".$_[0]->SUPER::version; }
+
+1;
+
 ##========================================================================
 ## PACKAGE: DocClassify::Server::XmlRpc::Procedure
 ##  + subclass of RPC::XML::Procedure
@@ -282,7 +298,6 @@ sub call {
     return $_[0]->SUPER::call(@_[1..$#_]);
   }
 }
-
 
 
 1; ##-- be happy

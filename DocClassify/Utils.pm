@@ -14,7 +14,9 @@ use PDL::CCS;
 use IO::Handle;
 use IO::File;
 use Encode qw(encode decode);
+#use POSIX; ##-- setuid, setgid
 use Exporter;
+use English; ##-- $UID=$<, $EUID=$>, $GID=$(, $EGID=$)
 
 use XML::LibXML;
 use XML::LibXSLT;
@@ -38,10 +40,42 @@ our %EXPORT_TAGS =
    libxslt=>[qw(xsl_stylesheet)],
    plot=>[qw(usepgplot)],
    encode => [qw(deep_encode deep_decode deep_recode deep_utf8_upgrade)],
+   perms => [qw(setuids setgids)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
 $EXPORT_TAGS{all} = [@EXPORT_OK];
+
+##==============================================================================
+## Functions: permissions (real & effective ids)
+
+## $new_uid = setuids($username_or_uid)
+##  + sets real & effective UIDs to $username_or_uid
+##  + be sure to call setgids() first if you're using
+##    this to drop root permissions
+sub setuids {
+  my $user = shift;
+  my $uid   = 0+($user =~ /^\d+$/ ? $user : scalar(getpwnam($user)));
+  $EUID = $uid;
+  confess(__PACKAGE__ . "::setuids($user): set EUID=$uid failed: $!") if ($! || $EUID != $uid);
+  $UID = $uid;
+  confess(__PACKAGE__ . "::setuids($user): set UID=$uid failed: $!") if ($! || $UID != $uid);
+  return $UID;
+}
+
+## $new_gid = setgids($groupname_or_gid)
+##  + sets real & effective GIDs to $groupname_or_gid
+##  + be sure to call setgids() first if you're using
+##    this to drop root permissions
+sub setgids {
+  my $group = shift;
+  my $gid   = 0+($group =~ /^\d+$/ ? $group : scalar(getgrnam($group)));
+  $EGID = $gid;
+  confess(__PACKAGE__ . "::setgids($group): set EGID=$gid failed: $!") if ($! || $EGID != $gid);
+  $GID = $gid;
+  confess(__PACKAGE__ . "::setgids($group): set GID=$gid failed: $!") if ($! || $GID != $gid);
+  return $GID;
+}
 
 ##==============================================================================
 ## Functions: plotting utilities
