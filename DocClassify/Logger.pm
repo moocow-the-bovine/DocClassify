@@ -67,6 +67,7 @@ log4perl.oneMessagePerAppender = 1     ##-- suppress duplicate messages to the s
 								($opts{file}   ? 'AppFile'   : qw()),
 								($opts{syslog} ? 'AppSyslog' : qw()),
 							       )."\n";
+    $cfg .= "log4perl.additivity.DocClassify = 0\n";
   }
 
   ##-- appenders: utils
