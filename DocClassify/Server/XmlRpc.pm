@@ -113,12 +113,27 @@ sub prepareLocal {
 
   ##-- hack: set server encoding
   if (defined($srv->{encoding})) {
-    $srv->info("setting RPC::XML::ENCODING = $srv->{encoding}");
+    $srv->debug("setting RPC::XML::ENCODING = $srv->{encoding}");
     $RPC::XML::ENCODING = $srv->{encoding};
   }
   ##-- hack: set $RPC::XML::FORCE_STRING_ENCODINTG
   $srv->debug("setting RPC::XML::FORCE_STRING_ENCODING = 1");
   $RPC::XML::FORCE_STRING_ENCODING = 1;
+
+  ##-- load mappers if required
+  foreach (@{$srv->{maps}}) {
+    if (ref($_) eq 'HASH') {
+      my $mh    = $_;
+      my $class = $_->{class} || 'DocClassify::Mapper';
+      my $file  = $_->{file};
+      $srv->logconfess("no 'file' attribute for non-mapper 'maps' element $_") if (!$file);
+      $_ = $class->loadFile($file, verboseIO=>1)
+	or $srv->logconfess("load failed for mapper file '$file'");
+      @$_{keys(%$mh)} = values(%$mh); ##-- override options
+      $_->{name} = $file if (!$_->{name});
+      $srv->debug("loaded mapper with name='$_->{name}' from file='$_->{file}'");
+    }
+  }
 
   ##-- register analysis method(s)
   my ($xp);
@@ -130,7 +145,7 @@ sub prepareLocal {
 		  " + RPC::XML::Server error: $xp\n",
 		   );
     } else {
-      $srv->info("registered XML-RPC procedure $_->{name}()\n");
+      $srv->debug("registered XML-RPC procedure $_->{name}()\n");
     }
   }
   return 1;

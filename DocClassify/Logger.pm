@@ -31,12 +31,23 @@ BEGIN {
 ##     stderr    => $bool,            ##-- whether to log to stderr (default=1)
 ##     file      => $filename,        ##-- log to $filename if true
 ##     rotate    => $bool,            ##-- use Log::Dispatch::FileRotate if available and $filename is true
+##     syslog    => $bool,            ##-- use Log::Dispatch::Syslog if available and true (default=false)
+##     sysLevel  => $level,           ##-- minimum level for syslog (default='debug' or 'info', depending on $^W)
+##                                    ##   : available levels: debug,info,notice,warning,error,critical,alert,emergency (== 0..7)
+##     sysName   => $sysName,         ##-- name for syslog (default=basename($0))
+##     sysIdent  => $sysIdent,        ##-- ident string for syslog (default=$sysName)
+##     sysFacility => $facility,      ##-- facility for syslog (default='daemon')
 sub defaultLogConf {
   my ($that,%opts) = @_;
   $opts{rootLevel} = ($^W ? 'WARN'  : 'FATAL')    if (!exists($opts{rootLevel}));
   $opts{level}     = ($^W ? $MIN_LEVEL : 'INFO')  if (!exists($opts{level}));
   $opts{stderr}    = 1 if (!exists($opts{stderr}));
   $opts{rotate}    = haveFileRotate() if ($opts{file} && $opts{rotate});
+  $opts{syslog}    = 0 if (!defined($opts{syslog}));
+  $opts{sysLevel}  = ($^W ? 'debug' : 'info') if (!$opts{sysLevel});
+  $opts{sysName}   = File::Basename::basename($0) if (!defined($opts{sysName}));
+  $opts{sysIdent}  = $opts{sysName} if (!defined($opts{sysIdent}));
+  $opts{sysFacility} = 'daemon' if (!defined($opts{sysFacility}));
 
   ##-- generate base config
   my $cfg = "
@@ -49,11 +60,12 @@ log4perl.oneMessagePerAppender = 1     ##-- suppress duplicate messages to the s
     $cfg .= "log4perl.rootLogger = $opts{rootLevel}, AppStderr\n";
   }
 
-  if ($opts{level} && ($opts{stderr} || $opts{file})) {
+  if ($opts{level} && ($opts{stderr} || $opts{file} || $opts{syslog})) {
     ##-- package logger
     $cfg .= "log4perl.logger.DocClassify = $opts{level}, ".join(", ",
 								($opts{stderr} ? 'AppStderr' : qw()),
 								($opts{file}   ? 'AppFile'   : qw()),
+								($opts{syslog} ? 'AppSyslog' : qw()),
 							       )."\n";
   }
 
@@ -61,13 +73,30 @@ log4perl.oneMessagePerAppender = 1     ##-- suppress duplicate messages to the s
   $cfg .= "
 ##-- Appenders: Utilities
 log4perl.PatternLayout.cspec.G = sub { return File::Basename::basename(\"$::0\"); }
+";
 
+  ##-- appender: stderr
+  $cfg .= "
 ##-- Appender: AppStderr
 log4perl.appender.AppStderr = Log::Log4perl::Appender::Screen
 log4perl.appender.AppStderr.stderr = 1
 log4perl.appender.AppStderr.layout = Log::Log4perl::Layout::PatternLayout
 log4perl.appender.AppStderr.layout.ConversionPattern = %G[%P] %p: %c: %m%n
 ";
+
+  ##-- appender: syslog
+  if ($opts{syslog}) {
+    $cfg .= "
+log4perl.appender.AppSyslog = Log::Dispatch::Syslog
+log4perl.appender.AppSyslog.name = $opts{sysName}
+log4perl.appender.AppSyslog.ident = $opts{sysIdent}
+log4perl.appender.AppSyslog.min_level = $opts{sysLevel}
+log4perl.appender.AppSyslog.facility = $opts{sysFacility}
+log4perl.appender.AppSyslog.logopt = pid
+log4perl.appender.AppSyslog.layout = Log::Log4perl::Layout::PatternLayout
+log4perl.appender.AppSyslog.layout.ConversionPattern = (%p) %c: %m%n
+";
+  }
 
   if ($opts{file} && $opts{rotate}) {
     ##-- rotating file appender
@@ -99,18 +128,22 @@ log4perl.appender.AppFile.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss} [%P
   return $cfg;
 }
 
-##-- want vars:
-## LOG_STDERR : bool: log to stderr?
-## LOG_LEVEL  : DocClassify log-level
-## LOG_FILE   : log to (plain) file?
-## LOG_FILER  : log to (rotated) file?
-
 ## $bool = CLASS::haveFileRotate()
 ##  + returns true if Log::Dispatch::FileRotate is available
 sub haveFileRotate {
   return 1 if (defined($Log::Dispatch::FileRotate));
   eval "use Log::Dispatch::FileRotate;";
   return 1 if (defined($Log::Dispatch::FileRotate) && !$@);
+  $@='';
+  return 0;
+}
+
+## $bool = CLASS::haveSyslog()
+##  + returns true if Log::Dispatch::Syslog is available
+sub haveSyslog {
+  return 1 if (defined($Log::Dispatch::Syslog));
+  eval "use Log::Dispatch::Syslog;";
+  return 1 if (defined($Log::Dispatch::Syslog) && !$@);
   $@='';
   return 0;
 }

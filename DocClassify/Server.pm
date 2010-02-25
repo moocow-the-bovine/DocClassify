@@ -88,8 +88,8 @@ sub prepare {
   ##-- prepare: subclass-local
   $rc &&= $srv->prepareLocal(@_);
 
-  ##-- return
-  $srv->info("initialization complete");
+  ##-- log & return
+  $srv->debug("initialization complete");
 
   return $rc;
 }

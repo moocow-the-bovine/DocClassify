@@ -42,8 +42,15 @@ our %logOpts = (
 		#level=>'TRACE',     ##-- default log level for internal configuration (no 'TRACE' not in log4perl 1.07)
 		level=>'INFO',
 		stderr=>1,
+
 		file=>undef,
 		rotate=>1,
+
+		syslog=>0,
+		sysIdent=>basename($0),
+		sysName =>basename($0),
+		sysFacility=>'daemon',
+		sysLevel=>undef,      ##-- default: from 'level' key
 	       );
 
 ##==============================================================================
@@ -68,9 +75,10 @@ GetOptions(##-- General
 	   'verbose|v|log-level|loglevel|ll|L=s'  => sub { $logOpts{level}=uc($_[1]); },
 	   'log-config|logconfig|lc|l=s' => \$logConfigFile,
 	   'log-watch|logwatch|watch|lw|w!' => \$logWatch,
-	   'log-stderr|stderr|ls!' => \$logOpts{stderr},
+	   'log-stderr|stderr|le!' => \$logOpts{stderr},
 	   'log-file|lf=s' => \$logOpts{file},
 	   'log-rotate|rotate|lr!' => \$logOpts{rotate},
+	   'log-syslog|syslog|ls!' => \$logOpts{syslog},
 	  );
 
 if ($version) {
@@ -185,10 +193,11 @@ dc-xmlrpc-server.perl - XML-RPC server for DocClassify queries
  Logging Options:                 ##-- see Log::Log4perl(3pm)
   -log-level LEVEL                ##-- set minimum log level (default=INFO)
   -log-stderr , -nolog-stderr     ##-- do/don't log to stderr (default=true)
-  -log-file FILE                  ##-- log to FILE (default=none)
+  -log-syslog , -nolog-syslog     ##-- do/don't log to syslog (default=false)
+  -log-file FILE                  ##-- log directly to FILE (default=none)
   -log-rotate , -nolog-rotate     ##-- do/don't auto-rotate log files (default=true)
   -log-config L4PFILE             ##-- log4perl config file (overrides -log-stderr, etc.)
-  -log-watch , -nowatch           ##-- do/don't watch log4perl config file (default=false)
+  -log-watch  , -nowatch          ##-- do/don't watch log4perl config file (default=false)
 
 =cut
 
@@ -328,9 +337,13 @@ Known levels: (trace|debug|info|warn|error|fatal).
 
 Do/don't send log output log to stderr (default=true).
 
+=item -log-syslog , -nolog-syslog
+
+Do/don't send log output log to syslog (default=false).
+
 =item -log-file FILE
 
-Send log output to FILE (default=none).
+Send log output directly to FILE (default=none).
 
 =item -log-rotate , -nolog-rotate
 
@@ -343,7 +356,7 @@ User log4perl config file L4PFILE.
 Default behavior uses the log configuration
 string returned by L<DocClassify::Logger-E<gt>defaultLogConf()|DocClassify::Logger/item_defaultLogConf>.
 If specified, the log4perl configuration file L4PFILE overrides
-the logging options set with e.g. the -log-stderr, -log-file, and/or -log-rotate options.
+the logging options set with e.g. the -log-stderr, -log-syslog, -log-file, etc. options.
 
 =item -log-watch , -nowatch
 
