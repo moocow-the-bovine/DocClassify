@@ -71,7 +71,7 @@ GetOptions(##-- General
 	   'encoding|e=s' => \$serverEncoding,
 
 	   ##-- Daemon mode options
-	   'daemon|d!'                 => \$daemonMode,
+	   'daemon|fork|d!'                 => \$daemonMode,
 	   'pid-file|pidfile|pid|P=s'  => \$pidFile,
 	   'user|uid|u=s' => \$user,
 	   'group|gid|g=s' => \$group,
@@ -195,7 +195,7 @@ dc-xmlrpc-server.perl - XML-RPC server for DocClassify queries
   -encoding ENCODING              ##-- override server encoding (default=UTF-8)
 
  Daemon Mode Options:
-  -daemon , -nodaemon             ##-- do/don't fork() a server subprocess
+  -fork , -nofork                 ##-- do/don't fork() a server subprocess
   -pidfile PIDFILE                ##-- save server PID to PIDFILE
   -user USER                      ##-- run server setuid as USER
   -group GROUP                    ##-- run server setgid as GROUP
@@ -306,7 +306,7 @@ Default=UTF-8.
 
 =over 4
 
-=item -daemon , -nodaemon
+=item -fork , -nofork
 
 Do/don't fork() a server subprocess (default: don't).
 If running in daemon mode, the program should simply spawn
