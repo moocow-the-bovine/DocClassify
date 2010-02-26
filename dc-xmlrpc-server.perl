@@ -111,7 +111,9 @@ sub CHLD_REAPER {
   my $waitedpid = wait();
 
   ##-- remove pidfile if defined
-  unlink($pidFile) if (defined($pidFile) && -r $pidFile);
+  ## + UNSAFE, since we might be exiting because the port was already occupied
+  ##   by another daemon who wrote that pidfile!
+  #unlink($pidFile) if (defined($pidFile) && -r $pidFile);
 
   # loathe sysV: it makes us not only reinstate
 
@@ -141,18 +143,25 @@ $srv->{xopt}{host} = $serverHost if (defined($serverHost));
 $srv->{xopt}{port} = $serverPort if (defined($serverPort));
 $srv->{encoding}   = $serverEncoding if (defined($serverEncoding));
 
+sub serverPrepare {
+  ##-- prepare the server in parent process (catch early errors)
+  $srv->info("serverPrepare(): initializing server");
+  $srv->info("serverPrepare(): using DocClassify version $DocClassify::VERSION");
+  $srv->info("serverPrepare(): CWD ", abs_path(getcwd));
+  $srv->prepare()
+    or die("$0: ", ref($srv)."->prepare() failed: $!");
+}
+
 ##-- serverMain(): main post-preparation code; run in subprocess if we're in daemon mode
 sub serverMain {
-  ##-- prepare & run server
-  $srv->info("serverMain(): initializing server");
-  $srv->info("serverMain(): using DocClassify version $DocClassify::VERSION");
-  $srv->info("serverMain(): CWD ", abs_path(getcwd));
-  $srv->prepare()
-    or $srv->logdie("prepare() failed!");
+  ##-- just run server
   $srv->run();
   $srv->finish();
   $srv->info("exiting");
 }
+
+##-- always prepare
+serverPrepare();
 
 ##-- check for daemon mode
 if ($daemonMode) {
@@ -161,6 +170,8 @@ if ($daemonMode) {
   if ( ($pid=fork()) ) {
     ##-- parent
     DocClassify->info("spawned daemon subprocess with PID=$pid\n");
+    $srv->writePidFile($pid)
+      or die("$0: failed to write PID file '$srv->{pidfile}': $!");
   } else {
     ##-- daemon-child
     DocClassify->logdie("$prog: fork() failed: $!") if (!defined($pid));

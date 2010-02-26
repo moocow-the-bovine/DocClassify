@@ -28,6 +28,7 @@ our @ISA = qw(DocClassify::Object DocClassify::Logger);
 ##     maps => \@maps,       ##-- chain of DocClassify::Mapper objects
 ##     pidfile => $pidfile,  ##-- if defined, process PID will be written to $pidfile on prepare()
 ##     pid => $pid,          ##-- server PID (default=$$) to write to $pidfile
+##     wrotepid => $bool,    ##-- true if this instance has written the $pidfile
 ##     user => $user,        ##-- set real & effective user ids to $user (if defined)
 ##     group => $group,      ##-- set real & effective group ids to $group (if defined)
 ##     #...
@@ -37,7 +38,8 @@ sub new {
   my $obj = bless({
 		   maps => [],
 		   #pidfile=>undef,
-		   #pid=>$pid,
+		   #pid=>$$,
+		   #wrotepid=>0,
 		   ##
 		   ##-- user args
 		   @_
@@ -63,15 +65,6 @@ sub prepare {
 
   ##-- prepare: logger
   DocClassify::Logger->ensureLog();
-
-  ##-- prepare: PID file
-  if (defined($srv->{pidfile})) {
-    my $pidfh = IO::File->new(">$srv->{pidfile}")
-      or $srv->logconfess("prepare(): could not write PID file '$srv->{pidfile}': $!");
-    $pidfh->print(($srv->{pid} || $$), "\n");
-    $pidfh->close();
-    $srv->debug("saved PID=".($srv->{pid} || $$)." to file '$srv->{pidfile}'");
-  }
 
   ##-- prepare: mappers (NYI)
   #foreach (@{$srv->{maps}}) {
@@ -133,6 +126,23 @@ sub prepareSignalHandlers {
 ##  + called by prepare() after default prepare() guts have run
 sub prepareLocal { return 1; }
 
+## $bool = $srv->writePidFile()
+## $bool = $srv->writePidFile($pid)
+##  + writes $srv->{pidfile} if defined
+sub writePidFile {
+  my $srv = shift;
+  $srv->{pid} = shift if (@_);
+  $srv->{pid} = $$ if (!$srv->{pid});
+  if (defined($srv->{pidfile})) {
+    my $pidfh = IO::File->new(">$srv->{pidfile}")
+      or $srv->logconfess("writePidFile($srv->{pid}): could not write PID to file '$srv->{pidfile}': $!");
+    $pidfh->print($srv->{pid}, "\n");
+    $pidfh->close();
+    $srv->debug("saved PID=$srv->{pid} to file '$srv->{pidfile}'");
+    $srv->{wrotepid}=1;
+  }
+  return 1;
+}
 
 ## $rc = $srv->run()
 ##  + run the server (just a dummy method)
@@ -146,7 +156,7 @@ sub run {
 ##  + cleanup method; should be called when server dies or after run() has completed
 sub finish {
   my $srv = shift;
-  unlink($srv->{pidfile}) if ($srv->{pidfile});
+  unlink($srv->{pidfile}) if ($srv->{pidfile} && $srv->{wrotepid});
   delete @SIG{qw(HUP TERM KILL __DIE__)}; ##-- unset signal handlers
   return 1;
 }
