@@ -118,30 +118,9 @@ our $outfh = IO::File->new(">$outfile")
   or die("$0: open failed for output file '$outfile': $!");
 
 ##======================================================
-## Profiling
+## Profiling: see DocClassify::Utils ':profile' methods
 
 our $ndocs = 0;
-
-our @tv_values = qw();
-sub profile_start {
-  return if (scalar(@tv_values) % 2 != 0); ##-- timer already running
-  push(@tv_values,[gettimeofday]);
-}
-sub profile_stop {
-  return if (scalar(@tv_values) % 2 == 0); ##-- timer already stopped
-  push(@tv_values,[gettimeofday]);
-}
-sub profile_elapsed {
-  my ($started,$stopped);
-  my @values = @tv_values;
-  my $elapsed = 0;
-  while (@values) {
-    ($started,$stopped) = splice(@values,0,2);
-    $stopped  = [gettimeofday] if (!defined($stopped));
-    $elapsed += tv_interval($started,$stopped);
-  }
-  return $elapsed;
-}
 profile_start();
 
 ##======================================================
@@ -220,22 +199,8 @@ $cli->disconnect();
 $outfh->print(Data::Dumper->new([$rsp],['$rsp'])->Indent(1)->Dump)
   if ($bench_iters < 2);
 
-##-- profiling
-sub si_str {
-  my $x = shift;
-  return sprintf("%.2fK", $x/10**3)  if ($x >= 10**3);
-  return sprintf("%.2fM", $x/10**6)  if ($x >= 10**6);
-  return sprintf("%.2fG", $x/10**9)  if ($x >= 10**9);
-  return sprintf("%.2fT", $x/10**12) if ($x >= 10**12);
-  return sprintf("%.2f", $x);
-}
 if ($doProfile && $ndocs>0) {
-  profile_stop();
-  my $elapsed = profile_elapsed();
-  my $docsPerSec = si_str($ndocs>0 && $elapsed>0 ? ($ndocs/$elapsed) : 0);
-  print STDERR
-    (sprintf("%s: %d docs in %.2f sec: %s docs/sec\n",
-	     $prog, $ndocs, $elapsed, $docsPerSec));
+  print STDERR "$prog: ", profile_string($ndocs), "\n";
 }
 
 __END__

@@ -41,10 +41,50 @@ our %EXPORT_TAGS =
    plot=>[qw(usepgplot)],
    encode => [qw(deep_encode deep_decode deep_recode deep_utf8_upgrade)],
    perms => [qw(setuids setgids)],
+   profile => [qw(profile_start profile_stop profile_elapsed profile_string)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
 $EXPORT_TAGS{all} = [@EXPORT_OK];
+
+##==============================================================================
+## Functions: profiling
+
+our @tv_values = qw();
+sub profile_start {
+  require Time::HiRes;
+  return if (scalar(@tv_values) % 2 != 0); ##-- timer already running
+  push(@tv_values,[Time::HiRes::gettimeofday]);
+}
+sub profile_stop {
+  require Time::HiRes;
+  return if (scalar(@tv_values) % 2 == 0); ##-- timer already stopped
+  push(@tv_values,[Time::HiRes::gettimeofday]);
+}
+sub profile_elapsed {
+  require Time::HiRes;
+  my @values = @tv_values;
+  my $elapsed = 0;
+  my ($started,$stopped);
+  while (@values) {
+    ($started,$stopped) = splice(@values,0,2);
+    $stopped  = [Time::HiRes::gettimeofday] if (!defined($stopped));
+    $elapsed += Time::HiRes::tv_interval($started,$stopped);
+  }
+  return $elapsed;
+}
+
+## $stats_str = profile_string($ndocs)
+##  + implicitly calls profile_stop(), profile_elapsed();
+sub profile_string {
+  my $ndocs = shift;
+  $ndocs = 0 if (!defined($ndocs));
+  profile_stop();
+  my $elapsed = profile_elapsed();
+  my $docsPerSec = sistr($ndocs>0 && $elapsed>0 ? ($ndocs/$elapsed) : 0);
+  return sprintf("%d docs in %.2f sec: %s docs/sec", $ndocs, $elapsed, $docsPerSec);
+}
+
 
 ##==============================================================================
 ## Functions: permissions (real & effective ids)
@@ -118,7 +158,7 @@ sub sistr {
   my ($x, $how, $prec, $ws) = @_;
   $how  = 'f' if (!defined($how));
   $prec = '.2' if (!defined($prec));
-  $ws   = ' ' if (!defined($ws));
+  $ws   = '' if (!defined($ws));
   my $fmt = "%${prec}${how}";
   return sprintf("$fmt${ws}T", $x/10**12) if ($x >= 10**12);
   return sprintf("$fmt${ws}G", $x/10**9)  if ($x >= 10**9);

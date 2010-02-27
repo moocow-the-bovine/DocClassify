@@ -44,6 +44,7 @@ our $verbose = 3;
 ##  seed => $seed,                   ##-- random seed for corpus splitting (undef (default) for none)
 ##  #conf_nofp => $conf,              ##-- confidence level for negative-evidence parameter fitting (.95)
 ##  #conf_nofn => $conf,              ##-- confidence level for positive-evidence parameter fitting (.95)
+##  mapccs => $bool,                 ##-- if true, map documents using sparse PDL::CCS::Nd (default=false)
 ##  ##
 ##  ##-- data: post-compile()
 ##  svd => $svd,                     ##-- a MUDL::SVD object
@@ -105,6 +106,7 @@ sub new {
 			       smoothf=>1+1e-5,
 			       xn => 0,
 			       nullCat => '(auto)',
+			       mapccs => 0,
 
 			       ##-- data: post-compile
 			       svd=>undef,
@@ -519,7 +521,30 @@ sub compileLocal {
   ##-- epsilon (avoid null vectors)
   #$map->compile_xeps(%opts);
 
+  ##-- vector: $map->{tw_ccs}: ($NT): [$tid] -> weight($term[$tid])
+  #$map->compile_tw_ccs(%opts);
+
   return $map;
+}
+
+## $tw_ccs = $map->compile_tw_ccs(%opts)
+##  + compiles CCS representation of $map->{tw} to $map->{tw_ccs}
+##  + %opts:
+##     label     => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
+sub compile_tw_ccs {
+  my ($map,%opts) = @_;
+  my $label = $map->labelString(%opts);
+  $map->vlog('info',"compile_tw_ccs() [$label]: tw_ccs") if ($map->{verbose});
+  $map->{tw_ccs} = $map->{tw}->toccs;
+  $map->{tw_ccs}->missing(0);
+  return $map->{tw_ccs};
+}
+
+## $tw_ccs = $map->tw_ccs()
+##  + get or compile $map->{tw_ccs}
+sub tw_ccs {
+  return $_[0]{tw_ccs} if (defined($_[0]{tw_ccs}));
+  return $_[0]->compile_tw_ccs();
 }
 
 ## $map = $map->compile_svd(%opts)
@@ -639,6 +664,8 @@ sub compile_xcm {
   return $map;
 }
 
+
+
 ##==============================================================================
 ## Functions: Utils
 
@@ -670,12 +697,13 @@ sub mapDocument {
 
   ##-- be verbose
   $map->vlog('trace', "mapDocument(".$doc->label.")") if ($map->{verbose}>=3);
+  #$map->debug("mapDocument(".$doc->label."): [mapccs=".($map->{mapccs}||0)."]");
 
   ##-- sanity check(s)
   $map->logconfess("mapDocument(): no feature-category matrix 'xcm'!") if (!defined($map->{xcm}));
 
   ##-- get doc pdl
-  my $tdm = $map->docPdlRaw($doc);
+  my $tdm = $map->docPdlRaw($doc, $map->{mapccs});
   my $tdN = $tdm->sum;
   $map->logwarn("mapDocument(): null vector for document '$doc->{label}'")
     if ($map->{verbose} && $map->{warnOnNullDoc} && $tdN==0);
@@ -720,11 +748,47 @@ sub mapDocument {
 ##==============================================================================
 ## Methods: Misc
 
+## $docpdl_ccs_missing = $map->ccsDocMissing()
+##   + returns cached $map->{ccsDocMissing} if available
+##   + otherwise computes & caches
+##       $map->{ccsDocMissing} = $map->{tw}->average * log($map->{smoothf})
+sub ccsDocMissing {
+  return $_[0]{ccsDocMissing} if (defined($_[0]{ccsDocMissing}));
+  return $_[0]{ccsDocMissing} = $_[0]{tw}->average * log($_[0]{smoothf});
+}
+
+## $docpdl_abnil = $map->ccsSvdNil()
+##   + returns cached $map->{ccsSvdNil} if available
+##   + otherwise computes & caches $map->{ccsSvdNil} from $map->{svd}, $map->ccsDocMissing()
+sub ccsSvdNil {
+  return $_[0]{ccsSvdNil} if (defined($_[0]{ccsSvdNil}));
+  return $_[0]{ccsSvdNil} = $_[0]{svd}->apply0($_[0]->ccsDocMissing->squeeze->slice('*'.($_[0]{tw}->nelem).',*1'))->flat;
+}
+
 ## $dxpdl = $map->svdApply($fpdl)
 ##  + input $fpdl is dense pdl($NT,1):     [$tid,0]     => f($tid,$doc)
 ##  + output $dxpdl is dense pdl(1,$svdr): [$svd_dim,0] => $svd_val
 sub svdApply {
   my ($map,$fpdl) = @_;
+
+  if ($map->{mapccs}) {
+    ##-- ccs document-mapping mode
+    $fpdl = $fpdl->toccs if (UNIVERSAL::isa($fpdl,'PDL') && !UNIVERSAL::isa($fpdl,'PDL::CCS::Nd'));  ##-- $fpdl passed as dense PDL?
+    $fpdl = $map->sigPdlRaw($fpdl,1) if (!UNIVERSAL::isa($fpdl,'PDL::CCS::Nd')); ##-- $fpdl passed as doc?
+    $fpdl = $fpdl->dummy(0,1) if ($fpdl->ndims != 2);
+    $fpdl = $fpdl->make_physically_indexed();
+    my $wnd  = $fpdl->_whichND;
+    my $vals = $fpdl->_vals;
+    $vals += $map->{smoothf};
+    $vals->inplace->log;
+    if (defined($map->{tw}) && $vals->nelem > 1) {
+      $vals->slice("0:-2") *= $map->{tw}->index($wnd->slice("(0),")) ##-- apply term weights
+    }
+    $fpdl->missing($map->ccsDocMissing);                             ##-- approximate "missing" value
+    return $map->{svd}->apply0($fpdl,$map->ccsSvdNil);               ##-- apply SVD
+  }
+
+  ##-- dense document-mapping mode
   $fpdl = $fpdl->todense if (UNIVERSAL::isa($fpdl,'PDL::CCS::Nd')); ##-- avoid memory explosion in Nd::inner()
   $fpdl = $map->sigPdlRaw($fpdl) if (!UNIVERSAL::isa($fpdl,'PDL')); ##-- $fpdl passed as doc?
   $fpdl = ($fpdl+$map->{smoothf})->log;
