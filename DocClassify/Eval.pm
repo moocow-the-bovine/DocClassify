@@ -43,14 +43,26 @@ $EXPORT_TAGS{all} = [@EXPORT_OK];
 ##  ##
 ##  ##-- low-level data
 ##  lab2docs => \%lab2docs, ##-- $docLabel => [$doc1,$doc2]
-##  cat2eval => \%c2e,      ##-- ($catName => \%catEval, ''=>\%globalEval)
+##  cat2eval => \%c2e,      ##-- ($catName => \%catEval)
 ##                          ##   where:
-##                          ##       %catEval = ( $which=>$n )
-##                          ##   for    $which =~ /^pr|rc|F|((tp|fp|fn)_(docs|bytes))$/, and:
-##                          ##   global $which =~ /^((pr|rc|F)(_avg?))|((tp|fp|fn)_(docs|bytes)))$/
+##                          ##       %catEval = ( $which=>$n, class=>$class )
+##                          ##   for $which =~ /^pr|rc|F|(tp|fp|fn)$/,
+##                          ##   and $class one of ('null', 'safe', or 'unsafe')
+##  geval => \%g2e,         ##-- ($globalEvalMode => \%globalEval)
+##                          ##   where $globalEvalMode is of the form "${gclass}.${ghow}",
+##                          ##   for $gclass in:
+##                          ##      'all'      : all parsed cats
+##                          ##      'nz'       : all non-"null" cats (see 'nullCat' option)
+##                          ##      'nz_safe'  : all non-null cats with (tp+fn) >  ($pSafe*$Ndocs)
+##                          ##      'nz_unsafe': all non-null cats with (tp+fn) <= ($pSafe*$Ndocs)
+##                          ##   and ${ghow} in ('total','avg')
 ##  Ndocs => $Ndocs,        ##-- total number of docs
-##  Nbytes => $Nbytes,      ##-- total number of bytes
-##  errors => \%errs,       ##-- {"${catName1}\t${catName2}" => {ndocs=>$ndocs,nbytes=>$nbytes,fdocs=>$fdocs,fbytes=>$fbytes}, ...}
+##  psafe => $frac,         ##-- minimum relative frequency of "safe" cats (default=0.025=2.5%)
+##  nullCat => $catName,    ##-- name of 'null' cat; set to a non-cat for none
+##                          ##   + default='(auto)': cat w/ largest (tp+fn)
+##  errors => \%errs,       ##-- {"${catName1}\t${catName2}" => \%c12errors,
+##                          ##   where:
+##                                 $c12errors = {ndocs=>$ndocs,fdocs=>$fdocs}
 ##  #...
 sub new {
   my $that = shift;
@@ -63,13 +75,17 @@ sub new {
 			       ##-- low-level data
 			       lab2docs => {},
 			       cat2eval => {},
+			       geval => {},
 			       Ndocs => 0,
 			       Nbytes => 0,
 			       errors => {},
+			       psafe => 0.025,
+			       nullCat => '(auto)',
 
 			       ##-- user options
 			       @_,
 			      );
+  $eval->{nullCat0} = $eval->{nullCat} if (!$eval->{nullCat0}); ##-- save requested nullCat
 
   return $eval;
 }
@@ -88,11 +104,12 @@ sub clear {
   my $eval = shift;
   %{$eval->{lab2docs}} = qw();
   %{$eval->{cat2eval}} = qw();
+  %{$eval->{geval}} = qw();
   $eval->{Ndocs} = 0;
-  $eval->{Nbytes} = 0;
   $eval->{label1} = undef;
   $eval->{label2} = undef;
   %{$eval->{errors}} = qw();
+  $eval->{nullCat} = $eval->{nullCat0};
   return $eval;
 }
 
@@ -132,21 +149,26 @@ sub compare {
   }
 
   ##-- populate $c2e = $eval->{cat2eval}: tp,fp,fn: compare docs by label
-  ##   + also populates $errors = $eval->{errors}
+  ##   + also populates $eval->{errors}{ndocs}
+  ##   + global eval $eval->{geval} is NOT populated
   my ($docs, $cats1,$cats2, $cat1,$cat2);
   my ($ename);
   foreach $docs (values(%$l2doc)) {
     ($doc1,$doc2) = @$docs;
     ($cats1,$cats2) = (scalar($doc1->cats),scalar($doc2->cats));
-    ($cat1,$cat2) = ($cats1->[0],$cats2->[0]);                     ##-- exclusive membership only!
+    ($cat1,$cat2) = ($cats1->[0],$cats2->[0]);          ##-- exclusive membership only!
     if ($cat1->{name} eq $cat2->{name}) {
-      $eval->add_success($cat1->{name},$doc1);
+      $eval->{cat2eval}{$cat1->{name}}{tp}++;      ##-- true positive for $cat1,$cat2
       $cat1->{evalClass} = 'tp1';
       $cat2->{evalClass} = 'tp2';
     } else {
-      $eval->add_failure($cat1->{name},$cat2->{name},$doc1);
+      $eval->{cat2eval}{$cat1->{name}}{fn}++;      ##-- false negative for $cat1
+      $eval->{cat2eval}{$cat2->{name}}{fp}++;      ##-- false positive for $cat2
       $cat1->{evalClass} = 'fn';
       $cat2->{evalClass} = 'fp';
+      ##
+      $ename = $cat1."\t".$cat2;
+      $eval->{errors}{$ename}{ndocs}++;
     }
   }
 
@@ -176,7 +198,7 @@ sub addEval {
   ##-- add: c2e
   my $c2e = $eval1->{cat2eval};
   my ($cat,$chash1,$chash2);
-  my @addKeys = map {("${_}_docs","${_}_bytes")} qw(tp fp fn);
+  my @addKeys = qw(tp fp fn);
   while (($cat,$chash2)=each(%{$eval2->{cat2eval}})) {
     $chash1 = $c2e->{$cat};
     $chash1 = $c2e->{$cat} = {} if (!defined($chash1));
@@ -187,12 +209,7 @@ sub addEval {
   my ($ekey,$err);
   while (($ekey,$err)=each(%{$eval2->{errors}})) {
     $eval1->{errors}{$ekey}{ndocs} += ($err->{ndocs}||0);
-    $eval1->{errors}{$ekey}{nbytes} += ($err->{nbytes}||0);
   }
-
-  ##-- add: Ndocs, Nbytes
-  $eval1->{Ndocs}  += $eval2->{Ndocs};
-  $eval1->{Nbytes} += $eval2->{Nbytes};
 
   return $eval1;
 }
@@ -201,17 +218,113 @@ sub addEval {
 ## Methods: Compilation
 
 ## $eval = $eval->compile()
+##  + (re-)compiles $eval->{Ndocs} from $eval->{cat2eval} (tp+fn)
+##  + (re-)compiles $eval->{nullCat} if it was given as '(auto)'
 ##  + (re-)compiles $eval->{cat2eval}{$catName} pr,rc,F values
-##  + also $eval->{cat2eval}{''} doc-wise and byte-wise average values
-##  + also $eval->{errors}{qw(cat1 cat2 fdocs fbytes)}: cat-wise errors
+##  + (re-)compiles $eval->{geval} global evaluation modes
+##  + (re-)compiles  $eval->{errors}{qw(cat1 cat2 fdocs)}: cat-wise errors (fractional)
 sub compile {
   my $eval = shift;
-  ##
+
+  ##-- variables
+  my $c2e  = $eval->{cat2eval};
+  my ($cname,$c);
+
+  ##-- compile cat-wise pr,rc,F and $eval->{Ndocs}
+  my $Ndocs = 0;
+  foreach (values %$c2e) {
+    $_->{tp} ||= 0;
+    $_->{fp} ||= 0;
+    $_->{fn} ||= 0;
+    prF($_);
+    $Ndocs += $_->{tp} + $_->{fn};
+  }
+  $eval->{Ndocs} = $Ndocs;
+
+  ##-- compile $eval->{nullCat} if requested (i.e. '(auto)')
+  if (defined($eval->{nullCat}) && $eval->{nullCat} eq '(auto)') {
+    my $nNull = -1;
+    while (($cname,$c)=each(%$c2e)) {
+      if ( ($c->{tp}+$c->{fn}) > $nNull ) {
+	$eval->{nullCat} = $cname;
+	$nNull = ($c->{tp}+$c->{fn});
+      }
+    }
+  }
+
+  ##-- compile cat classes
+  while (($cname,$c)=each(%$c2e)) {
+    my $nsafe = ($eval->{psafe}||0) * $Ndocs;
+    if (defined($eval->{nullCat}) &&$cname eq $eval->{nullCat}) {
+      $c->{class} = 'null';
+    } elsif ($c->{tp}+$c->{fn} > $nsafe) {
+      $c->{class} = 'safe';
+    } else {
+      $c->{class} = 'unsafe';
+    }
+  }
+
+  ##-- compile globals
+  $eval->compileGlobals('all');
+  $eval->compileGlobals('nz',denyClassRe=>qr/^null$/);
+  $eval->compileGlobals('nz_safe',allowClassRe=>qr/^safe$/);
+  $eval->compileGlobals('nz_unsafe',allowClassRe=>qr/^unsafe$/);
+
+  ##-- return
+  return $eval;
+}
+
+## $eval = $eval->compileGlobals($gclass, %opts)
+##  + compiles $eval->{geval}{"$gclass.total","$gclass.avg"} from $eval->{cat2eval}
+##  + called by compile()
+##  + %opts:
+##     allowClassRe => $regex,  ##-- only allow cats $c with $c->{class} matching $regex
+##     denyClassRe  => $regex,  ##-- deny cats $c with $c->{class} matching $regex
+sub compileGlobals {
+  my ($eval,$gclass,%opts) = @_;
+  my $allowRe = $opts{allowClassRe};
+  my $denyRe  = $opts{denyClassRe};
+
+  ##-- compile: total mode
+  my $etotal = $eval->{geval}{"$gclass.total"} = {};
+  my @cats   = qw();
+  my ($name,$c);
+  while (($name,$c)=each(%{$eval->{cat2eval}})) {
+    next if (defined($allowRe) && $c->{class} !~ $allowRe);
+    next if (defined($denyRe) && $c->{class} =~ $denyRe);
+    $etotal->{tp} += $c->{tp};
+    $etotal->{fp} += $c->{fp};
+    $etotal->{fn} += $c->{fn};
+    push(@cats,$c);
+  }
+  prF($etotal);
+
+  ##-- compile: average mode
+  my $eavg = $eval->{geval}{"$gclass.avg"} = {};
+  my $ncats = scalar(@cats);
+  foreach $c (@cats) {
+    $eavg->{tp} += 1/$ncats * ($c->{tp}||0);
+    $eavg->{fp} += 1/$ncats * ($c->{fp}||0);
+    $eavg->{fn} += 1/$ncats * ($c->{fn}||0);
+    $eavg->{pr} += 1/$ncats * precision($c);
+    $eavg->{rc} += 1/$ncats * recall($c);
+  }
+  prF($eavg);
+
+  return $eval;
+}
+
+    ###~~~ OLD
+sub compile_OLD {
+  my $eval = shift;
+
+  ##-- variables
   my $c2e   = $eval->{cat2eval};
   my $Ncats = scalar(keys(%$c2e))-1;
+
   my $eg    = $c2e->{''};
   $eg       = $c2e->{''} = {} if (!defined($eg));
-  delete(@$eg{map {($_."_docs",$_."_bytes",$_."_docs_avg",$_."_bytes_avg")} qw(pr rc F)});
+  delete(@$eg{map {("${_}_docs","${_}_docs_avg")} qw(pr rc F)});
   my ($c);
   foreach (grep {$_ ne ''} keys(%$c2e)) {
     $c = $c2e->{$_};
@@ -222,27 +335,18 @@ sub compile {
     $eg->{pr_docs_avg} += 1/$Ncats * precision($c,'docs');
     $eg->{rc_docs_avg} += 1/$Ncats * recall($c,'docs');
     ##
-    $eg->{tp_bytes_avg} += 1/$Ncats * ($c->{tp_bytes}||0);
-    $eg->{fp_bytes_avg} += 1/$Ncats * ($c->{fp_bytes}||0);
-    $eg->{fn_bytes_avg} += 1/$Ncats * ($c->{fn_bytes}||0);
-    $eg->{pr_bytes_avg} += 1/$Ncats * precision($c,'bytes');
-    $eg->{rc_bytes_avg} += 1/$Ncats * recall($c,'bytes');
-    ##
-    prF($c,$_) foreach (qw(docs bytes)); ##-- ensure pr,rc,F computed
+    prF($c,'docs') ##-- ensure pr,rc,F computed
   }
   $eg->{F_docs_avg}  = F($eg,'docs_avg');
-  $eg->{F_bytes_avg} = F($eg,'bytes_avg');
-  prF($eg,$_) foreach (qw(docs bytes)); ##-- ensure pr,rc,F computed
+  prF($eg,'docs'); ##-- ensure pr,rc,F computed
 
   ##-- ensure errors are defined
   my ($ekey,$err);
   my $Ndocs_errs = $eval->{Ndocs} - $eg->{tp_docs};
-  my $Nbytes_errs = $eval->{Nbytes} - $eg->{tp_bytes};
   while (($ekey,$err)=each(%{$eval->{errors}})) {
     @$err{qw(cat1 cat2)} = split(/\t/,$ekey);
-    @$err{$_} ||= 0 foreach (qw(ndocs nbytes));
+    $err->{docs} ||= 0;
     $err->{fdocs}  = frac($err->{ndocs},$Ndocs_errs);
-    $err->{fbytes} = frac($err->{nbytes},$Nbytes_errs);
   }
 
   return $eval;
@@ -250,101 +354,59 @@ sub compile {
 
 ## $bool = $eval->compiled()
 ##  + returns true iff pr,rc,F have been compiled
-##  + really just checks for $eval->{cat2eval}{''}{F_docs}
+##  + really just checks for non-empty $eval->{geval}
 sub compiled {
-  return defined($_[0]{cat2eval}{''}{F_docs});
+  return scalar(%{$_[0]{geval}});
 }
 
 ## $eval = $eval->uncompile()
-##  + un-compiles $eval->{cat2eval}{$catName} pr,rc,F values
-##  + un-compiles $eval->{cat2eval}{''} doc-wise and byte-wise average values
+##  + deletes $eval->{cat2eval}{$catName} pr,rc,F values
+##  + clears $eval->{geval}
+##  + re-sets $eval->{nullCat}
 sub uncompile {
   my $eval = shift;
-  my @delkeys = map {("${_}_docs", "${_}_bytes", "${_}_docs_avg", "${_}_bytes_avg")} qw(pr rc F);
+  my @delkeys = qw(pr rc F);
   delete(@$_{@delkeys}) foreach (values(%{$eval->{cat2eval}}));
+  %{$eval->{geval}} = qw();
+  $eval->{nullCat} = $eval->{nullCat0};
   return $eval;
 }
 
 ##==============================================================================
 ## Methods: Utilities
 
-## $eval = $eval->add_success($catName,$doc1)
-sub add_success {
-  my ($eval,$cat,$doc) = @_;
-  my $nbytes = ($doc->sizeBytes||0);
-  $eval->{cat2eval}{$cat}{tp_docs}++;
-  $eval->{cat2eval}{$cat}{tp_bytes} += $nbytes;
-  $eval->{cat2eval}{''}{tp_docs}++;
-  $eval->{cat2eval}{''}{tp_bytes} += $nbytes;
-  $eval->{Ndocs}++;
-  $eval->{Nbytes} += $nbytes;
-  return $eval;
-}
-
-## $eval = $eval->add_failure($catName1,$catName2,$doc1)
-sub add_failure {
-  my ($eval,$cat1,$cat2,$doc) = @_;
-  my $nbytes = ($doc->sizeBytes||0);
-
-  ##-- false negative for $cat1
-  $eval->{cat2eval}{$cat1}{fn_docs}++;
-  $eval->{cat2eval}{$cat1}{fn_bytes} += $nbytes;
-  $eval->{cat2eval}{''}{fn_docs}++;
-  $eval->{cat2eval}{''}{fn_bytes} += $nbytes;
-
-  ##-- false positive for $cat2
-  $eval->{cat2eval}{$cat2}{fp_docs}++;
-  $eval->{cat2eval}{$cat2}{fp_bytes} += $nbytes;
-  $eval->{cat2eval}{''}{fp_docs}++;
-  $eval->{cat2eval}{''}{fp_bytes} += $nbytes;
-
-  ##-- globals
-  $eval->{Ndocs}++;
-  $eval->{Nbytes} += $nbytes;
-
-  ##-- error log
-  my $ename = $cat1."\t".$cat2;
-  $eval->{errors}{$ename}{ndocs}++;
-  $eval->{errors}{$ename}{nbytes} += $nbytes;
-
-  return $eval;
-}
-
 ## $frac = PACKAGE::frac($num,$denom)
 ##  + treats 0/0 == 0
 sub frac {
   my ($num,$denom) = @_;
-  #return $denom!=0 ? ($num/$denom) : ($num==0 ? 1 : 0);
-  return $denom!=0 ? ($num/$denom) : 0;
+  return $denom!=0 ? ($num/$denom) : ($num==0 ? 1 : 0);
+  #return $denom!=0 ? ($num/$denom) : 0;
 }
 
 ## $pr = PACKAGE::precision(\%catEvalHash,$units)
 sub precision {
-  my ($hash,$unit) = @_;
-  $unit = 'docs' if (!defined($unit));
-  return $hash->{"pr_${unit}"} if (defined($hash->{"pr_${unit}"}));
-  my $tp = $hash->{"tp_${unit}"} || 0;
-  my $fp = $hash->{"fp_${unit}"} || 0;
-  return $hash->{"pr_${unit}"} = frac($tp, ($tp+$fp));
+  my $hash = shift;
+  return $hash->{pr} if (defined($hash->{pr}));
+  my $tp = $hash->{tp} || 0;
+  my $fp = $hash->{fp} || 0;
+  return $hash->{pr} = frac($tp, ($tp+$fp));
 }
 
 ## $rc = PACKAGE::recall(\%catEvalHash,$units)
 sub recall {
-  my ($hash,$unit) = @_;
-  $unit = 'docs' if (!defined($unit));
-  return $hash->{"rc_${unit}"} if (defined($hash->{"rc_${unit}"}));
-  my $tp = $hash->{"tp_${unit}"} || 0;
-  my $fn = $hash->{"fn_${unit}"} || 0;
-  return $hash->{"rc_${unit}"} = frac($tp, ($tp+$fn));
+  my $hash = shift;
+  return $hash->{"rc"} if (defined($hash->{"rc"}));
+  my $tp = $hash->{tp} || 0;
+  my $fn = $hash->{fn} || 0;
+  return $hash->{"rc"} = frac($tp, ($tp+$fn));
 }
 
 ## $F = PACKAGE::F(\%catEvalHash,$units)
 sub F {
-  my ($hash,$unit) = @_;
-  $unit = 'docs' if (!defined($unit));
-  return $hash->{"F_${unit}"} if (defined($hash->{"F_${unit}"}));
-  my ($pr,$rc) = (precision(@_),recall(@_));
-  return $hash->{"F_${unit}"} = frac(2.0, ($pr**-1 + $rc**-1));
+  my $hash = shift;
+  return $hash->{"F"} if (defined($hash->{"F"}));
+  my ($pr,$rc) = (precision($hash),recall($hash));
+  return $hash->{"F"} = frac(2.0, ($pr**-1 + $rc**-1));
 }
 
 ## ($pr,$rc,$F) = PACKAGE::prF(\%catEvalHash,$unit)
@@ -352,25 +414,25 @@ sub prF {
   return (precision(@_),recall(@_),F(@_));
 }
 
-## $str = PACKAGE::reportStr($label,\%catEvalHash,$unit, %opts)
+## $str = PACKAGE::reportStr($label,\%catEvalHash, %opts)
 ##  + %opts:
 ##     llen=>$fmtLen, ##-- default=24 #48
 ##     plen=>$fmtLen, ##-- default='4.1'
 ##     ilen=>$fmtLen, ##-- default='4',
 sub reportStr {
-  my ($lab,$hash,$unit,%opts) = @_;
+  my ($lab,$hash,%opts) = @_;
   my ($llen,$plen,$ilen) = @opts{qw(llen plen ilen)};
   #$llen ||= 48;
   $llen ||= 24;
   $plen ||= '5.1';
   $ilen ||= 4;
-  prF($hash,$unit);
+  prF($hash);
   return (join('  ',
 	       sprintf("%-${llen}s:", $lab),
-	       #(map {sprintf("$_=%${ilen}d", ($hash->{$_.'_'.$unit}||0))} qw(tp fp fn)),
-	       (map {"$_=".sistr(($hash->{$_.'_'.$unit}||0),'d',$ilen,' ')} qw(tp fp fn)),
+	       #(map {sprintf("$_=%${ilen}d", ($hash->{$_}||0))} qw(tp fp fn)),
+	       (map {"$_=".sistr(($hash->{$_}||0),'d',$ilen,' ')} qw(tp fp fn)),
 	       ':',
-	       (map {sprintf("$_=%${plen}f", 100*($hash->{$_.'_'.$unit}||0))} qw(pr rc F))
+	       (map {sprintf("$_=%${plen}f", 100*($hash->{$_}||0))} qw(pr rc F))
 	      )."\n");
 }
 
@@ -401,15 +463,14 @@ sub saveTextFile {
   $fh->binmode(':utf8') if ($fh->can('binmode'));
 
   ##-- brief report
-  my $ge = $eval->{cat2eval}{''};
+  $fh->print(ref($eval).": ".($eval->{label}||'(no label)').": Summary\n");
   my %ropts = (llen=>20);
-  $fh->print(ref($eval).": ".($eval->{label}||'(no label)').": Summary\n",
-	     reportStr(" : Docs  : Total", $ge, 'docs', %ropts),
-	     reportStr(" : Docs  : Average", $ge, 'docs_avg', %ropts),
-	     reportStr(" : Bytes : Total", $ge, 'bytes', %ropts),
-	     reportStr(" : Bytes : Average", $ge, 'bytes_avg', %ropts),
-	    );
+  my ($gmode);
+  foreach $gmode (sort(keys(%{$eval->{geval}}))) {
+    $fh->print(reportStr(" : $gmode", $eval->{geval}{$gmode}, %ropts));
+  }
 
+  ##-- error report
   $opts{nErrors} = 10 if (!defined($opts{nErrors}));
   if ($opts{nErrors} > 0) {
     my @errs = sort {$b->{ndocs} <=> $a->{ndocs}} values(%{$eval->{errors}});
@@ -450,7 +511,6 @@ sub saveXmlDoc {
   my $head = $root->addNewChild(undef,'head');
   my $corpus_root = $head->addNewChild(undef,'corpora');
   $corpus_root->setAttribute('Ndocs',  ($eval->{Ndocs}||0));
-  $corpus_root->setAttribute('Nbytes', ($eval->{Nbytes}||0));
   ##
   my $corpus_node = $corpus_root->addNewChild(undef,'corpus');
   $corpus_node->setAttribute('n',1);
@@ -469,21 +529,16 @@ sub saveXmlDoc {
   ##-- global average eval data
   my $ae_root = $data_root->addNewChild(undef,'average');
   my $aed_node = $ae_root->addNewChild(undef,'by-n-docs');
-  my $aeb_node = $ae_root->addNewChild(undef,'by-n-bytes');
   $aed_node->setAttribute($_, ($c2e->{''}{$_."_docs_avg"}||0)) foreach (qw(pr rc F));
-  $aeb_node->setAttribute($_, ($c2e->{''}{$_."_bytes_avg"}||0)) foreach (qw(pr rc F));
 
   ##-- global total eval data
   my $te_root = $data_root->addNewChild(undef,'total');
   my $ted_node = $te_root->addNewChild(undef,'by-n-docs');
-  my $teb_node = $te_root->addNewChild(undef,'by-n-bytes');
   $ted_node->setAttribute($_, ($c2e->{''}{$_."_docs"}||0)) foreach (qw(tp fp fn pr rc F));
-  $teb_node->setAttribute($_, ($c2e->{''}{$_."_bytes"}||0)) foreach (qw(tp fp fn pr rc F));
 
   ##-- category eval data
   my $ce_root = $data_root->addNewChild(undef,'by-category');
   my $ced_node = $ce_root->addNewChild(undef,'by-n-docs');
-  my $ceb_node = $ce_root->addNewChild(undef,'by-n-bytes');
   ##
   my ($c_name,$c_hash,$c_node);
   foreach $c_name (grep {$_ ne ''} sort(keys(%$c2e))) {
@@ -492,10 +547,6 @@ sub saveXmlDoc {
     $c_node = $ced_node->addNewChild(undef,'cat');
     $c_node->setAttribute('name',$c_name);
     $c_node->setAttribute($_, ($c_hash->{$_."_docs"}||0)) foreach (qw(tp fp fn pr rc F));
-    ##
-    $c_node = $ceb_node->addNewChild(undef,'cat');
-    $c_node->setAttribute('name',$c_name);
-    $c_node->setAttribute($_, ($c_hash->{$_."_bytes"}||0)) foreach (qw(tp fp fn pr rc F));
   }
 
   ##-- error data
@@ -507,8 +558,6 @@ sub saveXmlDoc {
     $e_node->setAttribute('cat2',$err->{cat2});
     $e_node->setAttribute('ndocs',$err->{ndocs});
     $e_node->setAttribute('fdocs',$err->{fdocs});
-    $e_node->setAttribute('nbytes',$err->{nbytes});
-    $e_node->setAttribute('fbytes',$err->{fbytes});
   }
 
   ##-- document-pair list
@@ -520,8 +569,6 @@ sub saveXmlDoc {
       $d_node = $docs_node->addNewChild(undef,'doc');
       $d_node->setAttribute('label',$doc1->label) if (defined($doc1->{file}) && $doc1->label ne $doc1->{file});
       $d_node->setAttribute('file',$doc1->{file}) if (defined($doc1->{file}));
-      $d_node->setAttribute('bytes',($doc1->sizeBytes||0));
-      #$d_node->setAttribute('sigFile',$doc->{sigFile}) if (defined($doc->{sigFile}));
 
       $cats_node1 = $d_node->addNewChild(undef,'cats');
       $cats_node1->setAttribute('n',1);
@@ -569,6 +616,16 @@ sub saveXmlString {
 ##--------------------------------------------------------------
 ## Methods: I/O: XML: load
 
+## $xpvalue = xpvalue($node_or_doc,$xpath)
+sub xpvalue {
+  my ($node,$xp) = @_;
+  my $val = scalar($node->findnodes($xp));
+  return undef if (!defined($val));
+  $val = $val->[0] if (UNIVERSAL::isa($val,'ARRAY'));
+  $val = $val->value if (defined($val) && UNIVERSAL::can($val,'value'));
+  return $val;
+}
+
 ## $eval = $CLASS_OR_OBJECT->loadXmlDoc($xdoc,%opts)
 ##  + (re-)loads corpus data from $xdoc
 sub loadXmlDoc {
@@ -580,50 +637,48 @@ sub loadXmlDoc {
   $eval->{label} = $root->getAttribute('label');
 
   ##-- load: header data
-  my $head=$root->findnodes('head[1]')->[0];
-  $eval->{$_} = $head->findnodes('corpora[1]/@'.$_)->[0]->value foreach (qw(Ndocs Nbytes));
+  my $head=xpvalue($root,'head[1]');
+  $eval->{Ndocs} = xpvalue($head,'corpora[1]/@Ndocs');
   ##
-  $eval->{label1} = $head->findnodes('corpora[1]/corpus[1]/@label')->[0]->value;
-  $eval->{label2} = $head->findnodes('corpora[1]/corpus[2]/@label')->[0]->value;
+  $eval->{label1} = xpvalue($head,'corpora[1]/corpus[1]/@label');
+  $eval->{label2} = xpvalue($head,'corpora[1]/corpus[2]/@label');
 
   ##-- load: data
-  my $data_root = $root->findnodes('data[1]')->[0];
+  my $data_root = xpvalue($root,'data[1]');
   my $c2e = $eval->{cat2eval};
 
   ##-- data: eval: global average
-  my $ae_root = $data_root->findnodes('average[1]')->[0];
-  $c2e->{''}{$_."_docs_avg"} = $ae_root->findnodes("by-n-docs[1]/\@$_")->[0]->value foreach (qw(pr rc F));
-  $c2e->{''}{$_."_bytes_avg"} = $ae_root->findnodes("by-n-bytes[1]/\@$_")->[0]->value foreach (qw(pr rc F));
+  #my $ae_root = xpvalue($data_root,'average[1]');
+  #$c2e->{''}{$_."_docs_avg"} = xpvalue($ae_root,"by-n-docs[1]/\@$_") foreach (qw(pr rc F));
 
   ##-- data: eval: global total
-  my $te_root = $data_root->findnodes('total[1]')->[0];
-  $c2e->{''}{$_."_docs"} = $te_root->findnodes("by-n-docs[1]/\@$_")->[0]->value foreach (qw(tp fp fn pr rc F));
-  $c2e->{''}{$_."_bytes"} = $te_root->findnodes("by-n-bytes[1]/\@$_")->[0]->value foreach (qw(tp fp fn pr rc F));
+  #my $te_root = xpvalue($data_root,'total[1]');
+  #$c2e->{''}{$_."_docs"} = xpvalue($te_root,"by-n-docs[1]/\@$_") foreach (qw(tp fp fn pr rc F));
 
   ##-- data: eval: by category
   my ($ce_unit,$ce_node, $c_node,$c_name);
-  foreach $ce_unit (qw(docs bytes)) {
-    $ce_node = $data_root->findnodes('by-category[1]/by-n-'.$ce_unit.'[1]')->[0];
-    foreach $c_node (@{$ce_node->findnodes('cat')}) {
-      $c_name = $c_node->getAttribute('name');
-      $c2e->{$c_name}{$_."_".$ce_unit} = $c_node->getAttribute($_) foreach (qw(tp fp fn pr rc F));
-    }
+  $ce_unit = 'docs';
+  $ce_node = xpvalue($data_root,'by-category[1]/by-n-docs[1]');
+  foreach $c_node (@{$ce_node->findnodes('cat')}) {
+    $c_name = $c_node->getAttribute('name');
+    #next if ($c_name eq ''); ##-- IGNORE
+    $c2e->{$c_name}{$_} = $c_node->getAttribute($_) foreach (qw(tp fp fn pr rc F));
   }
 
   ##-- data: eval: errors
-  my $errs_root = $data_root->findnodes('errors[1]');
-  if (defined($errs_root) && defined($errs_root=$errs_root->[0])) {
+  my $errs_root = xpvalue($data_root,'errors[1]');
+  if (defined($errs_root)) {
     my ($e_node,$err);
     foreach $e_node (@{$errs_root->findnodes('error')}) {
       $err = {};
-      $err->{$_} = $e_node->getAttribute($_) foreach (qw(cat1 cat2 ndocs fdocs nbytes fbytes));
+      $err->{$_} = $e_node->getAttribute($_) foreach (qw(cat1 cat2 ndocs fdocs));
       $eval->{errors}{$err->{cat1}."\t".$err->{cat2}} = $err;
     }
   }
 
   ##-- data: eval: documents
   my $lab2docs = $eval->{lab2docs};
-  my $docs_node = $data_root->findnodes('by-document[1]')->[0];
+  my $docs_node = xpvalue($data_root,'by-document[1]');
   if (defined($docs_node)) {
     my ($d_node,%d_attrs, $docs, $d_i,$doc,$dc_node,$cat);
     foreach $d_node (@{$docs_node->findnodes('doc')}) {

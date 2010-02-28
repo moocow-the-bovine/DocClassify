@@ -22,7 +22,7 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
 our $verbose = setVerbose(2);
-our $doProfile = 0;
+our $doProfile = 1;
 %opts = (%opts,
 	 corpusSave => { optsSave('corpus'), format=>1, saveCats=>1,saveSigs=>0 },
 	 outputFile => '-',
