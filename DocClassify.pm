@@ -26,6 +26,7 @@ use DocClassify::Mapper::LSI::KNN;
 use DocClassify::Mapper::LSI::ByCat;
 use DocClassify::Mapper::Cutoff;
 
+#use DocClassify::Train;
 use DocClassify::Eval;
 
 use DocClassify::Program;
