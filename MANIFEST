@@ -38,10 +38,16 @@ DocClassify/Lemmatizer/VzSem.pm
 DocClassify/Lemmatizer/VzSep.pm
 DocClassify/Logger.pm
 DocClassify/Mapper/ByLemma.pm
+DocClassify/Mapper/ByLemmaTrain.pm
 DocClassify/Mapper/Cutoff.pm
+DocClassify/Mapper/CutoffTrain.pm
 DocClassify/Mapper/LSI/ByCat.pm
+DocClassify/Mapper/LSI/ByCatTrain.pm
 DocClassify/Mapper/LSI/KNN.pm
+DocClassify/Mapper/LSI/KNNTrain.pm
 DocClassify/Mapper/LSI.pm
+DocClassify/Mapper/LSITrain.pm
+DocClassify/Mapper/Train.pm
 DocClassify/Mapper.pm
 DocClassify/Object.pm
 DocClassify.pm
