@@ -264,22 +264,31 @@ sub compile {
     }
   }
 
-  ##-- compile globals
-  $eval->compileGlobals('all');
-  $eval->compileGlobals('nz',denyClassRe=>qr/^null$/);
-  $eval->compileGlobals('nz_safe',allowClassRe=>qr/^safe$/);
-  $eval->compileGlobals('nz_unsafe',allowClassRe=>qr/^unsafe$/);
-
-  ##-- errors: get total number of errors
+  ##-- compile errors: get total number of errors
   my $nerrs = 0;
   $nerrs += ($_->{ndocs}||0) foreach (values(%{$eval->{errors}}));
 
-  ##-- errors: cat1,cat2,fdocs
+  ##-- compile errors: cat1,cat2,fdocs
   my ($ekey,$e);
   while (($ekey,$e) = each(%{$eval->{errors}})) {
     @$e{qw(cat1 cat2)} = split(/\t/,$ekey,2);
     $e->{fdocs} = ($e->{ndocs}||0) / $nerrs;
   }
+
+  ##-- compile errors: nested
+  my $errs1 = $eval->{errors1} = {};  ##-- $catName1 => @errors with wanted=$catName1
+  my $errs2 = $eval->{errors2} = {};  ##-- $catName2 => @errors with got=$catName2
+  foreach $e (values %{$eval->{errors}}) {
+    push(@{$errs1->{$e->{cat1}}},$e);
+    push(@{$errs2->{$e->{cat2}}},$e);
+  }
+
+  ##-- compile globals
+  $eval->compileGlobals('all');
+  $eval->compileGlobals('nz',denyClassRe=>qr/^null$/);
+  $eval->compileGlobals('nz_safe',allowClassRe=>qr/^safe$/);
+  $eval->compileGlobals('nz_safe1',allowClassRe=>qr/^safe$/, error1ClassRe=>qr/^(?:null|safe)$/);
+  $eval->compileGlobals('nz_unsafe',allowClassRe=>qr/^unsafe$/);
 
   ##-- return
   return $eval;
@@ -289,24 +298,37 @@ sub compile {
 ##  + compiles $eval->{geval}{"$gclass.total","$gclass.avg"} from $eval->{cat2eval}
 ##  + called by compile()
 ##  + %opts:
-##     allowClassRe => $regex,  ##-- only allow cats $c with $c->{class} matching $regex
-##     denyClassRe  => $regex,  ##-- deny cats $c with $c->{class} matching $regex
+##     allowClassRe => $regex,       ##-- only allow cats $c with $c->{class} matching $regex
+##     denyClassRe  => $regex,       ##-- deny cats $c with $c->{class} matching $regex
+##     error1ClassRe => $regex,      ##-- only allow errors $e with $cat2eval->{$e->{cat1}}{class} matching $regex
 sub compileGlobals {
   my ($eval,$gclass,%opts) = @_;
   my $allowRe = $opts{allowClassRe};
   my $denyRe  = $opts{denyClassRe};
+  my $e1re    = $opts{error1ClassRe};
 
-  ##-- compile: total mode
-  my $etotal = $eval->{geval}{"$gclass.total"} = {};
-  my @cats   = qw();
+  ##-- compile: get allowed cats
+  my %cats = qw();
   my ($name,$c);
   while (($name,$c)=each(%{$eval->{cat2eval}})) {
     next if (defined($allowRe) && $c->{class} !~ $allowRe);
     next if (defined($denyRe) && $c->{class} =~ $denyRe);
-    $etotal->{tp} += $c->{tp};
-    $etotal->{fp} += $c->{fp};
-    $etotal->{fn} += $c->{fn};
-    push(@cats,$c);
+    $cats{$name}=$c;
+  }
+  my @cats = values(%cats);
+
+  ##-- compile: total mode
+  my $etotal = $eval->{geval}{"$gclass.total"} = {};
+  my ($tp,$fp,$fn, $e);
+  foreach $c (@cats) {
+    ($tp,$fp,$fn) = @$c{qw(tp fp fn)};
+    if (defined($e1re)) {
+      ##-- TODO!
+      ;
+    }
+    $etotal->{tp} += $tp;
+    $etotal->{fp} += $fp;
+    $etotal->{fn} += $fn;
   }
   prF($etotal);
 
@@ -325,43 +347,6 @@ sub compileGlobals {
   return $eval;
 }
 
-    ###~~~ OLD
-sub compile_OLD {
-  my $eval = shift;
-
-  ##-- variables
-  my $c2e   = $eval->{cat2eval};
-  my $Ncats = scalar(keys(%$c2e))-1;
-
-  my $eg    = $c2e->{''};
-  $eg       = $c2e->{''} = {} if (!defined($eg));
-  delete(@$eg{map {("${_}_docs","${_}_docs_avg")} qw(pr rc F)});
-  my ($c);
-  foreach (grep {$_ ne ''} keys(%$c2e)) {
-    $c = $c2e->{$_};
-    ##
-    $eg->{tp_docs_avg} += 1/$Ncats * ($c->{tp_docs}||0);
-    $eg->{fp_docs_avg} += 1/$Ncats * ($c->{fp_docs}||0);
-    $eg->{fn_docs_avg} += 1/$Ncats * ($c->{fn_docs}||0);
-    $eg->{pr_docs_avg} += 1/$Ncats * precision($c,'docs');
-    $eg->{rc_docs_avg} += 1/$Ncats * recall($c,'docs');
-    ##
-    prF($c,'docs') ##-- ensure pr,rc,F computed
-  }
-  $eg->{F_docs_avg}  = F($eg,'docs_avg');
-  prF($eg,'docs'); ##-- ensure pr,rc,F computed
-
-  ##-- ensure errors are defined
-  my ($ekey,$err);
-  my $Ndocs_errs = $eval->{Ndocs} - $eg->{tp_docs};
-  while (($ekey,$err)=each(%{$eval->{errors}})) {
-    @$err{qw(cat1 cat2)} = split(/\t/,$ekey);
-    $err->{docs} ||= 0;
-    $err->{fdocs}  = frac($err->{ndocs},$Ndocs_errs);
-  }
-
-  return $eval;
-}
 
 ## $bool = $eval->compiled()
 ##  + returns true iff pr,rc,F have been compiled
