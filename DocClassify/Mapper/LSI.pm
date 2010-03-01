@@ -34,6 +34,8 @@ our $verbose = 3;
 ## Constructors etc.
 
 ## $map = $CLASS_OR_OBJ->new(%opts)
+##  + defaults in constructor are obfuscated; see "real" program defaults in
+##     DocClassify::Mapper::Train (and DocClassify::Program defaults)
 ## %$map, %opts:
 ##  ##
 ##  ##==== NEW in Mapper::LSI
@@ -99,11 +101,11 @@ sub new {
   my $that = shift;
   my $obj =  $that->SUPER::new(
 			       ##-- options
-			       svdr => 256,
-			       catProfile => 'average',
-			       termWeight  => 'entropy',
+			       svdr => 42,
+			       catProfile => 'fold-in',
+			       termWeight  => 'uniform',
 			       seed => undef,
-			       smoothf=>1+1e-5,
+			       smoothf=>1,
 			       xn => 0,
 			       nullCat => '(auto)',
 			       mapccs => 0,

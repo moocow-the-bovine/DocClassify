@@ -31,8 +31,8 @@ our @EXPORT = qw();
 
 ## %opts
 ##  + generic options hash
+##  + cf. overrides in DocClassify::Mapper::Train.pm
 ##  + structure:
-
 ##    (
 ##     $globalKey     => $globalVal,       ##-- global options (e.g. 'verbose')
 ##     load           => \%globalLoadOpts, ##-- generic options for CLASS->load()
@@ -76,21 +76,21 @@ our %opts =
    sigSave => {verboseIO=>0},
    sigLoad => {verboseIO=>0},
 
-   ##-- Mapper Options
+   ##-- Mapper Options (cf. overrides in DocClassify::Mapper::Train.pm)
    mapNew => {
-	      class=>'LSI',	          ##-- mapper class
+	      class=>'LSI::KNN',      ##-- mapper class
 	      verbose=>1,                 ##-- verbosity level
 	      label=>undef,	          ##-- default label
 	      lzClass => 'default',       ##-- default lemmatizer class; see DocClassify::Lemmatizer::new()
 	      lzOpts=>{},                 ##-- lemmatizer options; see DocClassify::Lemmatizer::LZ_CLASS for detatils
-	      svdr => 256,                ##-- svd dimensions (see DocClassify::Mapper::LSI defaults)
-	      maxTermsPerDoc=>0,          ##-- maximum #/terms per doc
-	      minFreq =>0,                ##-- minimum global term-frequency f(t) for term-inclusion
-	      minDocFreq =>0,             ##-- minimum #/docs with f(t,d)>0 for term-inclusion
-	      smoothf =>1+1e-5,           ##-- smoothing frequency (undef for NTypes/NTokens)
+	      maxTermsPerDoc=>1,      ##-- maximum #/terms per doc
+	      minFreq =>10,           ##-- minimum global term-frequency f(t) for term-inclusion
+	      minDocFreq =>4,         ##-- minimum #/docs with f(t,d)>0 for term-inclusion
+	      smoothf =>1,            ##-- smoothing frequency (undef for NTypes/NTokens)
 	      trainExclusive=>1,	  ##-- exclusive-mode training?
-	      catProfile => 'average',    ##-- how to do category profiling
-	      termWeight => 'entropy',    ##-- how to do term weighting
+	      catProfile => 'fold-in',##-- how to do category profiling
+	      termWeight => 'uniform',##-- how to do term weighting
+	      dist => 'e',            ##-- PDL::Cluster distance function
 	      xn => 0,                    ##-- number of splits for parameter-fitting cross-check
 	      seed =>0,    		  ##-- random seed for x-check
 	      nullCat => '(auto)',        ##-- null-prototype target category; false for none
@@ -101,11 +101,11 @@ our %opts =
    mapSave => { mode=>undef },
    mapLoad => { mode=>undef },
 
-   ##-- Cutoff Options
+   ##-- Cutoff Options (cf. overrides in DocClassify::Mapper::Train.pm)
    cutoffNew => {
-		 cut0p => 0.5,                     ##-- confidence level for negative-sample cutoff fitting (0.5)
-		 cut1p => 0.5,                     ##-- confidence level for positive-sample cutoff fitting (0.5)
-		 cut1w => 0.65,                    ##-- positive weight (0<=$w<=1) for cutoff fitting (0.65)
+		 cut0p => 0.5,               ##-- confidence level for negative-sample cutoff fitting (0.5)
+		 cut1p => 0.5,               ##-- confidence level for positive-sample cutoff fitting (0.5)
+		 cut1w => 0.5,               ##-- positive weight (0<=$w<=1) for cutoff fitting (0.65)
 		 cutval => 100,                    ##-- constant to add if cutoff is exceeded (default=100)
 		 cutCat => undef,                  ##-- name of cutoff sink cat (default: cat with id=0 in $lcenum)
 		},

@@ -35,6 +35,8 @@ our $verbose = 3;
 ## Constructors etc.
 
 ## $map = $CLASS_OR_OBJ->new(%opts)
+##  + defaults in constructor are obfuscated; see "real" program defaults in
+##     DocClassify::Mapper::Train (and DocClassify::Program defaults)
 ## %$map, %opts:
 ##  ##-- options
 ##  verbose => $vlevel,              ##-- verbosity level (default=$verbose)
@@ -91,14 +93,14 @@ sub new {
 			       lzClass => 'default',
 			       lzOpts  => {},
 			       trainExclusive => 1,
-			       minFreq =>0,
-			       minDocFreq =>0,
-			       maxTermsPerDoc =>0,
+			       minFreq =>10,
+			       minDocFreq =>4,
+			       maxTermsPerDoc =>1,
 			       smoothf =>1,
-			       termWeight  => 'entropy',
+			       termWeight  => 'uniform',
 			       cleanDocs => 1,
 			       byCat => 0,
-			       weightByCat => 1,
+			       weightByCat => 0,
 			       dist => 'u',
 			       nullCat => undef,
 

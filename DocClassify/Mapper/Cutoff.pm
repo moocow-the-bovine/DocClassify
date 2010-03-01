@@ -29,6 +29,8 @@ our $verbose = 3;
 ## Constructors etc.
 
 ## $map = $CLASS_OR_OBJ->new(%opts)
+##  + defaults in constructor are obfuscated; see "real" program defaults in
+##     DocClassify::Mapper::Train (and DocClassify::Program defaults)
 ## %$map, %opts:
 ##  ##
 ##  ##-- options: generl
