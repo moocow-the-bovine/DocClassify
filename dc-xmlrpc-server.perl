@@ -171,7 +171,7 @@ if ($daemonMode) {
     ##-- parent
     DocClassify->info("spawned daemon subprocess with PID=$pid\n");
     $srv->writePidFile($pid)
-      or die("$0: failed to write PID file '$srv->{pidfile}': $!");
+      or die("$0: failed to write PID=$pid to file '$srv->{pidfile}': $!");
   } else {
     ##-- daemon-child
     DocClassify->logdie("$prog: fork() failed: $!") if (!defined($pid));
@@ -179,6 +179,8 @@ if ($daemonMode) {
   }
 } else {
   ##-- just run server
+  $srv->writePidFile($$)
+    or die("$0: failed to write PID=$$ to file '$srv->{pidfile}': $!");
   serverMain();
 }
 
