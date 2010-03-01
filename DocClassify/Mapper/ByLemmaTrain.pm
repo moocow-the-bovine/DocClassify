@@ -716,60 +716,6 @@ sub get_tcm {
   return $map->{tcm} = $map->logwm($map->{tcm0});
 }
 
-
-##==============================================================================
-## Methods: Misc
-
-## $lz = $map->lemmatizer()
-##  + gets or creates $map->{lz}
-sub lemmatizer {
-  return $_[0]{lz} if (defined($_[0]{lz}));
-  return $_[0]{lz} = DocClassify::Lemmatizer->new(%{$_[0]{lzOpts}},class=>$_[0]{lzClass});
-}
-
-## $sig = $map->lemmaSignature($doc_or_sig)
-##  + wrapper for $map->lemmatizer->lemmatize($doc_or_sig->typeSignature)
-sub lemmaSignature {
-  my ($map,$sig) = @_;
-  $sig = $sig->typeSignature if (!UNIVERSAL::isa($sig,'DocClassify::Signature'));
-  $sig = ($map->{lz}||$map->lemmatizer)->lemmatize($sig) if (!$sig->lemmatized);
-  return $sig;
-}
-
-## $fpdl = $map->docPdlRaw($doc, $want_ccs=0)
-##  + $fpdl is dense or CCS::Nd pdl($NT): [$tidl,1]=>f($tid,$doc)
-sub docPdlRaw {
-  return $_[0]->sigPdlRaw(@_[1..$#_]);
-}
-
-## $fpdl = $map->sigPdlRaw($sig_or_doc, $want_ccs=0)
-##  + $fpdl is dense or CCS::Nd pdl($NT): [$tid,1]=>f($tid,$sig)
-sub sigPdlRaw {
-  my ($map,$sig_or_doc, $as_ccs) = @_;
-  my $sig = $map->lemmaSignature($sig_or_doc); ##-- ensure lemmatized signature
-  my $tenum = $map->{tenum};
-  my $dtf_wt = pdl(long,   grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})});
-  my $dtf_nz = pdl(double, @{$sig->{lf}}{@{$tenum->{id2sym}}[$dtf_wt->list]});
-  if ($map->{cleanDocs} || !exists($map->{cleanDocs})) {
-    ##-- cleanup
-    #$sig->unlemmatize;
-    $sig_or_doc->clearCache() if ($sig_or_doc->can('clearCache'));
-  }
-  if ($as_ccs) {
-    ##-- ccs mode
-    return PDL::CCS::Nd->newFromWhich($dtf_wt->slice("*1,"),$dtf_nz,dims=>pdl(long,[$tenum->size]),missing=>0)->dummy(1,1);
-  }
-  ##-- dense mode
-  my $dtf = zeroes(double,$tenum->size);
-  $dtf->index($dtf_wt) .= $dtf_nz;
-  return $dtf->slice(",*1");
-}
-
-##==============================================================================
-## Methods: API: I/O
-##  + see DocClassify::Object
-
-
 ##==============================================================================
 ## Footer
 1;

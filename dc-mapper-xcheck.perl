@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Mapper::Train;
 use DocClassify::Program ':all';
 use Data::Dumper;
 
