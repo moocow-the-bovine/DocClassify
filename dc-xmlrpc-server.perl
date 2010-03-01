@@ -144,6 +144,12 @@ $srv->{xopt}{port} = $serverPort if (defined($serverPort));
 $srv->{encoding}   = $serverEncoding if (defined($serverEncoding));
 
 sub serverPrepare {
+  ##-- check for writable pid file
+  if ($pidFile) {
+    open(PID,">>$pidFile") or die("$0: could not open PID file '$pidFile' for write: $!");
+    close(PID);
+  }
+
   ##-- prepare the server in parent process (catch early errors)
   $srv->info("serverPrepare(): initializing server");
   $srv->info("serverPrepare(): using DocClassify version $DocClassify::VERSION");
@@ -155,6 +161,11 @@ sub serverPrepare {
 ##-- serverMain(): main post-preparation code; run in subprocess if we're in daemon mode
 sub serverMain {
   ##-- just run server
+  if (!$srv->writePidFile($pid)) {
+    $srv->fatal("failed to write PID=$pid to file '$srv->{pidfile}': $!");
+    $srv->finish();
+    exit(1);
+  }
   $srv->run();
   $srv->finish();
   $srv->info("exiting");
@@ -170,8 +181,6 @@ if ($daemonMode) {
   if ( ($pid=fork()) ) {
     ##-- parent
     DocClassify->info("spawned daemon subprocess with PID=$pid\n");
-    $srv->writePidFile($pid)
-      or die("$0: failed to write PID=$pid to file '$srv->{pidfile}': $!");
   } else {
     ##-- daemon-child
     DocClassify->logdie("$prog: fork() failed: $!") if (!defined($pid));
@@ -179,8 +188,6 @@ if ($daemonMode) {
   }
 } else {
   ##-- just run server
-  $srv->writePidFile($$)
-    or die("$0: failed to write PID=$$ to file '$srv->{pidfile}': $!");
   serverMain();
 }
 
