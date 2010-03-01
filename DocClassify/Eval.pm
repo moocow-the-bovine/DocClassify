@@ -167,7 +167,7 @@ sub compare {
       $cat1->{evalClass} = 'fn';
       $cat2->{evalClass} = 'fp';
       ##
-      $ename = $cat1."\t".$cat2;
+      $ename = $cat1->{name}."\t".$cat2->{name};
       $eval->{errors}{$ename}{ndocs}++;
     }
   }
@@ -222,7 +222,7 @@ sub addEval {
 ##  + (re-)compiles $eval->{nullCat} if it was given as '(auto)'
 ##  + (re-)compiles $eval->{cat2eval}{$catName} pr,rc,F values
 ##  + (re-)compiles $eval->{geval} global evaluation modes
-##  + (re-)compiles  $eval->{errors}{qw(cat1 cat2 fdocs)}: cat-wise errors (fractional)
+##  + (re-)compiles $eval->{errors}{qw(cat1 cat2 fdocs)}: cat-wise errors (fractional)
 sub compile {
   my $eval = shift;
 
@@ -269,6 +269,17 @@ sub compile {
   $eval->compileGlobals('nz',denyClassRe=>qr/^null$/);
   $eval->compileGlobals('nz_safe',allowClassRe=>qr/^safe$/);
   $eval->compileGlobals('nz_unsafe',allowClassRe=>qr/^unsafe$/);
+
+  ##-- errors: get total number of errors
+  my $nerrs = 0;
+  $nerrs += ($_->{ndocs}||0) foreach (values(%{$eval->{errors}}));
+
+  ##-- errors: cat1,cat2,fdocs
+  my ($ekey,$e);
+  while (($ekey,$e) = each(%{$eval->{errors}})) {
+    @$e{qw(cat1 cat2)} = split(/\t/,$ekey,2);
+    $e->{fdocs} = ($e->{ndocs}||0) / $nerrs;
+  }
 
   ##-- return
   return $eval;
@@ -525,16 +536,17 @@ sub saveXmlDoc {
   ##-- data root
   my $data_root = $root->addNewChild(undef,'data');
   my $c2e = $eval->{cat2eval};
+  my $g2e = $eval->{geval};
 
-  ##-- global average eval data
-  my $ae_root = $data_root->addNewChild(undef,'average');
-  my $aed_node = $ae_root->addNewChild(undef,'by-n-docs');
-  $aed_node->setAttribute($_, ($c2e->{''}{$_."_docs_avg"}||0)) foreach (qw(pr rc F));
-
-  ##-- global total eval data
-  my $te_root = $data_root->addNewChild(undef,'total');
-  my $ted_node = $te_root->addNewChild(undef,'by-n-docs');
-  $ted_node->setAttribute($_, ($c2e->{''}{$_."_docs"}||0)) foreach (qw(tp fp fn pr rc F));
+  ##-- global data
+  my $g_root =$data_root->addNewChild(undef,'global');
+  my ($gmode,$ge,$gnode);
+  foreach $gmode (sort keys %$g2e) {
+    $ge = $g2e->{$gmode};
+    $gnode = $g_root->addNewChild(undef,'mode');
+    $gnode->setAttribute('name', $gmode);
+    $gnode->setAttribute($_,$ge->{$_}) foreach (qw(tp fp fn pr rc F));
+  }
 
   ##-- category eval data
   my $ce_root = $data_root->addNewChild(undef,'by-category');
@@ -546,7 +558,7 @@ sub saveXmlDoc {
     ##
     $c_node = $ced_node->addNewChild(undef,'cat');
     $c_node->setAttribute('name',$c_name);
-    $c_node->setAttribute($_, ($c_hash->{$_."_docs"}||0)) foreach (qw(tp fp fn pr rc F));
+    $c_node->setAttribute($_, ($c_hash->{$_}||0)) foreach (qw(tp fp fn pr rc F));
   }
 
   ##-- error data
@@ -647,13 +659,14 @@ sub loadXmlDoc {
   my $data_root = xpvalue($root,'data[1]');
   my $c2e = $eval->{cat2eval};
 
-  ##-- data: eval: global average
-  #my $ae_root = xpvalue($data_root,'average[1]');
-  #$c2e->{''}{$_."_docs_avg"} = xpvalue($ae_root,"by-n-docs[1]/\@$_") foreach (qw(pr rc F));
-
-  ##-- data: eval: global total
-  #my $te_root = xpvalue($data_root,'total[1]');
-  #$c2e->{''}{$_."_docs"} = xpvalue($te_root,"by-n-docs[1]/\@$_") foreach (qw(tp fp fn pr rc F));
+  ##-- data: eval: global
+  my $g_root = xpvalue($data_root,'global[1]');
+  my $g2e = $eval->{geval};
+  my ($g_node,$g_name);
+  foreach $g_node (@{$data_root->findnodes('./mode')}) {
+    $g_name = xpvalue($g_node,'./@name');
+    $g2e->{$g_name}{$_} = ($g_node->getAttribute($_)||0) foreach (qw(tp fp fn pr rc F));
+  }
 
   ##-- data: eval: by category
   my ($ce_unit,$ce_node, $c_node,$c_name);
