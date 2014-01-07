@@ -382,7 +382,6 @@ sub compileGlobals {
   ##
   my $allowAvgRe = $opts{allowAvgRe} || qr/./;
   my $denyAvgRe  = $opts{denyAvgRe}  || qr/^$/;
-  my $e1re    = $opts{error1ClassRe};
 
   ##-- compile: CLASS.total: {bycat}
   my $etotal = $eval->{geval}{"$gclass.total"} = { bycat=>{} };
@@ -405,22 +404,10 @@ sub compileGlobals {
     $c->{class} = $eval->{cat2info}{$cname}{class} || '';
     next if ($c->{class} !~ $allowAvgRe || $c->{class} =~ $denyAvgRe);
     prF($c);
-    $cats{$name}=$c;
-  }
-  my @cats = values(%cats);
-
-  ##-- compile: total mode
-  my $etotal = $eval->{geval}{"$gclass.total"} = {};
-  my ($tp,$fp,$fn, $e);
-  foreach $c (@cats) {
-    ($tp,$fp,$fn) = @$c{qw(tp fp fn)};
-    if (defined($e1re)) {
-      ##-- TODO!
-      ;
-    }
-    $etotal->{tp} += $tp;
-    $etotal->{fp} += $fp;
-    $etotal->{fn} += $fn;
+    $etotal->{tp} += $c->{tp};
+    $etotal->{fp} += $c->{fp};
+    $etotal->{fn} += $c->{fn};
+    push(@cats,$c);
   }
   prF($etotal);
 
