@@ -3,6 +3,8 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Mapper::Train;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -19,94 +21,65 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our ($help);
-our $verbose = 2;
+our $verbose = setVerboseOptions(2);
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
-
-our $outfmt = '-';
-our $seed=undef;
-our $labfmt=undef;
-our $n_corpora = 2;
-
-our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, );
-
+%opts = (%opts,
+	 evalLoad=>{optsLoad('eval'), verboseIO=>1},
+	);
+$opts{outputFile} = undef;
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
-
-	   ##-- Misc
-	   'srand|seed|s=i' => \$seed,
-	   'label-fmt|labfmt|lf|l=s' => \$labfmt,
-	   'n-corpora|nc|n=i' => \$n_corpora,
-	   'output-fmt|output|outfile|outfmt|out|of|o=s'=> \$outfmt,
-	   'input-mode|im=s' => \$loadopts{mode},
-	   'output-mode|om=s' => \$saveopts{mode},
-	   'format-xml|format|fx|f!' => \$saveopts{format},
+GetOptions(##-- common options
+	   dcOptions(),
 	  );
 
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+$verbose = $opts{verbose};
+our $outfile = $opts{outputFile};
+
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
+#pod2usage({-exitval=>1, -verbose=>0, -msg=>'No Mapper file specified!'}) if (!@ARGV);
 
 
 ##------------------------------------------------------------------------------
 ## Subs
 ##------------------------------------------------------------------------------
 
+
 ##------------------------------------------------------------------------------
 ## MAIN
 ##------------------------------------------------------------------------------
 
-##-- sanity check(s)
-$saveopts{mode} = DocClassify::Corpus->guessFileMode($outfmt,%saveopts) if (!defined($saveopts{mode}));
-if ($outfmt ne '-' && $outfmt !~ m/%(?:\d*)(?:\.?)(?:\d*)d/) {
-  $outfmt =~ s/\.([^\.]*)$/%d.$1/;
-}
+##-- vars: logger
+our $logger = 'DocClassify::Program';
 
-##-- ye olde guttes
+##-- vars: cutoff pseudo-mapper
 push(@ARGV,'-') if (!@ARGV);
+our $mapfile = shift(@ARGV);
+our $map = DocClassify::Mapper::Cutoff->new(optsNew('cutoff'))->loadFile($mapfile,optsLoad('cutoff'))
+  or die("$0: Cutoff->loadFile() failed for '$mapfile': $!");
 
-my $cfile = shift(@ARGV);
-print STDERR "$0: loadFile($cfile)\n" if ($verbose);
-our $corpus = DocClassify::Corpus->loadFile($cfile,%loadopts)
-  or die("$0: load failed for corpus file '$cfile': $!");
-
-$labfmt = '' if (!defined($labfmt));
-print STDERR "$0: splitN(n=>$n_corpora,label=>'$labfmt')\n" if ($verbose);
-our @subc = $corpus->splitN($n_corpora,seed=>$seed,label=>$labfmt);
-
-foreach $i (0..$#subc) {
-  my $outfile = sprintf($outfmt,$i);
-  print STDERR "$0: saveFile($outfile)\n" if ($verbose);
-  $subc[$i]{label} = $outfile if (!$subc[$i]{label} || !$labfmt);
-  $subc[$i]->saveFile($outfile,%saveopts);
-}
+##-- save
+$outfile = $mapfile if (!defined($outfile));
+$map->dumpData($outfile, optsSave('cutoff'));
 
 =pod
 
 =head1 NAME
 
-dc-corpus-split.perl - split an XML corpus into training and test sets
+dc-cutoff-dat.perl - dump data underlying a DocClassify::Mapper::Cutoff pseudo-mapper
 
 =head1 SYNOPSIS
 
- dc-corpus-split.perl [OPTIONS] [CORPUS=-]
+ dc-cutoff-dat.perl [OPTIONS] [CUTOFF_FILE]
 
- Options:
+ General Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
-  -n N                   # number of output corpora
-  -seed SEED             # specify random seed (default=none)
-  -label LABFMT          # printf() format for output labels (default=none)
-  -output OUTFMT         # printf() format for output files (default=STDOUT='-')
-  -input-mode MODE       # input mode (default=guess)
-  -output-mode MODE      # output mode (default=guess)
+
+ I/O Options:
+  -output-file FILE      # set output basename (default=CUTOFF_FILE)
 
 =cut
 

@@ -8,8 +8,10 @@ dc-corpus-sizedat.perl
 dc-corpus-split.perl
 dc-csv2sig.perl
 dc-cutoff-train.perl
+dc-cutoff-dat.perl
 dc-eval-info.perl
 dc-eval-plots.perl
+dc-eval-collect.perl
 dc-mapper-apply.perl
 dc-mapper-eval.perl
 dc-mapper-info.perl

@@ -40,6 +40,7 @@ GetOptions(##-- common options
 	  );
 
 $verbose = $opts{verbose};
+$opts{cutoffNew}{seed} = $opts{split}{seed};
 our $outfile = $opts{outputFile};
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
@@ -76,10 +77,9 @@ foreach my $efile (@ARGV) {
 }
 
 ##-- compile cutoffs
-$logger->info("compile()") if ($verbose);
 $map->compile();
 
-$logger->info("clearTrainingCache()") if ($verbose);
+##-- clear cache
 $map->clearTrainingCache() if ($opts{mapNew}{clearCache});
 
 ##-- save
@@ -105,6 +105,7 @@ dc-cutoff-train.perl - train DocClassify::Mapper::Cutoff pseudo-mapper from eval
   -cut1w   W             # weight (0<=W<=1) for positive-point (0.65)
   -cut-val ADD           # constant to add if cutoff is exceeded (100)
   -cut-cat CAT           # name of cutoff sink cat (default: cat with id=0 in $lcenum)
+  -cut-opt N             # number of optimization iterations (default=0)
 
  I/O Options:
   -output-mode MODE      # I/O mode for output pseudo-mapper (default=guess)

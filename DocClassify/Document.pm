@@ -131,7 +131,7 @@ sub sizeBytes {
   if (defined($doc->{str})) {
     use bytes;
     return ref($doc->{str}) ? length(${$doc->{str}}) : length($doc->{str});
-  } elsif (defined($doc->{file})) {
+  } elsif (defined($doc->{file}) && -e $doc->{file}) {
     return -s $doc->{file};
   } elsif (defined($doc->{xdoc})) {
     use bytes;

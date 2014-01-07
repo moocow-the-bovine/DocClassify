@@ -26,6 +26,7 @@ BEGIN {
      termWeight => 'entropy',    ##-- how to do term weighting
      weightByCat => 1,           ##-- do term weighting by category?
      dist => 'u',                ##-- PDL::Cluster distance function
+     mapccs => 1,                ##-- use sparse PDLs for mapping (faster)
     );
   @{$opts{mapNew}}{keys %mapNew} = values %mapNew;
 
@@ -36,6 +37,7 @@ BEGIN {
      cut1w => 0.65,              ##-- positive weight (0<=$w<=1) for cutoff fitting (0.65)
      cutval => 100,              ##-- constant to add if cutoff is exceeded (default=100)
      cutCat => undef,            ##-- name of cutoff sink cat (default: cat with id=0 in $lcenum)
+     optimize => 100,            ##-- number of cutoff optimization iterations (default=100: fast but not exhaustive (fitness grows logaritmically with n iters))
     );
   @{$opts{cutoffNew}}{keys %cutNew} = values %cutNew;
 }

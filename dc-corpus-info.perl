@@ -28,7 +28,7 @@ our $verbose = setVerboseOptions(2);
 	);
 
 our $want_ndocs = 1;
-our $want_bytes = 1;
+our $want_bytes = 0;
 our $want_cats = 1; ##-- $opts{cats}
 
 ##------------------------------------------------------------------------------
@@ -65,6 +65,7 @@ sub catcmp {
 our $outfile = $opts{outputFile};
 our $outfh = IO::File->new(">$outfile")
   or die("$0: open failed for output file '$outfile': $!");
+binmode($outfh,':utf8');
 
 
 ##-- ye olde guttes
@@ -92,23 +93,29 @@ foreach my $cfile (@ARGV) {
   $outfh->print(
 		"Corpus File: $cfile\n",
 		sprintf("%${llen}s: %${ilen}d\n", "#/Categories", $ncats),
-		sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "#/Docs (TOTAL)", $ndocs, 100),
-		($want_cats && $want_ndocs
-		 ? (
-		    map {
-		      sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "> #/Docs (CAT '$_')",
-			      $c2ndocs{$_}, 100*$c2ndocs{$_}/$ndocs)
-		    } sort catcmp keys(%c2ndocs)
-		   )
+		##
+		($want_ndocs
+		 ? (sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "#/Docs (TOTAL)", $ndocs, 100),
+		    ($want_cats
+		     ? (
+			map {
+			  sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "> #/Docs (CAT '$_')",
+				  $c2ndocs{$_}, 100*$c2ndocs{$_}/$ndocs)
+			} sort catcmp keys(%c2ndocs)
+		       )
+		     : qw()))
 		 : qw()),
-		sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "#/Bytes (TOTAL)", $nbytes, 100),
-		($want_cats && $want_bytes
-		 ? (
-		    map {
-		      sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "> #/Bytes (CAT '$_')",
-			      $c2nbytes{$_}, 100*$c2nbytes{$_}/$nbytes)
-		    } sort catcmp keys(%c2nbytes)
-		   )
+		##
+		($want_bytes
+		 ? (sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "#/Bytes (TOTAL)", $nbytes, 100),
+		    ($want_cats
+		     ? (
+			map {
+			  sprintf("%${llen}s: %${ilen}d (%${flen}f %%)\n", "> #/Bytes (CAT '$_')",
+				  $c2nbytes{$_}, 100*$c2nbytes{$_}/$nbytes)
+			} sort catcmp keys(%c2nbytes)
+		       )
+		     : qw()))
 		 : qw()),
 	       );
 }

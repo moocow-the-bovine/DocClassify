@@ -3,8 +3,8 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
-use DocClassify::Mapper::Train;
 use DocClassify::Program ':all';
+use DocClassify::Mapper::Train;
 use Data::Dumper;
 
 #use PDL;
@@ -16,13 +16,20 @@ use File::Basename qw(basename);
 use Pod::Usage;
 
 #use strict;
-BEGIN { select(STDERR); $|=1; select(STDOUT); }
+BEGIN {
+  select(STDERR);
+  $|=1;
+  select(STDOUT);
+  binmode(STDERR,':utf8');
+  binmode(STDOUT,':utf8');
+}
 
 ##------------------------------------------------------------------------------
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
 
+$opts{mapNew}{warnOnNullDoc}=0;
 %opts = (%opts,
 
 	 #corpusLoad=>{optsLoad('corpus'),verboseIO=>0},
@@ -32,6 +39,7 @@ our $prog = basename($0);
 our $verbose = setVerbose(2);
 our $outdir       = 'xcheck.d';  ##-- output dir
 our $n_subcorpora = 10;
+our $do_cutoff    = 1;
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -42,10 +50,12 @@ GetOptions(
 	   dcOptions(),
 
 	   ##-- Local
+	   'cutoff|cut!' => \$do_cutoff,
 	   'n-subcorpora|n-splits|nsplit|n=i' => \$n_subcorpora,
 	   'output-directory|output-dir|outdir|dir|od|d=s'=> \$outdir,
 	  );
 $verbose = $opts{verbose};
+$opts{cutoffNew}{verbose} = $verbose;
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
@@ -92,9 +102,19 @@ our %mapopts = optsNew('map');
 our $mapper0 = DocClassify::Mapper->new( %mapopts, cleanDocs=>0 )
   or die("$0: Mapper::new(class=>'$mapopts{class}') failed: $!");
 
+our ($cut0);
+if ($do_cutoff) {
+  $cut0 = DocClassify::Mapper::Cutoff->new(optsNew('cutoff'))
+    or die("$0: Cutoff->new() failed: $!");
+}
+
 ##-- save master mapper (for reference)
 open(DUMP,">$outdir/mapper-template.plm") or die("$0: open failed for '$outdir/mapper-template.plm: $!");
-print DUMP Data::Dumper->Indent(1)->Sortkeys(1)->Dump([$mapper0],['map']);
+print DUMP Data::Dumper->Indent(1)->Sortkeys(1)->Dump([$mapper0],['$map']);
+close(DUMP);
+
+open(DUMP,">$outdir/cutoff-template.plm") or die("$0: open failed for '$outdir/cutoff-template.plm: $!");
+print DUMP Data::Dumper->Indent(1)->Sortkeys(1)->Dump([$cut0],['$cut']);
 close(DUMP);
 
 
@@ -105,7 +125,7 @@ our $cfile0  = shift(@ARGV);
 $logger->info("loadMasterCorpus($cfile0)") if ($verbose);
 our $corpus0 = DocClassify::Corpus->new(optsNew('corpus'))->loadFile($cfile0,optsLoad('corpus'))
     or die("$0: Corpus->loadFile() failed for master corpus '$cfile0': $!");
-$corpus0->{label} ||= $cfile0;
+$corpus0->{label} = $cfile0 if (!$corpus0->{label});
 our $label0 = $corpus0->{label};
 
 ##--------------------------------------------------------------
@@ -130,56 +150,98 @@ foreach $i (0..$#subcorpora) {
 }
 
 ##--------------------------------------------------------------
-## Train - Test - Eval loop
-$logger->info("LOOP: TRAIN - MAP - EVAL") if ($verbose);
+## Train - Map - Eval loop
+$logger->info("LOOP: TRAIN - APPLY - EVAL".($do_cutoff ? " - CUT" : '')) if ($verbose);
 our $eval0 = DocClassify::Eval->new(optsNew('eval'));
+our $eval0c = $do_cutoff ? $eval0->clone() : undef; ##-- cutoff eval
 foreach $i (0..$#subcorpora) {
-  $logger->info("LOOP (i=$i): CORPORA") if ($verbose);
+  $logger->info("LOOP (i=$i/$#subcorpora): CORPORA") if ($verbose);
   my $test = $subcorpora[$i]->shadow( %{$subcorpora[$i]}, label=>"TEST($i,$label0)" );
   my $train = $test->shadow( label=>"TRAIN($i,$label0)" );
   $train->addCorpus($_) foreach (@subcorpora[grep {$_ != $i} (0..$#subcorpora)]);
 
-  ##-- save corpora
+  ##-- base corpora: save
   $test->saveFile("$outdir/test.$i.xml");
   $train->saveFile("$outdir/train.$i.xml");
 
-  ##-- train mapper
-  $logger->info("LOOP (i=$i): TRAIN") if ($verbose);
+  ##-- map: train
+  $logger->info("LOOP (i=$i/$#subcorpora): MAP_TRAIN") if ($verbose);
   my $mapper = $mapper0->clone  or die("$0: Mapper->clone() failed for i=$i: $!");
   $mapper->trainCorpus($train)  or die("$0: Mapper->train() failed for i=$i: $!");
   $mapper->compile() or die("$0: Mapper->compile() failed for i=$i: $!");
-  $logger->info("LOOP (i=$i): CLEAR_CACHE") if ($verbose);
+  $logger->info("LOOP (i=$i/$#subcorpora): MAP_CLEAR_CACHE") if ($verbose);
   $mapper->clearTrainingCache();
 
-  ##-- apply mapper to test corpus
-  $logger->info("LOOP (i=$i): MAP") if ($verbose);
+  ##-- map: apply to test corpus
+  $logger->info("LOOP (i=$i/$#subcorpora): MAP_APPLY (mapccs=".($mapper->{mapccs}||0).")") if ($verbose);
   my $test_mapped = $test->clone;
   $test_mapped->{label} = "MAPPED($i,$label0)";
   $mapper->mapCorpus($test_mapped);
   $test_mapped->saveFile("$outdir/test.$i.mapped.xml");
 
-  ##-- evaluate
-  $logger->info("LOOP (i=$i): EVAL") if ($verbose);
+  ##-- map: evaluate
+  $logger->info("LOOP (i=$i/$#subcorpora): MAP_EVAL") if ($verbose);
   my $eval = $eval0->shadow()->compare($test,$test_mapped)->compile();
-  $eval->{label} = "EVAL($i,$label0)";
+  $eval->{label} = "EVAL_MAP($i,$label0)";
   $eval->saveFile("$outdir/eval.$i.xml", optsSave('eval'))
     or die("$0: Eval->saveFile($outdir/eval.$i.xml) failed: $!");
   $eval->saveTextFile(\*STDERR) if ($verbose);
 
-  ##-- evaluate: add to global
+  ##-- map: evaluate: add to global
   $eval0->addEval($eval);
+
+  ##-- cutoff
+  next if (!$do_cutoff);
+
+  ##-- cutoff: train
+  $logger->info("LOOP (i=$i/$#subcorpora): CUTOFF_TRAIN") if ($verbose);
+  my $cut = $cut0->clone  or die("$0: Cutoff->clone() failed for i=$i: $!");
+  $cut->trainEval($eval)  or die("$0: Cutoff->trainEval() failed for i=$i: $!");
+  $cut->compile() or die("$0: Cutoff->compile() failed for i=$i: $!");
+  $logger->info("LOOP (i=$i/$#subcorpora): CUTOFF_CLEAR_CACHE") if ($verbose);
+  $cut->clearTrainingCache();
+
+  ##-- cutoff: apply
+  $logger->info("LOOP (i=$i/$#subcorpora): CUTOFF_APPLY") if ($verbose);
+  $test_mapped->{label} = "CUT($i,$label0)";
+  $cut->mapCorpus($test_mapped);
+  $test_mapped->saveFile("$outdir/test.$i.cut.xml");
+
+  ##-- cut5off: evaluate
+  $logger->info("LOOP (i=$i/$#subcorpora): CUTOFF_EVAL") if ($verbose);
+  my $evalc = $eval0->shadow()->compare($test,$test_mapped)->compile();
+  $eval->{label} = "EVAL_CUT($i,$label0)";
+  $eval->saveFile("$outdir/cut.eval.$i.xml", optsSave('eval'))
+    or die("$0: Eval->saveFile($outdir/cut.eval.$i.xml) failed: $!");
+  $eval->saveTextFile(\*STDERR) if ($verbose);
+
+  ##-- map: evaluate: add to global
+  $eval0c->addEval($evalc);
 }
 
-##-- evaluate: total
-$logger->info("FINAL: EVAL ($outdir/eval.all.xml)") if ($verbose);
+##-- evaluate: total: map
+$logger->info("FINAL: MAP_EVAL ($outdir/eval.all.xml)") if ($verbose);
 @$eval0{qw(label label1 label2)} = ("EVAL($label0)","TEST(i,$label0)","MAPPED(i,$label0)");
 $eval0->compile();
 $eval0->saveFile("$outdir/eval.all.xml", optsSave('eval'))
   or die("$0: Eval->saveFile($outdir/eval.all.xml) failed: $!");
 $eval0->saveFile("$outdir/eval.summary.xml", optsSave('eval'), saveDocs=>0)
   or die("$0: Eval->saveFile($outdir/eval.summary.xml) failed: $!");
-
 $eval0->saveTextFile(\*STDERR,verboseIO=>0) if ($verbose);
+
+##-- evaluate: total: cutoff
+if ($do_cutoff) {
+  $logger->info("FINAL: CUT_EVAL ($outdir/eval.cut.xml)") if ($verbose);
+  @$eval0c{qw(label label1 label2)} = ("EVAL($label0)","TEST(i,$label0)","CUT(MAPPED(i,$label0))");
+  $eval0c->compile();
+  $eval0c->saveFile("$outdir/eval.cut.xml", optsSave('eval'))
+    or die("$0: Eval->saveFile($outdir/eval.cut.xml) failed: $!");
+  $eval0c->saveFile("$outdir/eval.cut.summary.xml", optsSave('eval'), saveDocs=>0)
+    or die("$0: Eval->saveFile($outdir/eval.summary.xml) failed: $!");
+  $eval0c->saveTextFile(\*STDERR,verboseIO=>0) if ($verbose);
+}
+
+$logger->info("completed.");
 
 =pod
 
@@ -201,6 +263,7 @@ dc-mapper-xcheck.perl - cross-validation split, train, map & evaluate in one swe
   -exclusive , -nox      # do/don't split exclusively (also effects mapper)
 
  Mapper Options:
+  -cut , -nocut          # do/don't test cutoff too
   -mapper-class CLASS    # set mapper class (default='LSI')
   -label LABEL           # set global mapper label
   -lz-class LZ_CLASS     # set lemmatizer subclass (default='default')

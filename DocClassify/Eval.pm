@@ -40,14 +40,10 @@ $EXPORT_TAGS{all} = [@EXPORT_OK];
 ##  label  => $label,      ##-- optional label (root attribute; default='')
 ##  label1 => $label1,     ##-- label for "wanted" corpus (gold-standard; default="wanted")
 ##  label2 => $label2,     ##-- label for "got" corpus (mapper output; default="got")
+##  verbose => $level,     ##-- verbosity level (0..4), default=2
 ##  ##
 ##  ##-- low-level data
 ##  lab2docs => \%lab2docs, ##-- $docLabel => [$doc1,$doc2]
-##  cat2eval => \%c2e,      ##-- ($catName => \%catEval)
-##                          ##   where:
-##                          ##       %catEval = ( $which=>$n, class=>$class )
-##                          ##   for $which =~ /^pr|rc|F|(tp|fp|fn)$/,
-##                          ##   and $class one of ('null', 'safe', or 'unsafe')
 ##  geval => \%g2e,         ##-- ($globalEvalMode => \%globalEval)
 ##                          ##   where $globalEvalMode is of the form "${gclass}.${ghow}",
 ##                          ##   for $gclass in:
@@ -60,9 +56,11 @@ $EXPORT_TAGS{all} = [@EXPORT_OK];
 ##  psafe => $frac,         ##-- minimum relative frequency of "safe" cats (default=0.025=2.5%)
 ##  nullCat => $catName,    ##-- name of 'null' cat; set to a non-cat for none
 ##                          ##   + default='(auto)': cat w/ largest (tp+fn)
-##  errors => \%errs,       ##-- {"${catName1}\t${catName2}" => \%c12errors,
-##                          ##   where:
-##                                 $c12errors = {ndocs=>$ndocs,fdocs=>$fdocs}
+##  pairs => \%pairs,       ##-- {"${catName1}\t${catName2}" => \%pairInfo,
+##                          ##   + where \%pairInfo = {ndocs=>$ndocs, cat1=>$c1,cat2=>$cat2,...}
+##  cat2info => \%cat2info, ##-- $catName=>{class=>$class,tp=>$tp_total,fp=>$fp_total,fn=>$fn_total,...}
+##                          ##   + \%catInfo=>(class=>$class,...)
+##                          ##   + $class is one of ('null', 'safe', or 'unsafe')
 ##  #...
 sub new {
   my $that = shift;
@@ -71,14 +69,15 @@ sub new {
 			       label=>'',
 			       label1 => undef,
 			       label2 => undef,
+                               verbose => 2,
 
 			       ##-- low-level data
 			       lab2docs => {},
-			       cat2eval => {},
 			       geval => {},
 			       Ndocs => 0,
 			       Nbytes => 0,
-			       errors => {},
+			       pairs => {},
+			       cat2info => {},
 			       psafe => 0.025,
 			       nullCat => '(auto)',
 
@@ -93,9 +92,9 @@ sub new {
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
-##  + override returns qw(label1 label2 lab2docs cat2eval Ndocs Nbytes errors)
+##  + override returns qw(label1 label2 lab2docs Ndocs Nbytes pairs cat2info)
 sub noShadowKeys {
-  return qw(lab2docs cat2eval Ndocs Nbytes errors);
+  return qw(lab2docs Ndocs Nbytes pairs cat2eval cat2info);
 }
 
 ## $eval = $eval->clear()
@@ -103,12 +102,12 @@ sub noShadowKeys {
 sub clear {
   my $eval = shift;
   %{$eval->{lab2docs}} = qw();
-  %{$eval->{cat2eval}} = qw();
+  %{$eval->{cat2info}} = qw();
   %{$eval->{geval}} = qw();
   $eval->{Ndocs} = 0;
   $eval->{label1} = undef;
   $eval->{label2} = undef;
-  %{$eval->{errors}} = qw();
+  %{$eval->{pairs}} = qw();
   $eval->{nullCat} = $eval->{nullCat0};
   return $eval;
 }
@@ -120,9 +119,11 @@ sub clear {
 ##  + $corpus1: "wanted" corpus (gold-standard)
 ##  + $corpus2: "got" corpus (mapper output)
 ##  + %opts: overrides %$eval
+##  + updates $eval->{lab2docs}, $eval->{pairs}
 sub compare {
   my ($eval,$corpus1,$corpus2,%opts) = @_;
   @$eval{keys(%opts)} = values(%opts);
+  $eval->debug("compare(", ($corpus1->{label}||'nolabel1'), ", ", ($corpus2->{label}||'nolabel2'), ")");
 
   ##-- labels
   $eval->{label1} = $corpus1->{label} if (!defined($eval->{label1}));
@@ -148,28 +149,17 @@ sub compare {
     }
   }
 
-  ##-- populate $c2e = $eval->{cat2eval}: tp,fp,fn: compare docs by label
-  ##   + also populates $eval->{errors}{ndocs}
-  ##   + global eval $eval->{geval} is NOT populated
+  ##-- update $eval->{pairs}{"$cat1\t$cat2"}{ndocs}: compare docs by label
+  ##   + global eval $eval->{geval}, $eval->{cat2info}, etc. are NOT populated
+  my $pairs = $eval->{pairs};
   my ($docs, $cats1,$cats2, $cat1,$cat2);
-  my ($ename);
+  my ($pname);
   foreach $docs (values(%$l2doc)) {
     ($doc1,$doc2) = @$docs;
     ($cats1,$cats2) = (scalar($doc1->cats),scalar($doc2->cats));
-    ($cat1,$cat2) = ($cats1->[0],$cats2->[0]);          ##-- exclusive membership only!
-    if ($cat1->{name} eq $cat2->{name}) {
-      $eval->{cat2eval}{$cat1->{name}}{tp}++;      ##-- true positive for $cat1,$cat2
-      $cat1->{evalClass} = 'tp1';
-      $cat2->{evalClass} = 'tp2';
-    } else {
-      $eval->{cat2eval}{$cat1->{name}}{fn}++;      ##-- false negative for $cat1
-      $eval->{cat2eval}{$cat2->{name}}{fp}++;      ##-- false positive for $cat2
-      $cat1->{evalClass} = 'fn';
-      $cat2->{evalClass} = 'fp';
-      ##
-      $ename = $cat1->{name}."\t".$cat2->{name};
-      $eval->{errors}{$ename}{ndocs}++;
-    }
+    ($cat1,$cat2) = ($cats1->[0],$cats2->[0]);     ##-- exclusive membership only!
+    $pname = $cat1->{name}."\t".$cat2->{name};
+    $pairs->{$pname}{ndocs}++;
   }
 
   return $eval;
@@ -179,10 +169,11 @@ sub compare {
 ## Methods: Cross-Validation
 
 ## $eval1 = $eval1->addEval($eval2)
-##  + adds evaluation data from $eval2 to $eval1
+##  + adds evaluation data {lab2docs}, {pairs}{*}{ndocs} from $eval2 to $eval1
 sub addEval {
   my ($eval1,$eval2) = @_;
   $eval1->uncompile() if ($eval1->compiled);
+  $eval1->debug("addEval()");
 
   ##-- add: lab2docs
   my $l2d = $eval1->{lab2docs};
@@ -195,20 +186,11 @@ sub addEval {
     $l2d->{$lab} = [@$docs];
   }
 
-  ##-- add: c2e
-  my $c2e = $eval1->{cat2eval};
-  my ($cat,$chash1,$chash2);
-  my @addKeys = qw(tp fp fn);
-  while (($cat,$chash2)=each(%{$eval2->{cat2eval}})) {
-    $chash1 = $c2e->{$cat};
-    $chash1 = $c2e->{$cat} = {} if (!defined($chash1));
-    $chash1->{$_} += ($chash2->{$_}||0) foreach (@addKeys);
-  }
-
-  ##-- add: errors
-  my ($ekey,$err);
-  while (($ekey,$err)=each(%{$eval2->{errors}})) {
-    $eval1->{errors}{$ekey}{ndocs} += ($err->{ndocs}||0);
+  ##-- add: pairs (ndocs)
+  my $pairs1 = $eval1->{pairs};
+  my ($pkey,$pval);
+  while (($pkey,$pval)=each(%{$eval2->{pairs}})) {
+    $pairs1->{$pkey}{ndocs} += ($pval->{ndocs}||0);
   }
 
   return $eval1;
@@ -218,43 +200,67 @@ sub addEval {
 ## Methods: Compilation
 
 ## $eval = $eval->compile()
-##  + (re-)compiles $eval->{Ndocs} from $eval->{cat2eval} (tp+fn)
-##  + (re-)compiles $eval->{nullCat} if it was given as '(auto)'
-##  + (re-)compiles $eval->{cat2eval}{$catName} pr,rc,F values
-##  + (re-)compiles $eval->{geval} global evaluation modes
-##  + (re-)compiles $eval->{errors}{qw(cat1 cat2 fdocs)}: cat-wise errors (fractional)
+##  + (re-)compiles eval data from $eval->{pairs}{"$c1\t$c2"}}{ndocs}
+##    - $eval->{Ndocs}
+##    - $eval->{nullCat} if it was given as '(auto)'
+##    - $eval->{geval} global evaluation modes
+##    - $eval->{cat2info} basic cat info
+##    - #$eval->{errors}{qw(cat1 cat2 fdocs)}: cat-wise errors (fractional)
 sub compile {
   my $eval = shift;
+  $eval->debug("compile()");
 
   ##-- variables
-  my $c2e  = $eval->{cat2eval};
+  my $pairs = $eval->{pairs};
+  my ($pkey,$pval);
   my ($cname,$c);
 
-  ##-- compile cat-wise pr,rc,F and $eval->{Ndocs}
+  ##-- compile Ndocs, cat1, cat2
   my $Ndocs = 0;
-  foreach (values %$c2e) {
+  while (($pkey,$pval)=each(%$pairs)) {
+    @$pval{qw(cat1 cat2)} = split(/\t/,$pkey,2);
+    $pval->{ndocs} ||= 0;
+    $Ndocs += $pval->{ndocs};
+  }
+  $eval->{Ndocs} = $Ndocs;
+  $eval->logwarn("compile(): WARNING: Ndocs=0") if ($Ndocs==0);
+
+  ##-- compile cat2info: tp,fp,fn
+  my $c2i  = $eval->{cat2info};
+  while (($pkey,$pval)=each(%$pairs)) {
+    if ($pval->{cat1} eq $pval->{cat2}) {
+      $c2i->{$pval->{cat1}}{tp} += $pval->{ndocs};
+    } else {
+      $c2i->{$pval->{cat1}}{fn} += $pval->{ndocs};
+      $c2i->{$pval->{cat2}}{fp} += $pval->{ndocs};
+    }
+  }
+
+  ##-- compile cat2info: pr,rc,F
+  foreach (values %$c2i) {
     $_->{tp} ||= 0;
     $_->{fp} ||= 0;
     $_->{fn} ||= 0;
-    prF($_);
-    $Ndocs += $_->{tp} + $_->{fn};
+    prF($_); ##-- superseded by {geval}{'all.avg'}{bycat}, but compiled here just in case
   }
-  $eval->{Ndocs} = $Ndocs;
 
   ##-- compile $eval->{nullCat} if requested (i.e. '(auto)')
+  $eval->debug("compile(): nullCat='".($eval->{nullCat}||'(none)')."'") if ($eval->{verbose}>=3);
   if (defined($eval->{nullCat}) && $eval->{nullCat} eq '(auto)') {
     my $nNull = -1;
-    while (($cname,$c)=each(%$c2e)) {
+    while (($cname,$c)=each(%$c2i)) {
       if ( ($c->{tp}+$c->{fn}) > $nNull ) {
 	$eval->{nullCat} = $cname;
 	$nNull = ($c->{tp}+$c->{fn});
       }
     }
+    $eval->debug("compile(): nullCat->'".($eval->{nullCat}||'(none)')."' (n=$nNull ~ ".sprintf("%.1f%%",100*$nNull/$Ndocs).")")
+      if ($eval->{verbose}>=3);
   }
 
-  ##-- compile cat classes
-  while (($cname,$c)=each(%$c2e)) {
-    my $nsafe = ($eval->{psafe}||0) * $Ndocs;
+  ##-- compile: cat classes
+  my $nsafe = ($eval->{psafe}||0) * $Ndocs;
+  while (($cname,$c)=each(%$c2i)) {
     if (defined($eval->{nullCat}) &&$cname eq $eval->{nullCat}) {
       $c->{class} = 'null';
     } elsif ($c->{tp}+$c->{fn} > $nsafe) {
@@ -264,55 +270,141 @@ sub compile {
     }
   }
 
-  ##-- compile errors: get total number of errors
-  my $nerrs = 0;
-  $nerrs += ($_->{ndocs}||0) foreach (values(%{$eval->{errors}}));
-
-  ##-- compile errors: cat1,cat2,fdocs
-  my ($ekey,$e);
-  while (($ekey,$e) = each(%{$eval->{errors}})) {
-    @$e{qw(cat1 cat2)} = split(/\t/,$ekey,2);
-    $e->{fdocs} = ($e->{ndocs}||0) / $nerrs;
-  }
-
-  ##-- compile errors: nested
-  my $errs1 = $eval->{errors1} = {};  ##-- $catName1 => @errors with wanted=$catName1
-  my $errs2 = $eval->{errors2} = {};  ##-- $catName2 => @errors with got=$catName2
-  foreach $e (values %{$eval->{errors}}) {
-    push(@{$errs1->{$e->{cat1}}},$e);
-    push(@{$errs2->{$e->{cat2}}},$e);
+  ##-- compile: pair classes
+  while (($pkey,$pval)=each(%$pairs)) {
+    $pval->{class1} = $c2i->{$pval->{cat1}}{class};
+    $pval->{class2} = $c2i->{$pval->{cat2}}{class};
+    $pval->{class} = "$pval->{class1}-$pval->{class2}";
   }
 
   ##-- compile globals
   $eval->compileGlobals('all');
-  $eval->compileGlobals('nz',denyClassRe=>qr/^null$/);
-  $eval->compileGlobals('nz_safe',allowClassRe=>qr/^safe$/);
-  $eval->compileGlobals('nz_safe1',allowClassRe=>qr/^safe$/, error1ClassRe=>qr/^(?:null|safe)$/);
-  $eval->compileGlobals('nz_unsafe',allowClassRe=>qr/^unsafe$/);
+  $eval->compileGlobals('nz',           denyAvgRe=>qr/^null$/);
+  $eval->compileGlobals('nz_picky',     denyPairRe=>qr/^null-/); #qr/^null-|-null$/
+  $eval->compileGlobals('safe',         allowAvgRe=>qr/^safe$/);
+  $eval->compileGlobals('safe_picky',   allowPairRe=>qr/^safe-safe$/, allowAvgRe=>qr/^safe$/);
+  $eval->compileGlobals('unsafe',       allowAvgRe=>qr/^unsafe$/);
+  $eval->compileGlobals('unsafe_picky', allowPairRe=>qr/^unsafe-unsafe$/, allowAvgRe=>qr/^unsafe$/);
+
+  ##-- compile errors
+  $eval->compileErrors();
 
   ##-- return
   return $eval;
 }
 
+BEGIN {
+  #*compileErrors = \&compileErrors_total;
+  *compileErrors = \&compileErrors_nz_avg_F;
+}
+
+## $eval = $eval->compileErrors_nz_avg_F()
+##  + compiles @$p{qw(fdocs ferrs)} for each pair $p in $eval->{pairs}
+##  + this version compiles $p->{ferrs} as fraction of 'avg.total' errors
+##  + requires $eval->{geval}{'all.avg'}{bycat}{qw(tp fp fn pr rc F)}
+sub compileErrors_nz_avg_F {
+  my $eval = shift;
+
+  ##-- get global precision, recall weights for 'nz.avg.F'
+  my $geval = $eval->{geval}{'nz.avg'};
+  my $bycat = $geval->{bycat};
+  my $gw_pr = Fw_pr(@$geval{qw(pr rc)});
+  my $gw_rc = Fw_rc(@$geval{qw(pr rc)});
+
+  ##-- get class-wise fraction of total nz.avg.F errors to $c->{ferrs_pr}, $c->{ferrs_rc}
+  my $ncats = scalar grep {$_->{class} ne 'null'} values %$bycat;
+  my ($c);
+  foreach $c (values %$bycat) {
+    if ($c->{class} eq 'null') {
+      $c->{ferrs_pr} = $c->{ferrs_rc} = 0; ##-- no direct error contribution
+    } else {
+      $c->{ferrs_pr} = $gw_pr * $c->{fp}/($geval->{fp}*$ncats);
+      $c->{ferrs_rc} = $gw_rc * $c->{fn}/($geval->{fn}*$ncats);
+    }
+  }
+
+  ##-- now get fraction of class-wise errors to $p->{ferrs1}, $p->{ferrs2}, $p->{ferrs}
+  my $ndocs = $eval->{Ndocs};
+  my ($pval,$c1,$c2);
+  foreach $pval (values %{$eval->{pairs}}) {
+    ($c1,$c2) = @$pval{qw(cat1 cat2)};
+    if ($c1 eq $c2) {
+      $pval->{ferrs1}=$pval->{ferrs2}=0;
+    } else {
+      $pval->{ferrs1} = ($pval->{ndocs}||0) / $bycat->{$c1}{fn};
+      $pval->{ferrs2} = ($pval->{ndocs}||0) / $bycat->{$c2}{fp};
+    }
+    $pval->{ferrs} = $pval->{ferrs1}*$bycat->{$c1}{ferrs_rc} + $pval->{ferrs2}*$bycat->{$c2}{ferrs_pr};
+    ##
+    ##-- also compile basic 'fdocs'
+    $pval->{fdocs} = ($pval->{ndocs}||0) / $ndocs;
+  }
+
+  return $eval;
+}
+
+## $eval = $eval->compileErrors_total()
+##  + compiles @$p{qw(fdocs ferrs)} for each pair $p in $eval->{pairs}
+##  + this version compiles $p->{ferrs} as fraction of 'avg.total' errors
+sub compileErrors_total {
+  my $eval = shift;
+
+  ##-- errors: get total number of errors
+  my $nerrs = 0;
+  $nerrs += ($_->{ndocs}||0) foreach (grep {$_->{cat1} ne $_->{cat2}} values %{$eval->{pairs}});
+  my $ndocs = $eval->{Ndocs};
+  $eval->{nerrs} = $nerrs;
+
+  ##-- pairs: fdocs, ferrs
+  my ($pval);
+  foreach $pval (values %{$eval->{pairs}}) {
+    $pval->{fdocs} = ($pval->{ndocs}||0) / $ndocs;
+    $pval->{ferrs} = ($pval->{cat1} eq $pval->{cat2} ? 0 : (($pval->{ndocs}||0)/$nerrs));
+  }
+
+  return $eval;
+}
+
+
 ## $eval = $eval->compileGlobals($gclass, %opts)
 ##  + compiles $eval->{geval}{"$gclass.total","$gclass.avg"} from $eval->{cat2eval}
 ##  + called by compile()
 ##  + %opts:
-##     allowClassRe => $regex,       ##-- only allow cats $c with $c->{class} matching $regex
-##     denyClassRe  => $regex,       ##-- deny cats $c with $c->{class} matching $regex
-##     error1ClassRe => $regex,      ##-- only allow errors $e with $cat2eval->{$e->{cat1}}{class} matching $regex
+##     allowPairRe  => $regex,  ##-- only  count pairs $p with $p->{pclass} =~ $regex
+##     denyPairRe   => $regex,  ##-- don't count pairs $p with $p->{pclass} =~ $regex
+##     allowAvgRe   => $regex,  ##-- only  average classes $c with $cname =~ $regex
+##     denyAvgRe    => $regex,  ##-- don't average classes $c with $cname =~ $regex
 sub compileGlobals {
   my ($eval,$gclass,%opts) = @_;
-  my $allowRe = $opts{allowClassRe};
-  my $denyRe  = $opts{denyClassRe};
+  ##
+  my $allowPairRe = $opts{allowPairRe} || qr/./;
+  my $denyPairRe  = $opts{denyPairRe}  || qr/^$/;
+  ##
+  my $allowAvgRe = $opts{allowAvgRe} || qr/./;
+  my $denyAvgRe  = $opts{denyAvgRe}  || qr/^$/;
   my $e1re    = $opts{error1ClassRe};
 
-  ##-- compile: get allowed cats
-  my %cats = qw();
-  my ($name,$c);
-  while (($name,$c)=each(%{$eval->{cat2eval}})) {
-    next if (defined($allowRe) && $c->{class} !~ $allowRe);
-    next if (defined($denyRe) && $c->{class} =~ $denyRe);
+  ##-- compile: CLASS.total: {bycat}
+  my $etotal = $eval->{geval}{"$gclass.total"} = { bycat=>{} };
+  my ($pkey,$pval,$cat1,$cat2);
+  while (($pkey,$pval)=each(%{$eval->{pairs}})) {
+    ($cat1,$cat2) = @$pval{qw(cat1 cat2)};
+    next if ($pval->{class} !~ $allowPairRe || $pval->{class} =~ $denyPairRe);
+    if ($cat1 eq $cat2) {
+      $etotal->{bycat}{$cat1}{tp} += $pval->{ndocs};
+    } else {
+      $etotal->{bycat}{$cat1}{fn} += $pval->{ndocs};
+      $etotal->{bycat}{$cat2}{fp} += $pval->{ndocs};
+    }
+  }
+
+  ##-- compile: CLASS.total: tp,fp,fn, pr,rc,F
+  my @cats = qw();
+  my ($cname,$c);
+  while (($cname,$c)=each(%{$etotal->{bycat}})) {
+    $c->{class} = $eval->{cat2info}{$cname}{class} || '';
+    next if ($c->{class} !~ $allowAvgRe || $c->{class} =~ $denyAvgRe);
+    prF($c);
     $cats{$name}=$c;
   }
   my @cats = values(%cats);
@@ -332,8 +424,8 @@ sub compileGlobals {
   }
   prF($etotal);
 
-  ##-- compile: average mode
-  my $eavg = $eval->{geval}{"$gclass.avg"} = {};
+  ##-- compile: CLASS.avg
+  my $eavg = $eval->{geval}{"$gclass.avg"} = { bycat=>$etotal->{bycat} };
   my $ncats = scalar(@cats);
   foreach $c (@cats) {
     $eavg->{tp} += 1/$ncats * ($c->{tp}||0);
@@ -347,25 +439,38 @@ sub compileGlobals {
   return $eval;
 }
 
-
 ## $bool = $eval->compiled()
 ##  + returns true iff pr,rc,F have been compiled
-##  + really just checks for non-empty $eval->{geval}
+##  + really just checks for non-empty $eval->{cat2info}
 sub compiled {
-  return scalar(%{$_[0]{geval}});
+  return scalar(%{$_[0]{cat2info}});
 }
 
 ## $eval = $eval->uncompile()
-##  + deletes $eval->{cat2eval}{$catName} pr,rc,F values
+##  + clears $eval->{cat2eval}
 ##  + clears $eval->{geval}
 ##  + re-sets $eval->{nullCat}
 sub uncompile {
   my $eval = shift;
-  my @delkeys = qw(pr rc F);
-  delete(@$_{@delkeys}) foreach (values(%{$eval->{cat2eval}}));
+  %{$eval->{cat2eval}} = qw();
   %{$eval->{geval}} = qw();
   $eval->{nullCat} = $eval->{nullCat0};
   return $eval;
+}
+
+sub dbg_bycat {
+  my ($eval,$bycat) = @_;
+  my ($c);
+  my $llen = 36;
+  foreach $c (sort DocClassify::Utils::catcmp keys %$bycat) {
+    print STDERR
+      (sprintf("EVAL: %-${llen}s : ", $c),
+       join(' ', map {sprintf("$_=%4d",($bycat->{$c}{$_}||0))} qw(tp fp fn)),
+       ' : ',
+       join(' ', map {sprintf("$_=%6.2f",(100*$bycat->{$c}{$_}||0))} qw(pr rc F)),
+       "\n",
+      );
+  }
 }
 
 ##==============================================================================
@@ -379,45 +484,73 @@ sub frac {
   #return $denom!=0 ? ($num/$denom) : 0;
 }
 
-## $pr = PACKAGE::precision(\%catEvalHash,$units)
+## $pr = PACKAGE::precision(\%catEvalHash)
 sub precision {
   my $hash = shift;
   return $hash->{pr} if (defined($hash->{pr}));
-  my $tp = $hash->{tp} || 0;
-  my $fp = $hash->{fp} || 0;
+  my $tp = $hash->{tp} = $hash->{tp} || 0;
+  my $fp = $hash->{fp} = $hash->{fp} || 0;
   return $hash->{pr} = frac($tp, ($tp+$fp));
 }
 
-## $rc = PACKAGE::recall(\%catEvalHash,$units)
+## $rc = PACKAGE::recall(\%catEvalHash)
 sub recall {
   my $hash = shift;
   return $hash->{"rc"} if (defined($hash->{"rc"}));
-  my $tp = $hash->{tp} || 0;
-  my $fn = $hash->{fn} || 0;
+  my $tp = $hash->{tp} = $hash->{tp} || 0;
+  my $fn = $hash->{fn} = $hash->{fn} || 0;
   return $hash->{"rc"} = frac($tp, ($tp+$fn));
 }
 
-## $F = PACKAGE::F(\%catEvalHash,$units)
+## $avg = pravg(\%catEvalHash)
+sub pravg {
+  my $hash = shift;
+  return $hash->{'a'} if (defined($hash->{'a'}));
+  return $hash->{'a'} = (precision($hash)+recall($hash))/2.0;
+}
+
+## $F = PACKAGE::_F($pr,$rc)
+sub _F {
+  return frac(2.0, ($_[0]**-1 + $_[1]**-1));
+}
+
+## $F = PACKAGE::F(\%catEvalHash)
 sub F {
   my $hash = shift;
   return $hash->{"F"} if (defined($hash->{"F"}));
   my ($pr,$rc) = (precision($hash),recall($hash));
-  return $hash->{"F"} = frac(2.0, ($pr**-1 + $rc**-1));
+  return $hash->{"F"} = _F($pr,$rc);
 }
 
-## ($pr,$rc,$F) = PACKAGE::prF(\%catEvalHash,$unit)
+## ($pr,$rc,$F,$pravg) = PACKAGE::prF(\%catEvalHash)
+##  + sets {qw(pr rc F a)} from {qw(tp fp fn)}
 sub prF {
-  return (precision(@_),recall(@_),F(@_));
+  return (precision(@_),recall(@_),F(@_),pravg(@_));
 }
+
+## $weight_pr = PACKAGE::Fw_pr($pr,$rc)
+##  + relative contribution of precision errors to F errors
+sub Fw_pr {
+  my ($pr,$rc) = @_;
+  return _F(1-$pr,1) / (_F(1-$pr,1)+_F(1,1-$rc));
+}
+## $weight_rc = PACKAGE::Fw_rc($pr,$rc)
+##  + relative contribution of recall errors to F errors
+sub Fw_rc {
+  my ($pr,$rc) = @_;
+  return _F(1,1-$rc) / (_F(1-$pr,1)+_F(1,1-$rc));
+}
+
 
 ## $str = PACKAGE::reportStr($label,\%catEvalHash, %opts)
 ##  + %opts:
 ##     llen=>$fmtLen, ##-- default=24 #48
 ##     plen=>$fmtLen, ##-- default='4.1'
 ##     ilen=>$fmtLen, ##-- default='4',
+##     counts => $bool, ##-- print counts? (default=0)
 sub reportStr {
   my ($lab,$hash,%opts) = @_;
-  my ($llen,$plen,$ilen) = @opts{qw(llen plen ilen)};
+  my ($llen,$plen,$ilen,$counts) = @opts{qw(llen plen ilen counts)};
   #$llen ||= 48;
   $llen ||= 24;
   $plen ||= '5.1';
@@ -425,10 +558,10 @@ sub reportStr {
   prF($hash);
   return (join('  ',
 	       sprintf("%-${llen}s:", $lab),
-	       #(map {sprintf("$_=%${ilen}d", ($hash->{$_}||0))} qw(tp fp fn)),
-	       (map {"$_=".sistr(($hash->{$_}||0),'d',$ilen,' ')} qw(tp fp fn)),
-	       ':',
-	       (map {sprintf("$_=%${plen}f", 100*($hash->{$_}||0))} qw(pr rc F))
+	       ##(map {sprintf("$_=%${ilen}d", ($hash->{$_}||0))} qw(tp fp fn)),
+	       ($counts ? ((map {sprintf("$_=%${ilen}d", $hash->{$_})} qw(tp fp fn)), ':') : qw()),
+	       ##
+	       (map {sprintf("$_=%${plen}f", 100*($hash->{$_}||0))} qw(pr rc F a))
 	      )."\n");
 }
 
@@ -449,34 +582,57 @@ sub defaultIoMode { return 'xml'; }
 
 ## $eval = $eval->saveTextFile($file_or_fh,%opts)
 ##  + %opts:
-##     nErrors => $n,  ##-- number of errors to save (default=10)
+##     nErrors => $n,    ##-- number of errors to save (default=10)
+##     counts  => $bool, ##-- dump counts? (default=0)
+##     cats    => $bool, ##-- dump cat-wise summaries (default=0)
 sub saveTextFile {
   my ($eval,$file,%opts) = @_;
   $eval->compile if (!$eval->compiled);
 
   my $fh = ref($file) ? $file : IO::File->new(">$file");
   confess(ref($eval)."::saveTextFile: open failed for '$file': $!") if (!defined($fh));
-  $fh->binmode(':utf8') if ($fh->can('binmode'));
+  #$fh->binmode(':utf8') if ($fh->can('binmode'));
 
   ##-- brief report
-  $fh->print(ref($eval).": ".($eval->{label}||'(no label)').": Summary\n");
-  my %ropts = (llen=>20);
+  my $label = $eval->{label} || '(no label)';
+  $fh->print(ref($eval).": $label: Summary\n");
+  my %ropts = (%opts,llen=>22);
   my ($gmode);
   foreach $gmode (sort(keys(%{$eval->{geval}}))) {
     $fh->print(reportStr(" : $gmode", $eval->{geval}{$gmode}, %ropts));
   }
 
+  ##-- category summary
+  if ($opts{cats}) {
+    $fh->print(" + $label: summary by category:\n");
+    my $bycat = $eval->{geval}{'all.avg'}{bycat};
+    my $catlen = 36;
+    my $classlen = 6;
+    my ($c);
+    foreach $c (sort DocClassify::Utils::catcmp keys %$bycat) {
+      $fh->print(join('  :  ',
+		      sprintf("   > %-${catlen}s", $c),
+		      sprintf("%${classlen}s", $eval->{cat2info}{$c}{class}),
+		      ($opts{counts} ? join(' ', map {sprintf("$_=%4d",($bycat->{$c}{$_}||0))} qw(tp fp fn)) : qw()),
+		      join(' ', map {sprintf("$_=%6.2f",(100*$bycat->{$c}{$_}||0))} qw(pr rc F a)),
+		     ),
+		 "\n",
+		);
+    }
+  }
+
   ##-- error report
   $opts{nErrors} = 10 if (!defined($opts{nErrors}));
-  if ($opts{nErrors} > 0) {
-    my @errs = sort {$b->{ndocs} <=> $a->{ndocs}} values(%{$eval->{errors}});
-    my $nerrs = ($opts{nErrors} < @errs ? $opts{nErrors} : @errs);
-    my $sfmt  = "%-32s";
+  if ($opts{nErrors} != 0) {
+    #my @errs = sort {$b->{ndocs} <=> $a->{ndocs}} grep {$_->{cat1} ne $_->{cat2}} values(%{$eval->{pairs}});
+    my @errs = sort {$b->{ferrs} <=> $a->{ferrs}} values(%{$eval->{pairs}});
+    my $nerrs = ($opts{nErrors} > 0 && $opts{nErrors} < @errs ? $opts{nErrors} : @errs);
+    my $sfmt  = "%-36s";
     my $dfmt  = "%6d";
     my $ffmt  = "%6.2f";
-    $fh->print(" + Top $nerrs error types (WANTED -> GOT = NDOCS (% ERRS))\n",
+    $fh->print(" + $label: top $nerrs error types (WANTED -> GOT = NDOCS (% NZ_AVG_F_ERRS))\n",
 	       (map {
-		 sprintf("   ~ $sfmt -> $sfmt = $dfmt ($ffmt%%)\n", @$_{qw(cat1 cat2 ndocs)}, 100*$_->{fdocs})
+		 sprintf("   ~ $sfmt -> $sfmt = $dfmt ($ffmt%%)\n", @$_{qw(cat1 cat2 ndocs)}, 100*$_->{ferrs})
 	       } (@errs[0..($nerrs-1)])),
 	      );
   }
@@ -520,7 +676,7 @@ sub saveXmlDoc {
 
   ##-- data root
   my $data_root = $root->addNewChild(undef,'data');
-  my $c2e = $eval->{cat2eval};
+  my $c2i = $eval->{cat2info};
   my $g2e = $eval->{geval};
 
   ##-- global data
@@ -534,27 +690,27 @@ sub saveXmlDoc {
   }
 
   ##-- category eval data
-  my $ce_root = $data_root->addNewChild(undef,'by-category');
-  my $ced_node = $ce_root->addNewChild(undef,'by-n-docs');
-  ##
-  my ($c_name,$c_hash,$c_node);
-  foreach $c_name (grep {$_ ne ''} sort(keys(%$c2e))) {
-    $c_hash = $c2e->{$c_name};
-    ##
-    $c_node = $ced_node->addNewChild(undef,'cat');
-    $c_node->setAttribute('name',$c_name);
-    $c_node->setAttribute($_, ($c_hash->{$_}||0)) foreach (qw(tp fp fn pr rc F));
+  my $ce_root  = $data_root->addNewChild(undef,'by-category');
+  my ($ceg_node,$ge_bycat, $c_name,$c_hash,$c_node);
+  foreach $gmode (sort keys %$g2e) {
+    $ge_bycat = $g2e->{$gmode}{bycat};
+    next if (!defined($ge_bycat));
+    $ceg_node = $ce_root->addNewChild(undef,'mode');
+    $ceg_node->setAttribute('name',$gmode);
+    foreach $c_name (sort keys %$ge_bycat) {
+      $c_hash = $ge_bycat->{$c_name};
+      $c_node = $ceg_node->addNewChild(undef,'cat');
+      $c_node->setAttribute('name',$c_name);
+      $c_node->setAttribute($_, ($c_hash->{$_}||0)) foreach (qw(class tp fp fn pr rc F));
+    }
   }
 
-  ##-- error data
-  my $errs_node = $data_root->addNewChild(undef,'errors');
-  my ($err,$e_node);
-  foreach $err (sort {$b->{ndocs} <=> $a->{ndocs}} values(%{$eval->{errors}})) {
-    $e_node = $errs_node->addNewChild(undef,'error');
-    $e_node->setAttribute('cat1',$err->{cat1});
-    $e_node->setAttribute('cat2',$err->{cat2});
-    $e_node->setAttribute('ndocs',$err->{ndocs});
-    $e_node->setAttribute('fdocs',$err->{fdocs});
+  ##-- pair data
+  my $pairs_node = $data_root->addNewChild(undef,'pairs');
+  my ($pair,$p_node);
+  foreach $pair (sort {$b->{ndocs} <=> $a->{ndocs}} values(%{$eval->{pairs}})) {
+    $p_node = $pairs_node->addNewChild(undef,'pair');
+    $p_node->setAttribute($_,$pair->{$_}) foreach (qw(cat1 cat2 class1 class2 ndocs fdocs ferrs));
   }
 
   ##-- document-pair list
@@ -625,6 +781,8 @@ sub xpvalue {
 
 ## $eval = $CLASS_OR_OBJECT->loadXmlDoc($xdoc,%opts)
 ##  + (re-)loads corpus data from $xdoc
+##  + %opts:
+##     nocompile=>$bool,  ##-- if true, suppresses implicit compile()
 sub loadXmlDoc {
   my ($that,$xdoc,%opts) = @_;
   my $eval = ref($that) ? $that->clear : $that->new(%opts);
@@ -640,43 +798,17 @@ sub loadXmlDoc {
   $eval->{label1} = xpvalue($head,'corpora[1]/corpus[1]/@label');
   $eval->{label2} = xpvalue($head,'corpora[1]/corpus[2]/@label');
 
-  ##-- load: data
-  my $data_root = xpvalue($root,'data[1]');
-  my $c2e = $eval->{cat2eval};
-
-  ##-- data: eval: global
-  my $g_root = xpvalue($data_root,'global[1]');
-  my $g2e = $eval->{geval};
-  my ($g_node,$g_name);
-  foreach $g_node (@{$data_root->findnodes('./mode')}) {
-    $g_name = xpvalue($g_node,'./@name');
-    $g2e->{$g_name}{$_} = ($g_node->getAttribute($_)||0) foreach (qw(tp fp fn pr rc F));
+  ##-- load: data: pairs
+  my ($p_node,$pkey,$pval);
+  foreach $p_node (@{$root->findnodes('data[1]/pairs[1]/pair')}) {
+    $pval = { (map {($_=>$p_node->getAttribute($_))} qw(cat1 cat2 ndocs)) };
+    $pkey = $pval->{cat1}."\t".$pval->{cat2};
+    $eval->{pairs}{$pkey} = $pval;
   }
 
-  ##-- data: eval: by category
-  my ($ce_unit,$ce_node, $c_node,$c_name);
-  $ce_unit = 'docs';
-  $ce_node = xpvalue($data_root,'by-category[1]/by-n-docs[1]');
-  foreach $c_node (@{$ce_node->findnodes('cat')}) {
-    $c_name = $c_node->getAttribute('name');
-    #next if ($c_name eq ''); ##-- IGNORE
-    $c2e->{$c_name}{$_} = $c_node->getAttribute($_) foreach (qw(tp fp fn pr rc F));
-  }
-
-  ##-- data: eval: errors
-  my $errs_root = xpvalue($data_root,'errors[1]');
-  if (defined($errs_root)) {
-    my ($e_node,$err);
-    foreach $e_node (@{$errs_root->findnodes('error')}) {
-      $err = {};
-      $err->{$_} = $e_node->getAttribute($_) foreach (qw(cat1 cat2 ndocs fdocs));
-      $eval->{errors}{$err->{cat1}."\t".$err->{cat2}} = $err;
-    }
-  }
-
-  ##-- data: eval: documents
+  ##-- data: eval: documents (if available)
   my $lab2docs = $eval->{lab2docs};
-  my $docs_node = xpvalue($data_root,'by-document[1]');
+  my $docs_node = xpvalue($root,'data[1]/by-document[1]');
   if (defined($docs_node)) {
     my ($d_node,%d_attrs, $docs, $d_i,$doc,$dc_node,$cat);
     foreach $d_node (@{$docs_node->findnodes('doc')}) {
@@ -701,6 +833,9 @@ sub loadXmlDoc {
       }
     }
   }
+
+  ##-- implicit compile
+  $eval->compile() if (!$opts{nocompile});
 
   return $eval;
 }

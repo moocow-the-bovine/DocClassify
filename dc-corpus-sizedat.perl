@@ -27,6 +27,8 @@ our $verbose = setVerboseOptions(2);
 	 cats=>1,
 	);
 
+our $want_ndocs=1;
+our $want_nbytes=0;
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -34,7 +36,8 @@ our $verbose = setVerboseOptions(2);
 GetOptions(dcOptions(),
 
 	   ##-- Misc
-	   #'ndocs|docs|d!' => \$want_ndocs,
+	   'ndocs|docs|d!' => \$want_ndocs,
+           'nbytes|bytes|b!' => \$want_nbytes,
 	  );
 $verbose=$opts{verbose};
 
@@ -72,11 +75,14 @@ foreach my $cfile (@ARGV) {
   my %c2ndocs = (map {$_=>scalar(@{$c2doc->{$_}})} keys(%$c2doc));
   my $ncats = scalar(keys(%c2ndocs));
 
-  my $nbytes = 0;
-  $nbytes += $_->sizeBytes foreach (@{$corpus->{docs}});
-  my %c2nbytes = (map {$_=>0} keys(%$c2doc));
-  foreach my $c (keys(%c2nbytes)) {
-    $c2nbytes{$c} += $_->sizeBytes foreach (@{$c2doc->{$c}});
+  my ($nbytes,%c2nbytes);
+  if ($want_nbytes) {
+   $nbytes = 0;
+   $nbytes += $_->sizeBytes foreach (@{$corpus->{docs}});
+   %c2nbytes = (map {$_=>0} keys(%$c2doc));
+   foreach my $c (keys(%c2nbytes)) {
+     $c2nbytes{$c} += $_->sizeBytes foreach (@{$c2doc->{$c}});
+   }
   }
 
   my %c2id = qw();
@@ -92,11 +98,13 @@ foreach my $cfile (@ARGV) {
   @c2id{map {$id2c[$_]||qw()} (0..$#id2c)} = grep {$_} @id2c;
 
   ##-- save dat
+  my ($cstr);
   $outfh->print(
 		join("\t", "#1:ID", "2:NAME", "3:NDOCS", "4:FRACDOCS"), "\n",
 		map {
-		  $c=$id2c[$_];
-		  join("\t", $_, $c, $c2ndocs{$c}, $c2ndocs{$c}/$ndocs)."\n"
+		  $c=$cstr=$id2c[$_];
+		  $cstr =~ s/\s/_/g;
+		  join("\t", $_, $cstr, $c2ndocs{$c}, $c2ndocs{$c}/$ndocs)."\n"
 		} sort {$a<=>$b} grep {defined($id2c[$_])} (0..$#id2c),
 	       );
 }

@@ -71,9 +71,9 @@ profile_start() if ($doProfile);
 push(@ARGV,'-') if (!@ARGV);
 our ($corpus);
 foreach (@ARGV) {
-  $logger->info("Mapper->mapCorpus($_)") if ($verbose);
   my $c2 = DocClassify::Corpus->new(optsNew('corpus'))->loadFile($_,optsLoad('corpus'))
     or die("$0: Corpus::loadFile() failed for '$_': $!");
+  $mapper->info("mapCorpus($_)") if ($verbose);
   $c2 = $mapper->mapCorpus($c2)
     or die("$0: Mapper::mapCorpus() failed for '$_': $!");
   if (!defined($corpus)) { $corpus=$c2; }

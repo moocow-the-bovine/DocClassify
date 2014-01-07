@@ -55,6 +55,9 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 ## MAIN
 ##------------------------------------------------------------------------------
 
+##-- logger
+DocClassify::Logger->ensureLog;
+
 ##-- vars
 our %mapopts = optsNew('map');
 our $mapper = DocClassify::Mapper->new( %mapopts )

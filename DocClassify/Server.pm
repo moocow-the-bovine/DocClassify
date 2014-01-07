@@ -115,7 +115,7 @@ sub prepareSignalHandlers {
     exit(255);
   };
   my ($sig);
-  foreach $sig (qw(HUP TERM KILL __DIE__)) {
+  foreach $sig (qw(INT HUP TERM KILL __DIE__)) {  ##-- INT signal (Ctrl+C) doesn't seem to get caught...
     $SIG{$sig} = $catcher;
   }
   return $catcher;

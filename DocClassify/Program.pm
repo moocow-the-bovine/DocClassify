@@ -17,7 +17,7 @@ our @ISA = qw(DocClassify::Logger Exporter);
 
 our %EXPORT_TAGS =
   (
-   opts => [qw(%opts dcOptions setVerboseOptions setVerbose),
+   opts => [qw(%opts dcOptions dcLogOptions setVerboseOptions setVerbose),
 	    qw(newOpts loadOpts saveOpts),
 	    qw(optsNew optsLoad optsSave),
 	   ],
@@ -37,6 +37,7 @@ our @EXPORT = qw();
 ##     $globalKey     => $globalVal,       ##-- global options (e.g. 'verbose')
 ##     load           => \%globalLoadOpts, ##-- generic options for CLASS->load()
 ##     save           => \%globalSaveOpts, ##-- generic options for CLASS->save()
+##     log            => \%globalLogOpts,  ##-- generic logging options for DocClassify::Logger->logInit()
 ##     "${class}New"  => \%classOptsNew,   ##-- generic options for $class->new()
 ##     "${class}Load" => \%classOptsLoad,  ##-- generic options for $class->load()
 ##     "${class}Save" => \%classOptsSave,  ##-- generic options for $class->save()
@@ -60,6 +61,7 @@ our %opts =
    outputDir  => undef,
    load => { mode=>undef, verboseIO=>1 },
    save => { mode=>undef, format=>1, verboseIO=>1 },
+   log =>  \%DocClassify::Logger::defaultLogOpts,
 
    ##-- FileChurner Options
    fcNew => { verbose=>1, recursive=>1 },
@@ -108,13 +110,15 @@ our %opts =
 		 cut1w => 0.5,               ##-- positive weight (0<=$w<=1) for cutoff fitting (0.65)
 		 cutval => 100,                    ##-- constant to add if cutoff is exceeded (default=100)
 		 cutCat => undef,                  ##-- name of cutoff sink cat (default: cat with id=0 in $lcenum)
+		 optimize => 0,                    ##-- number of cutoff optimization iterations (default=none)
+                 fitness => 'F',                   ##-- fitness function for cutoff optimization
 		},
    cutoffSave => {mode=>undef},
    cutoffLoad => {mode=>undef},
 
    ##-- Corpus-Split Options
    split => {
-	     seed => undef,
+	     seed => 0,
 	     exclusive => 1,
 	     label => undef,
 	    },
@@ -155,6 +159,7 @@ sub dcOptions {
    'input-mode|im=s' => \$opts{load}{mode},
    'output-mode|om=s' => \$opts{save}{mode},
    'format-xml|format|fx|f!' => sub { $opts{save}{format}=$_[1] ? 1 : 0; },
+   'verbose-io|verboseio|vio!' => sub { $opts{load}{verboseIO}=$opts{save}{verboseIO}=$_[1]; },
 
    ##-- FileChurner options
    'recursive|recurse|R' => \$opts{fcNew}{recursive},
@@ -202,15 +207,36 @@ sub dcOptions {
    'cut-positive-weight|cpw|cut1w|c1w|cw=f' => \$opts{cutoffNew}{cut1w},
    'cut-value|cut-add|cut-val|cutval|cv|ca=f' => \$opts{cutoffNew}{cutval},
    'cut-sink-cat|cut-cat|cutcat|ccat|cc=s' => \$opts{cutoffNew}{cutCat},
+   'cut-optimize|optimize|co=i' => \$opts{cutoffNew}{optimize},
+   'cut-fitness|fitness|cf=s' => \$opts{cutoffNew}{fitness},
 
    ##-- Corpus-Split Options
    'random-seed|seed|rs=i' => sub { $opts{mapNew}{seed}=$opts{split}{seed}=$_[1]; },
+   'random|no-random-seed|noseed' => sub { $opts{mapNew}{seed}=$opts{split}{seed}=undef; },
    'split-label|sl=s' => \$opts{split}{label},
 
    ##-- Eval Options
    'eval-output-mode|eom=s'   => \$opts{evalSave}{mode},
    'eval-save-docs|edocs|ed!' => \$opts{evalSave}{saveDocs},
+
+   ##-- Logging Options
+   dcLogOptions(),
   );
+}
+
+sub dcLogOptions {
+  return
+    (##-- Logging Options
+     'log-level|loglevel|ll|L=s'  => sub { $opts{log}{level}=uc($_[1]); },
+     'log-config|logconfig|log4perl-config|l4p-config|l4p=s' => \$opts{log}{l4pfile},
+     'log-watch|logwatch|watch|lw=i' => \$opts{log}{watch},
+     'nolog-watch|nologwatch|nowatch|nolw|now' => sub { $opts{log}{watch}=undef; },
+     'log-stderr|stderr|le!' => \$opts{log}{stderr},
+     'log-file|lf=s' => \$opts{log}{file},
+     'nolog-file|nolf' => sub { $opts{log}{file}=undef; },
+     'log-rotate|rotate|lr!' => \$opts{log}{rotate},
+     'log-syslog|syslog|ls!' => \$opts{log}{syslog},
+    );
 }
 
 ## %opts = optsNew($classKey)

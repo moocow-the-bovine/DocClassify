@@ -4,6 +4,7 @@ use lib qw(.);
 use DocClassify;
 use DocClassify::Server::XmlRpc;
 use DocClassify::Utils;
+use DocClassify::Program ':all';
 use Encode qw(encode decode);
 use File::Basename qw(basename);
 use Getopt::Long qw(:config no_ignore_case);
@@ -20,7 +21,6 @@ our $VERSION = $DocClassify::VERSION;
 
 ##-- General Options
 our ($help,$man,$version);
-our $verbose = 'INFO';   ##-- default log level
 
 no warnings 'utf8';
 
@@ -37,24 +37,14 @@ our $user = undef;         ##-- if set, switch real & effective uid to $user
 our $group = undef;        ##-- if set, switch real & effective gid to $group
 
 ##-- Log config
-our $logConfigFile = undef;
-our $logWatch = undef;
-
-our %logOpts = (
-		rootLevel=>'WARN',
-		#level=>'TRACE',     ##-- default log level for internal configuration (no 'TRACE' not in log4perl 1.07)
-		level=>'INFO',
-		stderr=>1,
-
-		file=>undef,
-		rotate=>1,
-
-		syslog=>0,
-		sysIdent=>basename($0),
-		sysName =>basename($0),
-		sysFacility=>'daemon',
-		sysLevel=>undef,      ##-- default: from 'level' key
-	       );
+$opts{log}{rootLevel} = 'WARN';
+$opts{log}{level} = 'INFO';
+$opts{log}{stderr}=1;
+$opts{log}{file}=undef;
+$opts{log}{sysName}=$prog;
+$opts{log}{sysIdent}=$prog;
+$opts{log}{sysFacility}='daemon';
+$opts{log}{sysLevel}=undef; ##-- default: from 'level' key
 
 ##==============================================================================
 ## Command-line
@@ -76,15 +66,9 @@ GetOptions(##-- General
 	   'user|uid|u=s' => \$user,
 	   'group|gid|g=s' => \$group,
 
-	   ##-- Log4perl stuff
-	   'verbose|v|log-level|loglevel|ll|L=s'  => sub { $logOpts{level}=uc($_[1]); },
-	   'log-config|logconfig|lc|l=s' => \$logConfigFile,
-	   'log-watch|logwatch|watch|lw|w!' => \$logWatch,
-	   'log-stderr|stderr|le!' => \$logOpts{stderr},
-	   'log-file|lf=s' => \$logOpts{file},
-	   'nolog-file|nolf' => sub { delete($logOpts{file}); },
-	   'log-rotate|rotate|lr!' => \$logOpts{rotate},
-	   'log-syslog|syslog|ls!' => \$logOpts{syslog},
+	   ##-- Log4perl stuff (see DocClassify::Program)
+	   dcLogOptions(),
+	   'verbose|v' => sub { $opts{log}{level}=uc($_[1]); }, ##-- alias for -log-level here
 	  );
 
 if ($version) {
@@ -125,14 +109,8 @@ sub CHLD_REAPER {
 ## MAIN
 ##==============================================================================
 
-##-- check for daemon mode
-
 ##-- log4perl initialization
-if (defined($logConfigFile)) {
-  DocClassify::Logger->logInit($logConfigFile,$logWatch);
-} else {
-  DocClassify::Logger->logInit(undef, %logOpts);
-}
+DocClassify::Logger->ensureLog();
 
 ##-- create / load server object
 our $srv = DocClassify::Server::XmlRpc->loadFile($serverConfigFile);

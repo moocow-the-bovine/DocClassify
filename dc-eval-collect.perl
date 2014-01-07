@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Eval;
 
 #use PDL;
 #use PDL::Ngrams;
@@ -22,18 +23,13 @@ our $prog = basename($0);
 our ($help);
 our $verbose = 2;
 
-#our $outputEncoding = 'UTF-8';
-#our $inputEncoding  = 'UTF-8';
-#our $format   = 1;
+our $verbose_io=1;
 
-our $outfmt = '-';
-our $seed=undef;
-our $labfmt=undef;
-our $n_corpora = 2;
+our %evalopts = qw();
+our %loadopts_eval = (verboseIO=>$verbose_io, nocompile=>1);
+our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>1, verboseIO=>$verbose_io );
 
-our %loadopts = ( mode=>undef, );
-our %saveopts = ( mode=>undef, format=>1, );
-
+our $outfile = '-';
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -42,15 +38,14 @@ GetOptions(##-- General
 	   'help|h' => \$help,
 	   'verbose|v=i' => \$verbose,
 
-	   ##-- Misc
-	   'srand|seed|s=i' => \$seed,
-	   'label-fmt|labfmt|lf|l=s' => \$labfmt,
-	   'n-corpora|nc|n=i' => \$n_corpora,
-	   'output-fmt|output|outfile|outfmt|out|of|o=s'=> \$outfmt,
-	   'input-mode|im=s' => \$loadopts{mode},
-	   'output-mode|om=s' => \$saveopts{mode},
-	   'format-xml|format|fx|f!' => \$saveopts{format},
+	   ##-- I/O
+	   'output-file|outfile|out|of|o=s'=> \$outfile,
+	   'eval-output-mode|output-mode|eom|om=s' => \$saveopts_eval{mode},
+	   'save-documents|save-docs|docs|d!' => \$saveopts_eval{saveDocs},
+	   'format-xml|format|fx|f!' => sub { $saveopts_eval{format}=$_[1] ? 1 : 0; },
 	  );
+#$verbose=$fcopts{verbose};
+
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 
@@ -63,50 +58,43 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ## MAIN
 ##------------------------------------------------------------------------------
 
-##-- sanity check(s)
-$saveopts{mode} = DocClassify::Corpus->guessFileMode($outfmt,%saveopts) if (!defined($saveopts{mode}));
-if ($outfmt ne '-' && $outfmt !~ m/%(?:\d*)(?:\.?)(?:\d*)d/) {
-  $outfmt =~ s/\.([^\.]*)$/%d.$1/;
-}
+##-- global eval
+our $eval = DocClassify::Eval->new(%evalopts)
+  or die("$0: Eval->new() failed: $!");
 
-##-- ye olde guttes
+##-- load evals
 push(@ARGV,'-') if (!@ARGV);
-
-my $cfile = shift(@ARGV);
-print STDERR "$0: loadFile($cfile)\n" if ($verbose);
-our $corpus = DocClassify::Corpus->loadFile($cfile,%loadopts)
-  or die("$0: load failed for corpus file '$cfile': $!");
-
-$labfmt = '' if (!defined($labfmt));
-print STDERR "$0: splitN(n=>$n_corpora,label=>'$labfmt')\n" if ($verbose);
-our @subc = $corpus->splitN($n_corpora,seed=>$seed,label=>$labfmt);
-
-foreach $i (0..$#subc) {
-  my $outfile = sprintf($outfmt,$i);
-  print STDERR "$0: saveFile($outfile)\n" if ($verbose);
-  $subc[$i]{label} = $outfile if (!$subc[$i]{label} || !$labfmt);
-  $subc[$i]->saveFile($outfile,%saveopts);
+foreach my $infile (@ARGV) {
+  my $evali = DocClassify::Eval->new(%evalopts)->loadFile($infile,%loadopts_eval)
+    or die("$0: Eval->loadFile() failed for '$infile': $!");
+  $eval->addEval($evali)
+    or die("$0: addEval() failed for '$infile': $!");
 }
+
+##-- save
+$eval->{label} = $outfile if (!$eval->{label});
+$eval->compile(); ##-- ensure compiled
+$eval->saveFile($outfile,%saveopts_eval)
+  or die("$0: Eval->saveFile() failed for '$outfile': $!");
+
 
 =pod
 
 =head1 NAME
 
-dc-corpus-split.perl - split an XML corpus into training and test sets
+dc-eval-collect.perl - collect multiple DocClassify::Eval files
 
 =head1 SYNOPSIS
 
- dc-corpus-split.perl [OPTIONS] [CORPUS=-]
+ dc-eval-collect.perl [OPTIONS] [EVAL_FILE(s)...]
 
  Options:
   -help                  # this help message
-  -verbose LEVEL         # verbosity level
-  -n N                   # number of output corpora
-  -seed SEED             # specify random seed (default=none)
-  -label LABFMT          # printf() format for output labels (default=none)
-  -output OUTFMT         # printf() format for output files (default=STDOUT='-')
-  -input-mode MODE       # input mode (default=guess)
-  -output-mode MODE      # output mode (default=guess)
+  -verbose=LEVEL         # verbosity level
+  -output-file=FILE      # all output to a single file
+  -output-mode=MODE      # set eval output mode (default=guess)
+  -docs   , -nodocs      # do/don't save document data (default=do)
+  -format , -noformat    # do/don't format xml output (default=do)
 
 =cut
 

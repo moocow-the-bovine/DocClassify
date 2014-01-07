@@ -4,6 +4,7 @@ use lib qw(.);
 use DocClassify;
 use DocClassify::Client::XmlRpc;
 use DocClassify::Utils ':all';
+use DocClassify::Program ':all';
 use Encode qw(encode decode);
 use File::Basename qw(basename);
 use Getopt::Long qw(:config no_ignore_case);
@@ -29,7 +30,8 @@ our ($help,$man,$version,$verbose);
 #$verbose = 'default';
 
 ##-- Log options
-our %logOpts = (rootLevel=>'WARN', level=>'INFO'); ##-- options for DocClassify::Logger::ensureLog()
+$opts{log}{rootLevel} = 'WARN';
+$opts{log}{level} = 'INFO';
 
 ##-- Server Options
 our $defaultPort = 9099;
@@ -46,7 +48,6 @@ our $doProfile = 1;
 
 ##-- I/O Options
 our $outfile     = '-';
-
 our $bench_iters = 1; ##-- number of benchmark iterations for -bench mode
 
 ##==============================================================================
@@ -55,7 +56,6 @@ GetOptions(##-- General
 	   'help|h'    => \$help,
 	   'man|m'     => \$man,
 	   'version|V' => \$version,
-	   'verbose|v|log-level=s' => sub { $logOpts{level}=uc($_[1]); },
 
 	   ##-- Server Options
 	   'server-url|serverURL|server|url|s|u=s' => \$serverURL,
@@ -75,6 +75,10 @@ GetOptions(##-- General
 
 	   ##-- I/O: output
 	   'output-file|output|o=s' => \$outfile,
+
+	   ##-- log options
+	   dcLogOptions,
+	   'verbose|v|log-level=s' => sub { $opts{log}{level}=uc($_[1]); },
 	  );
 
 if ($version) {
@@ -93,7 +97,7 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##==============================================================================
 
 ##-- log4perl initialization
-DocClassify::Logger->ensureLog(undef,%logOpts);
+DocClassify::Logger->ensureLog();
 
 ##-- sanity checks
 $serverURL = "http://$serverURL" if ($serverURL !~ m|[^:]+://|);

@@ -94,7 +94,7 @@ sub splitN {
 
   ##-- create sub-corpora
   $opts{label} = "$corpus->{label}.%0.2d" if (!defined($opts{label}));
-  my @corpora = map {$corpus->shadow(label=>sprintf($opts{label},$_))} (1..$N);
+  my @corpora = map {$corpus->shadow(label=>sprintf($opts{label},$_))} (0..($N-1));
 
   ##-- proceed by category: build cat2doc hash
   my $cat2doc = $corpus->docsByCat(%opts);
@@ -176,7 +176,7 @@ sub saveXmlDoc {
     $d_node->setAttribute('id',$doc->id);
     $d_node->setAttribute('label',$doc->label) if (defined($doc->{file}) && $doc->label ne $doc->{file});
     $d_node->setAttribute('file',$doc->{file}) if (defined($doc->{file}));
-    $d_node->setAttribute('bytes',$doc->sizeBytes); ##-- save XML document size in bytes (e.g. for splitN())
+    $d_node->setAttribute('bytes',$doc->sizeBytes||-1); ##-- save XML document size in bytes (e.g. for splitN())
     $d_node->setAttribute('sigFile',$doc->{sigFile}) if (defined($doc->{sigFile}));
     if ($opts{saveCats} || (!defined($opts{saveCats}) && $doc->{cats})) {
       foreach $cat (@{$doc->cats}) {

@@ -162,7 +162,7 @@ sub run {
   $srv->logcroak("run(): no underlying RPC::XML object!") if (!$srv->{xsrv});
   $srv->info("server starting on host ", $srv->{xsrv}->host, ", port ", $srv->{xsrv}->port, "\n");
   $srv->{xsrv}->server_loop(%{$srv->{runopt}});
-  $srv->info("server exiting\n");
+  $srv->fatal("server exiting\n");
   return $srv->finish();
 }
 

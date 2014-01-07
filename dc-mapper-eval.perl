@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -31,7 +32,8 @@ our %evalopts = qw();
 
 our %loadopts_corpus = ( mode=>undef, );
 our %saveopts_eval = ( mode=>undef, format=>1, saveDocs=>1 );
-our %saveopts_eval_txt = ( nErrors=>10 );
+our %saveopts_eval_txt = ( nErrors=>10, counts=>0 );
+#$opts{log}{level} = 'DEBUG';
 
 our $outfile = '-';
 
@@ -50,7 +52,12 @@ GetOptions(##-- General
 	   'save-documents|save-docs|docs|d!' => \$saveopts_eval{saveDocs},
 	   'format-xml|format|fx|f!' => sub { $saveopts_eval{format}=$_[1] ? 1 : 0; },
 	   'n-errors|nerrors|nerrs|ne=i' => \$saveopts_eval_txt{nErrors},
+	   'counts|count|cnt!' => \$saveopts_eval_txt{counts},
+	   'verbose-io|vio!' => sub {$_->{verboseIO}=$_[1] foreach (\%loadopts_corpus,\%saveopts_eval,\%saveopts_eval);},
 	   'output-file|outfile|out|of|o=s'=> \$outfile,
+
+	   ##-- logging
+	   dcLogOptions,
 	  );
 
 
@@ -93,7 +100,10 @@ $eval->saveFile($outfile, %saveopts_eval)
   or die("$0: Eval->saveFile() failed for '$outfile': $!");
 
 ##-- brief report
-$eval->saveTextFile(\*STDERR, %saveopts_eval_txt) if ($verbose);
+if ($verbose) {
+  #binmode(STDERR,":utf8");
+  $eval->saveTextFile(\*STDERR, %saveopts_eval_txt);
+}
 
 =pod
 

@@ -3,6 +3,8 @@
 use lib qw(. ./MUDL);
 use MUDL;
 use DocClassify;
+use DocClassify::Eval;
+use DocClassify::Program ':all';
 
 #use PDL;
 #use PDL::Ngrams;
@@ -19,35 +21,33 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 ## Constants & Globals
 ##------------------------------------------------------------------------------
 our $prog = basename($0);
-our ($help);
-our $verbose = 2;
 
 #our $outputEncoding = 'UTF-8';
 #our $inputEncoding  = 'UTF-8';
 #our $format   = 1;
 
-our %evalopts = qw();
-our %saveopts = ( nErrors=>10 );
-
-our $outfile = '-';
+$opts{corpusSave}{saveCats} = 0;
+%{$opts{evalNew}}  = qw();
+%{$opts{evalSave}} = ( nErrors=>10, saveDocs=>1, counts=>0, cats=>0 );
+$opts{verbosse} = 2;
+$opts{log}{level} = 'WARN';
 
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(##-- General
-	   'help|h' => \$help,
-	   'verbose|v=i' => \$verbose,
+GetOptions(
+	   ##-- default options
+	   dcOptions,
 
-	   ##-- I/O
-	   'output-file|outfile|out|of|o=s'=> \$outfile,
-
-	   ##-- error summary
-	   'n-errors|nerrors|nerrs|ne=i' => \$saveopts{nErrors},
+	   ##-- local options
+	   'n-errors|nerrors|nerrs|ne=i' => \$opts{evalSave}{nErrors},
+	   'counts|count|cnt!' => \$opts{evalSave}{counts},
 	  );
-#$verbose=$fcopts{verbose};
 
+pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 
-pod2usage({-exitval=>0, -verbose=>0}) if ($help);
+##-- copy options ('-cats' option)
+$opts{evalSave}{cats} = $opts{corpusSave}{saveCats};
 
 
 ##------------------------------------------------------------------------------
@@ -59,17 +59,19 @@ pod2usage({-exitval=>0, -verbose=>0}) if ($help);
 ##------------------------------------------------------------------------------
 
 ##-- out file
+our $outfile = $opts{outputFile};
 our $outfh = IO::File->new(">$outfile")
   or die("$0: open failed for output file '$outfile': $!");
 
 ##-- ye olde guttes
 push(@ARGV,'-') if (!@ARGV);
-foreach my $infile (@ARGV) {
-  my $eval = DocClassify::Eval->new(%evalopts)->loadFile($infile)
+foreach (0..$#ARGV) {
+  my $infile = $ARGV[$_];
+  my $eval = DocClassify::Eval->new(optsNew('eval'))->loadFile($infile,optsLoad('eval'))
     or die("$0: Eval->loadFile() failed for '$infile': $!");
   $eval->{label} = $infile;
-  $eval->saveTextFile($outfh,%saveopts);
-  $outfh->print("\n");
+  $eval->saveTextFile($outfh,optsSave('eval'));
+  $outfh->print("\n") if ($_ < $#ARGV);
 }
 
 $outfh->close();

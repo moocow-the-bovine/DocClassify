@@ -34,7 +34,7 @@ our %EXPORT_TAGS =
    si=>[qw(sistr)],
    fit=>[qw(ylinfit ylogfit li1 F1 Fb)],
    norm=>[qw(_gausscdf _gausswidth)],
-   cmp=>[qw(min2 max2)],
+   cmp=>[qw(min2 max2 catcmp)],
    io=>[qw(slurpFile slurpLines stringfh)],
    libxml=>[qw(libxmlParser)],
    libxslt=>[qw(xsl_stylesheet)],
@@ -306,6 +306,14 @@ sub min2 { return $_[0] < $_[1] ? $_[0] : $_[1]; }
 ## $max = max2($x,$y)
 sub max2 { return $_[0] > $_[1] ? $_[0] : $_[1]; }
 
+## $cmp = catcmp($catname1, $catname2)
+sub catcmp($$) {
+  my ($cat1,$cat2) = @_;
+  my $ci1 = $cat1 =~ /^(\d+)/ ? $1 : -1;
+  my $ci2 = $cat2 =~ /^(\d+)/ ? $1 : -1;
+  return $ci1 <=> $ci2 || $cat1 cmp $cat2;
+}
+
 ##==============================================================================
 ## Functions: PDL utils
 ##  + mostly lifted from MUDL::PDL::Smooth
@@ -565,7 +573,7 @@ Following tags are exportabe:
 
  fit=>[qw(ylinfit ylogfit)],
  norm=>[qw(_gausscdf _gausswidth)],
- cmp=>[qw(min2 max2)],
+ cmp=>[qw(min2 max2 catcmp)],
  io=>[qw(stringfh)],
  all=>$ALL_OF_THE_ABOVE
 
