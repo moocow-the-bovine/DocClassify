@@ -305,7 +305,7 @@ sub compile_dcm {
   foreach $doc (@{$map->{docs}}) {
     foreach $cat (@{$doc->{cats}}) {
       $cat->{id} = $lcenum->{sym2id}{$cat->{name}}; ##-- re-assign category IDs !
-      $dcm->slice("($doc->{id}),($cat->{id})") .= $cat->{deg};
+      (my $tmp=$dcm->slice("($doc->{id}),($cat->{id})")) .= $cat->{deg};
     }
   }
   $map->{dcm} = PDL::CCS::Nd->newFromDense($dcm);
@@ -354,9 +354,9 @@ sub compile_tdm0 {
   my ($slice1);
   foreach ($doc_wt_n->which->list) {
     $slice1 = $doc_wt_i0->at($_).":".$doc_wt_i1->at($_);
-    $tdm0_w->slice("(0),$slice1") .= $doc_wt->[$_];
-    $tdm0_w->slice("(1),$slice1") .= $_;
-    $tdm0_v->slice("$slice1")     .= pdl([ @{$sigs->[$_]{lf}}{@$tenum_id2sym[$doc_wt->[$_]->list]} ]);
+    (my $tmp=$tdm0_w->slice("(0),$slice1")) .= $doc_wt->[$_];
+    ($tmp=$tdm0_w->slice("(1),$slice1")) .= $_;
+    ($tmp=$tdm0_v->slice("$slice1"))     .= pdl([ @{$sigs->[$_]{lf}}{@$tenum_id2sym[$doc_wt->[$_]->list]} ]);
   }
   my $tdm0_dims = pdl(long,$NT,$ND);
   my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm0_w,$tdm0_v,dims=>$tdm0_dims,missing=>0);

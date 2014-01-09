@@ -540,7 +540,7 @@ sub compile_xcm {
       $d_x  = $doc_weight->index($d_id_local) * $xdm->slice(",$d_id_local"); ##-- [0,$di] -> $x
       foreach $cat (@{$map->{docs}[$d_id_global]{cats}}) {
 	$c_id = $lc_sym2id->{$cat->{name}};
-	$xcm->slice(",$c_id") += $d_x;
+	(my $tmp=$xcm->slice(",$c_id")) += $d_x;
       }
     }
     if ($map->{nullCat}) {
