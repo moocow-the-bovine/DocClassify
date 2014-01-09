@@ -48,10 +48,11 @@ BEGIN {
 ##  #(none)
 ##
 ##  ##---- INHERITED from DocClassify::Lemmatizer::VzContent
-##  textAttr => $attr,      ##-- text attribute (OVERIDE default='norm')
+##  textAttr => $attr,      ##-- text attribute (OVERRIDE default='norm')
 ##  textRegexGood => $re,   ##-- regex matching "good" text types (OVERRIDE default=$TEXT_REGEX_GOOD)
 ##  textRegexBad  => $re,   ##-- regex matching "bad" text types  (OVERRIDE default=$TEXT_REGEX_BAD)
 ##  textStop => \%stopText, ##-- pseudo-hash of unwanted text types; default=undef (none)
+##  posAttr  => $attr,      ##-- pos attribute (OVERRIDE default='pos')
 ##  posRegex => $re,        ##-- regex matching "good" pos tags (OVERRIDE default=$POS_REGEX)
 ##  lemmaAttr => $attr,     ##-- lemma attribute (OVERRIDE default='lemma')
 ##  lemmaToLower => $bool,  ##-- whether to canonicalize lemmata to lower-case (OVERRIDE default=0)
@@ -66,6 +67,7 @@ sub new {
 			   textAttr      => 'norm',
 			   textRegexGood => $TEXT_REGEX_GOOD,
 			   textRegexBad  => $TEXT_REGEX_BAD,
+			   posAttr       => 'pos',
 			   posRegex      => $POS_REGEX,
 			   lemmaAttr     => 'lemma',
 			   lemmaToLower  => 0,

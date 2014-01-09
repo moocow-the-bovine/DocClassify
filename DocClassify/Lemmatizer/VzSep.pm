@@ -32,6 +32,7 @@ our @ISA = qw(DocClassify::Lemmatizer::VzContent);
 ##  textRegexGood => $re,   ##-- regex matching "good" text types (default=undef (none))
 ##  textRegexBad  => $re,   ##-- regex matching "bad" text types  (default=$TEXT_REGEX_BAD)
 ##  textStop => \%stopText, ##-- pseudo-hash of unwanted text types; default=undef (none)
+##  posAttr  => $attr,      ##-- pos attribute (default='pos')
 ##  posRegex => $re,        ##-- regex matching "good" pos tags (default=$DocClassify::Lemmatizer::VzContent::POS_REGEX)
 ##  lemmaAttr => $attr,     ##-- lemma attribute (default='lemma')
 ##  lemmaToLower => $bool,  ##-- whether to canonicalize lemmata to lower-case (default=1)
@@ -74,7 +75,7 @@ sub lemmatize {
   my $textRegexGood = $lz->{textRegexGood};
   my $textRegexBad = $lz->{textRegexBad};
   my $textStop  = $lz->{textStop};
-  my $posAttr   = 'pos';
+  my $posAttr   = $lz->{posAttr}||'pos';
   my $posRegex  = $lz->{posRegex};
   my $lemmaAttr = $lz->{lemmaAttr};
   my $lemmaWt   = $lz->{lemmaWeight};

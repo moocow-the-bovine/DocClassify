@@ -49,6 +49,7 @@ our $TEXT_REGEX_BAD = q/(?:^[^[:alpha:][:digit:]\_\-]*$)|(?:\#)/;
 ##  textRegexGood => $re,   ##-- regex matching "good" text types (default=$TEXT_REGEX_GOOD)
 ##  textRegexBad  => $re,   ##-- regex matching "bad" text types  (default=$TEXT_REGEX_BAD)
 ##  textStop => \%stopText, ##-- pseudo-hash of unwanted text types; default=undef (none)
+##  posAttr  => $attr,      ##-- pos attribute (default='pos')
 ##  posRegex => $re,        ##-- regex matching "good" pos tags (default=$POS_REGEX)
 ##  lemmaAttr => $attr,     ##-- lemma attribute (default='lemma')
 ##  lemmaToLower => $bool,  ##-- whether to canonicalize lemmata to lower-case (default=1)
@@ -64,6 +65,7 @@ sub new {
 			   textRegexGood => $TEXT_REGEX_GOOD,
 			   textRegexBad  => $TEXT_REGEX_BAD,
 			   textStop => undef,
+			   posAttr  => 'pos',
 			   posRegex => $POS_REGEX,
 			   lemmaAttr => 'lemma',
 			   lemmaToLower => 1,
@@ -95,7 +97,7 @@ sub lemmatize {
   my $textRegexGood = $lz->{textRegexGood};
   my $textRegexBad = $lz->{textRegexBad};
   my $textStop  = $lz->{textStop};
-  my $posAttr   = 'pos';
+  my $posAttr   = $lz->{posAttr}||'pos';
   my $posRegex  = $lz->{posRegex};
   my $lemmaAttr = $lz->{lemmaAttr};
   my $lemma2lc  = $lz->{lemmaToLower};

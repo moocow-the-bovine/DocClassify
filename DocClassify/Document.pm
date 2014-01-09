@@ -29,9 +29,17 @@ BEGIN {
   %ALIAS =
     (
      ##
-     VZ => 'VzXml',
+     'VZ'    => 'VzXml',
+     'VzXML' => 'VzXml',
      ##
-     Default => 'VzXml',
+     'cab' => 'CabXml',
+     'CabXML'  => 'CabXml',
+     'cab-xml' => 'CabXml',
+     't-xml'   => 'CabXml',
+     'txml'    => 'CabXml',
+     'twxml'   => 'CabXml',
+     ##
+     'Default' => 'VzXml',
     );
   @ALIAS{map {lc($_)} keys(%ALIAS)} = values(%ALIAS);
 }
