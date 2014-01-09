@@ -75,7 +75,7 @@ sub fc_callback {
     $corpus->addCorpus($c2);
   } else {
     ##-- read documents
-    my $doc = DocClassify::Document->new(file=>$infile)
+    my $doc = DocClassify::Document->new(file=>$infile,newOpts('doc'))
       or die("$0: Document->new() failed for '$infile': $!");
     if ($opts{corpusSave}{saveCats}) {
       $doc->cats();            ##-- parse relevant data
@@ -135,6 +135,7 @@ dc-corpus-create.perl - make a corpus directory (XML or binary)
   -union CORPUS          # load (additional) corpus data from CORPUS (multiples ok)
   -output-file FILE      # set corpus output file (default=-)
   -label LABEL           # set global corpus label
+  -dclass CLASS          # set input document class
   -compile , -nocompile  # do/don't (re-)compile corpus (default: false if -union, otherwise true)
   -cats , -nocats        # do/don't save category data (default: true iff -compile)
   -sigs , -nosigs        # do/don't save signature data (default: true iff -compile)

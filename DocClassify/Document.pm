@@ -1,8 +1,7 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::Document.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
-## Descript: document classifier: document (raw xml data)
-
+## Author: Bryan Jurish <moocow@cpan.org>
+## Descript: document classifier: document (generic)
 
 package DocClassify::Document;
 use DocClassify::Object;
@@ -18,29 +17,24 @@ use strict;
 
 our @ISA = qw(DocClassify::Object DocClassify::Logger);
 
-## @XML_CAT_XPATHS
-##  + XPaths for categorization
-our @XML_CAT_XPATHS =
-  (
-   '/*/head/classification/cat',
-   '/*/head/classification/vat',
-  );
-
-## @XML_RAW_XPATHS
-##  + XPaths for raw text extraction
-our @XML_RAW_XPATHS =
-  (
-   '/*/head/title',
-   '/*/head/descrition',
-   '/*/head/description',
-   '/*/body/thread/title',
-   '/*/body/thread/posts/post/plain',
-  );
-
 ## $DOC_ID
 ##  + used for auto-generating doc-ids
 ##  + currently useless (just a dumb counter, no collision checking, etc.)
 our $DOC_ID = 0;
+
+## %ALIAS
+##  + subclass aliases
+our (%ALIAS);
+BEGIN {
+  %ALIAS =
+    (
+     ##
+     VZ => 'VzXml',
+     ##
+     Default => 'VzXml',
+    );
+  @ALIAS{map {lc($_)} keys(%ALIAS)} = values(%ALIAS);
+}
 
 ##==============================================================================
 ## Constructors etc.
@@ -54,21 +48,40 @@ our $DOC_ID = 0;
 ##  id => $id,            ##-- unique id (string or integer; default = ++$DOC_ID)
 ##  ##
 ##  ##-- other data
-##  xdoc => $xmlDoc,      ##-- XML::LibXML::Document object (default: none)
 ##  cats => \@catList,    ##-- [ {id=>$catId,deg=>$catDeg,name=>$catName}, ... ] : see cats()
 ##  sig => $termSignature,##-- cached signature
 ##  sigFile => $sigFile,  ##-- cached signature file
 ##  raw => $rawText,      ##-- cached raw text
 ##  rawFile => $rawFile,  ##-- cached raw text file
+##  ##
+##  ##-- subclass data
+##  #xdoc => $xmlDoc,      ##-- XML::LibXML::Document object (default: none)
 sub new {
-  my $that = shift;
-  my $doc = $that->SUPER::new(
-			      ##-- source options
-			      label=>undef,
-			      xdoc =>undef,
-			      id   =>undef,
-			      @_,
-			     );
+  my ($that,%opts) = @_;
+
+  ##-- default subclass
+  $opts{class} = 'Default' if ($that eq __PACKAGE__ && !exists($opts{class}));
+
+  my ($doc);
+  if (defined($opts{class})) {
+    ##-- subclass selection
+    my $class = $opts{class};
+    $class=$ALIAS{$class} while (defined($ALIAS{$class}));
+    delete($opts{class});
+    $class = __PACKAGE__ . "::$class" if (!UNIVERSAL::isa($class,__PACKAGE__));
+    eval "use $class;" if (!UNIVERSAL::can($class,'new'));
+    $doc = $class->new(%opts);
+  }
+  else {
+    ##-- ... otherwise just pass through to DocClassify::Object
+    $doc = $that->DocClassify::Object::new(
+					   ##-- source options
+					   label=>undef,
+					   id   =>undef,
+					   xdoc =>undef,
+					   %opts,
+					  );
+  }
 
   ##-- ensure label, id are set
   $doc->label() if (!defined($doc->{label}));
@@ -82,13 +95,13 @@ sub new {
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
 ##  + override returns qw(xdoc id cats sig raw sigFile rawFile)
 sub noShadowKeys {
-  return qw(xdoc id cats sig raw sigFile rawFile);
+  return qw(id cats sig raw sigFile rawFile);
 }
 
 ## $doc = $doc->clearCache()
 ##  + clears cached keys qw(xdoc raw sig)
 sub clearCache {
-  delete(@{$_[0]}{qw(xdoc raw sig)});
+  delete(@{$_[0]}{qw(raw sig)});
   return $_[0];
 }
 
@@ -163,19 +176,11 @@ sub sizeTokens {
 ## \@cats = $doc->cats()
 ##  + Returns array (ref) of category membership data:
 ##    @cats = ( {id=>$catId,deg=>$catDeg,name=>$catName}, ... )
-##  + just returns $doc->{cats} if defined, otherwise parses xml doc
+##  + just returns $doc->{cats} if defined, otherwise calls $doc->getCats()
 sub cats {
   my $doc = shift;
-  if (!defined($doc->{cats})) {
-    ##-- parse category data
-    $doc->{cats} = [];
-    my $xdoc = $doc->xmlDoc();
-    my ($c_node,$c_id,$c_name,$c_deg);
-    foreach $c_node (@{$xdoc->findnodes(join('|',@XML_CAT_XPATHS))}) {
-      ($c_id,$c_name,$c_deg) = map {$c_node->getAttribute($_)} qw(id name degree);
-      push(@{$doc->{cats}}, {id=>$c_id,deg=>$c_deg,name=>$c_name});
-    }
-  }
+  $doc->{cats} = $doc->getCats()//[] if (!defined($doc->{cats}));
+
   ##-- sanitize & sort
   $_->{deg} = 1 foreach (grep {!defined($_->{deg})} @{$doc->{cats}});
   @{$doc->{cats}} =
@@ -191,42 +196,38 @@ sub cats {
   return wantarray ? @{$doc->{cats}} : $doc->{cats};
 }
 
+## \@cats = $doc->getCats()
+##  + Returns array-ref of category membership data:
+##    @cats = ( {id=>$catId,deg=>$catDeg,name=>$catName}, ... )
+##  + REQUIRED by subclasses
+sub getCats {
+  my $doc = shift;
+  confess(ref($doc)."::getCats(): abstract API method called!");
+  return [];
+}
+
 ##--------------------------------------------------------------
 ## Methods: Parsing: Type-Frequency Signature (NEW)
 
 ## $sig = $doc->typeSignature(%opts)
 ##  + %opts: (none yet)
+##  + template checks for $doc->{sig}, $doc->{sigFile}, otherwise calls $doc->getTypeSignature(%opts)
 sub typeSignature {
-  my ($doc,%opts) = @_;
+  my $doc = shift;
   return $doc->{sig} if (defined($doc->{sig}));            ##-- check for cached object
   return DocClassify::Signature->loadFile($doc->{sigFile}) ##-- check for cached file
-    if ($doc->{sigFile} && -r ($doc->{sigFile}));
+    if ($doc->{sigFile} && -r $doc->{sigFile});
 
-  ##-- common vars
-  my $sig = DocClassify::Signature->new();
+  return $doc->getTypeSignature(@_);
+}
 
-  ##-- category data
-  my ($cat);
-  foreach $cat ( @{$doc->cats} ) {
-    $sig->{cat2id}{$cat->{name}}  = $cat->{id} if (!defined($sig->{cat2id}{$cat->{name}}));
-    $sig->{cat2deg}{$cat->{name}} = $cat->{deg} if (!defined($sig->{cat2deg}{$cat->{name}}));
-  }
-
-  ##-- get type-frequency signature (using XSL)
-  my $xdoc = $doc->xmlDoc();
-  my $yf_stylesheet = $doc->typeFrequencyStylesheet();
-  my $xxdoc = $yf_stylesheet->transform($xdoc);
-  my $xxstr = $yf_stylesheet->output_string($xxdoc);
-
-  my $tf = $sig->{tf};
-  my $N  = $sig->{N};
-  foreach ($xxstr =~ /^(?!%%).+$/mg) {
-    $tf->{$_}++;
-    $N++;
-  }
-  $sig->{N}=$N;
-
-  return $doc->{sig}=$sig;
+## $sig = $doc->getTypeSignature(%opts)
+##  + %opts: (none yet)
+##  + (re-)generate document signature; guts for typeSignature() method
+##  + REQUIRED by subclasses
+sub getTypeSignature {
+  my $doc = shift;
+  confess(ref($doc)."::getTypeSignature(): abstract API method called!");
 }
 
 ## $bool = $doc->saveSignature($sigFile,%saveopts)
@@ -240,102 +241,39 @@ sub saveSignature {
   return $sig->saveFile($sigFile,%opts);
 }
 
-## $stylesheet = $CLASS_OR_OBJ->typeFrequencyStylesheet()
-sub typeFrequencyStylesheet {
-  our ($YF_STYLESHEET,$YF_STYLESTR);
-  return $YF_STYLESHEET if (defined($YF_STYLESHEET));
-  return $YF_STYLESHEET = xsl_stylesheet(string=>$YF_STYLESTR);
-}
-
-## $YF_STYLESHEET
-##  + XSL stylesheet for type-frequency counting (xml -> utf-8 text)
-our ($YF_STYLESHEET);
-
-## $YF_STYLESTR
-##  + XSL stylesheet string for type-frequency counting (xml -> utf-8 text)
-our $YF_STYLESTR = q(<?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
-  <xsl:output method="text" encoding="UTF-8"/>
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- parameters: (none) -->
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- options: (none) -->
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- Templates: root: recurse -->
-  <xsl:template match="/">
-   <xsl:apply-templates select="./*"/>
-  </xsl:template>
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- Templates: words: output TT-like format -->
-  <xsl:template match="w">
-    <xsl:apply-templates select="@*"/>
-    <xsl:text>&#10;</xsl:text>
-  </xsl:template>
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- Templates: word-attribute: ATTR1=VAL1 "\t" ATTR2=VAL2 ... -->
-  <xsl:template match="w/@*">
-    <xsl:if test="position()>1">
-      <xsl:text>&#09;</xsl:text>
-    </xsl:if>
-    <xsl:value-of select="name()"/>
-    <xsl:text>=</xsl:text>
-    <xsl:value-of select="normalize-space(.)"/>
-  </xsl:template>
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- Templates: cooked: output comment -->
-  <xsl:template match="//cooked">
-    <xsl:text>&#10;</xsl:text>
-    <xsl:text>%% COOKED type=</xsl:text>
-    <xsl:value-of select="./@type"/>
-    <xsl:text>&#10;</xsl:text>
-    <xsl:apply-templates select="./*"/>
-  </xsl:template>
-
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- Templates: sentence: output comment -->
-  <xsl:template match="s">
-    <xsl:text>&#10;</xsl:text>
-    <!-- <xsl:text>%% SENTENCE&#10;</xsl:text> -->
-    <xsl:apply-templates select="./*"/>
-  </xsl:template>
-
-  <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
-  <!-- Templates: default: ignore -->
-  <xsl:template match="*|@*|text()|comment()|processing-instruction()" priority="-1">
-    <xsl:apply-templates select="./*"/>
-  </xsl:template>
-
-</xsl:stylesheet>
-);
 
 ##--------------------------------------------------------------
 ## Methods: Parsing: Raw Text
 
 ## \$str = $doc->rawText(%opts)
 ## + %opts:
-##     str=>\$str,
-##     xpaths => \@xpaths, ##-- override @XML_RAW_XPATHS
+##     str    => \$str,    ##-- write to \$str
+##     xpaths => \@xpaths, ##-- override @XML_RAW_XPATHS (VzXml only)
+## + sets $str=$rawDocText and returns \$str
+## + default checks for raw data in $doc->{raw} or existing file $doc->{rawFile}, otherwise calls $doc->getRawText()
 sub rawText {
   my ($doc,%opts) = @_;
 
   ##-- defaults
-  my $ref = \$doc->{raw};
-  if (!defined($$ref)) {
-    ##-- compute raw text
-    %opts = (%$doc,%opts);
-    $opts{xpaths} = \@XML_RAW_XPATHS if (!defined($opts{xpaths}));
-    my $xdoc = $doc->xmlDoc();
-    $$ref = join("\n\n", map {$_->textContent} @{$xdoc->findnodes(join('|',@{$opts{xpaths}}))})."\n";
+  my ($ref);
+  if (defined($doc->{raw})) {
+    ##-- cached raw text data
+    $ref = \$doc->{raw};
+  }
+  elsif (defined($doc->{rawFile}) && -r $doc->{rawFile}) {
+    ##-- cached raw text file
+    local $/ = undef;
+    open(my $fh,"<:utf8",$doc->{rawFile})
+      or die(ref($doc)."::rawText(): open failed for $doc->{rawFile}: $!");
+    my $buf = <$fh>;
+    close $fh;
+    $ref = \$buf;
+  }
+  else {
+    $ref = $doc->getRawText(%opts);
   }
 
-  ##-- return
+  ##-- set & return
   if (defined($opts{str})) {
     ${$opts{str}} = $$ref;
     return $opts{str};
@@ -343,7 +281,15 @@ sub rawText {
   return $ref;
 }
 
-
+## \$str = $doc->getRawText(%opts)
+## + %opts:
+##     xpaths => \@xpaths, ##-- override @XML_RAW_XPATHS (VzXml only)
+## + guts for rawText() method
+## + REQUIRED for subclasses
+sub getRawText {
+  my ($doc,%opts) = @_;
+  confess(ref($doc)."::getRawText(): abstract API method called!");
+}
 
 
 ##==============================================================================
@@ -359,43 +305,7 @@ sub defaultIoMode { return 'bin'; }
 
 ##--------------------------------------------------------------
 ## Methods: I/O: XML
-
-## $xdoc = $doc->xmlDoc(%opts)
-##  + gets cached xml document or load from source
-sub xmlDoc {
-  return $_[0]{xdoc} if (defined($_[0]{xdoc}));
-  return $_[0]->loadXmlDoc(@_[1..$#_])
-}
-
-
-## $xdoc = $doc->loadXmlDoc(%opts)
-##  + (re-)loads $doc->{xdoc} from specified source
-##  + %opts clobbers %$doc
-##  + implicitly re-sets $doc->{label} from %opts or source
-sub loadXmlDoc {
-  my ($doc,%opts) = shift;
-  delete($doc->{label});
-  @$doc{keys(%opts)} = values(%opts);
-  $doc->label() if (!defined($doc->{label})); ##-- re-set label
-
-  my $parser = libxmlParser();
-  if (defined($doc->{doc})) {
-    $doc->{xdoc} = $doc->{doc};
-    delete($doc->{doc});
-  }
-  elsif (defined($doc->{string})) {
-    $doc->{xdoc} = $parser->parse_string(ref($doc->{string}) ? ${$doc->{string}} : $doc->{string});
-  }
-  elsif (defined($doc->{file})) {
-    $doc->{xdoc} = ref($doc->{file}) ? $parser->parse_fh($doc->{file}) : $parser->parse_file($doc->{file});
-  }
-  else {
-    confess(ref($doc)."::loadXmlDoc(): no XML document source to load from!");
-  }
-  confess(ref($doc)."::loadXmlDoc(): ".$doc->label.": could not parse source document: $!") if (!$doc->{xdoc});
-
-  return $doc->{xdoc};
-}
+## (nothing here)
 
 ##--------------------------------------------------------------
 ## Methods: I/O: Binary

@@ -108,20 +108,25 @@ sub lemmatize {
   ##-- lemmatize: vars
   my $tf = $sig->{tf};
   my $lf = $sig->{lf} = {};
-  my $Nlref = \$sig->{Nl};
-  $$Nlref = 0;
 
   ##-- lemmatize: loop
-  my ($y,$f, %ya);
+  my ($y,$f, %ya,$lemma);
   while (($y,$f)=each(%$tf)) {
     %ya = (map {split(/=/,$_,2)} split(/\t/,$y));
     next if (defined($posRegex)  && $ya{$posAttr}  !~ $posRegex);
     next if (defined($textStop)  && exists($textStop->{$ya{$textAttr}}));
-    next if (defined($textRegexGood) && $ya{$textAttr} !~ $textRegexGood);
-    next if (defined($textRegexBad)  && $ya{$textAttr} =~ $textRegexBad);
-    $lf->{$lemma2lc ? lc($ya{$lemmaAttr}) : $ya{$lemmaAttr}} += $f;
-    $$Nlref += $f;
+    next if (defined($textRegexGood) && ($ya{$textAttr}//'') !~ $textRegexGood);
+    next if (defined($textRegexBad)  && ($ya{$textAttr}//'') =~ $textRegexBad);
+    next if (!defined($lemma = $ya{$lemmaAttr}));
+
+    $lemma = lc($lemma) if ($lemma2lc);
+    $lf->{$lemma} += $f;
   }
+
+  ##-- compute $sig->{Nl}
+  my $Nl = 0;
+  $Nl += $_ foreach (values(%$lf));
+  $sig->{Nl} = $Nl;
 
   return $sig;
 }

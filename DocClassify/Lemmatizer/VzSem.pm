@@ -41,7 +41,7 @@ BEGIN {
 ##  textRegexGood => $re,   ##-- regex matching "good" text types (default=undef (none))
 ##  textRegexBad  => $re,   ##-- regex matching "bad" text types  (default=$TEXT_REGEX_BAD)
 ##  textStop => \%stopText, ##-- pseudo-hash of unwanted text types; default=undef (none)
-##  posRegex => $re,        ##-- regex matching "good" pos tags (default=$POS_REGEX)
+##  posRegex => $re,        ##-- regex matching "good" pos tags (default=$DocClassify::Lemmatizer::VzContent::POS_REGEX)
 ##  lemmaAttr => $attr,     ##-- lemma attribute (default='lemma')
 ##  lemmaToLower => $bool,  ##-- whether to canonicalize lemmata to lower-case (default=1)
 ##  ##---- INHERITED from DocClassify::Lemmatizer

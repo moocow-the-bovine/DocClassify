@@ -37,6 +37,9 @@ BEGIN {
      vzsem => 'VzSem',
      vzSem => 'VzSem',
      ##
+     cab => 'Cab',
+     dta => 'Cab',
+     ##
      #Default => 'VzContent',
      #Default => 'VzSep',
      Default => 'VzSem',
@@ -64,7 +67,7 @@ sub new {
     eval "use $class;" if (!UNIVERSAL::can($class,'new'));
     return $class->new(%opts);
   }
-  ##-- ... otherwise just pass through to MUDL::Object
+  ##-- ... otherwise just pass through to DocClassify::Object
   return $that->DocClassify::Object::new(
 					 ##-- local options
 					 #(none)

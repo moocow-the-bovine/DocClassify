@@ -170,10 +170,12 @@ sub saveXmlDoc {
 
   ##-- raw document list
   my $docs_node = $root->addNewChild(undef,'docs');
-  my ($doc,$d_node, $cats,$cat,$c_node);
+  my ($doc,$d_node, $d_cls, $cats,$cat,$c_node);
   foreach $doc (@{$corpus->{docs}}) {
     $d_node = $docs_node->addNewChild(undef,'doc');
+    ($d_cls = ref($doc)) =~ s/^DocClassify::Document:://;
     $d_node->setAttribute('id',$doc->id);
+    $d_node->setAttribute('class',$d_cls);
     $d_node->setAttribute('label',$doc->label) if (defined($doc->{file}) && $doc->label ne $doc->{file});
     $d_node->setAttribute('file',$doc->{file}) if (defined($doc->{file}));
     $d_node->setAttribute('bytes',$doc->sizeBytes||-1); ##-- save XML document size in bytes (e.g. for splitN())
@@ -228,7 +230,7 @@ sub loadXmlDoc {
   ##-- load: documents
   my ($d_node,$doc, $c_node,$cat);
   foreach $d_node (@{$root->findnodes('./docs/doc')}) {
-    push(@{$corpus->{docs}}, $doc=DocClassify::Document->new());
+    push(@{$corpus->{docs}}, $doc=DocClassify::Document->new( class=>($d_node->getAttribute('class')//'default') ));
     $doc->label($d_node->getAttribute('label'));
     $doc->id($d_node->getAttribute('id'));
     $doc->{file} = $d_node->getAttribute('file');

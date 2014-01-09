@@ -73,6 +73,9 @@ our %opts =
    corpusSave => {},
    corpusLoad => {},
 
+   ##-- Document Options
+   docNew => { class=>'default' },
+
    ##-- Signature Options
    sigNew => {},
    sigSave => {verboseIO=>0},
@@ -173,6 +176,9 @@ sub dcOptions {
    'signatures|sigs|sig!' => \$opts{corpusSave}{saveSigs},
    'corpus-input-mode|cim=s' => \$opts{corpusLoad}{mode},
    'corpus-output-mode|com=s' => \$opts{corpusSave}{mode},
+
+   ##-- Document Options
+   'document-class|doc-class|dclass|dc=s' => \$opts{docNew}{class},
 
    ##-- Signature Options
    #'signature-mode|sig-mode|sigmode|sm=s' => \$opts{sigSave}{mode},

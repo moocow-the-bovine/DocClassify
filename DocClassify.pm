@@ -8,16 +8,19 @@ package DocClassify;
 
 use DocClassify::Object;
 use DocClassify::Logger;
-use DocClassify::Document;
 use DocClassify::FileChurner;
 use DocClassify::Corpus;
 use DocClassify::Signature;
+
+use DocClassify::Document;
+use DocClassify::Document::VzXml;
 
 use DocClassify::Lemmatizer;
 use DocClassify::Lemmatizer::VzPlain;
 use DocClassify::Lemmatizer::VzContent;
 use DocClassify::Lemmatizer::VzSep;
 use DocClassify::Lemmatizer::VzSem;
+use DocClassify::Lemmatizer::Cab;
 
 use DocClassify::Mapper;
 use DocClassify::Mapper::ByLemma;
