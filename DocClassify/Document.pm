@@ -39,6 +39,13 @@ BEGIN {
      'txml'    => 'CabXml',
      'twxml'   => 'CabXml',
      ##
+     'cabcsv1g' => 'CabCsv1g',
+     'Cab-Csv-1g' => 'CabCsv1g',
+     'Cab-1g' => 'CabCsv1g',
+     'Cab1g' => 'CabCsv1g',
+     'Csv-1g' => 'CabCsv1g',
+     'Csv1g' => 'CabCsv1g',
+     ##
      'Default' => 'VzXml',
     );
   @ALIAS{map {lc($_)} keys(%ALIAS)} = values(%ALIAS);
@@ -68,7 +75,7 @@ sub new {
   my ($that,%opts) = @_;
 
   ##-- default subclass
-  $opts{class} = 'Default' if ($that eq __PACKAGE__ && !exists($opts{class}));
+  $opts{class} = 'default' if ($that eq __PACKAGE__ && !exists($opts{class}));
 
   my ($doc);
   if (defined($opts{class})) {

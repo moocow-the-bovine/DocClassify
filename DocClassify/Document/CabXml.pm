@@ -130,11 +130,7 @@ sub getTypeSignature {
   my $sig = DocClassify::Signature->new();
 
   ##-- get category data
-  my ($cat);
-  foreach $cat ( @{$doc->cats} ) {
-    $sig->{cat2id}{$cat->{name}}  = $cat->{id} if (!defined($sig->{cat2id}{$cat->{name}}));
-    $sig->{cat2deg}{$cat->{name}} = $cat->{deg} if (!defined($sig->{cat2deg}{$cat->{name}}));
-  }
+  $sig->addCat($_) foreach (@{$doc->cats});
 
   ##-- get type-frequency signature (using XSL)
   my $xdoc = $doc->xmlDoc();

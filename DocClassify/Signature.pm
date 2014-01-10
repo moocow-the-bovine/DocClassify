@@ -107,6 +107,14 @@ sub addSig {
   return $sig1;
 }
 
+## $sig = $sig->addCat( {name=>$cat, id=>$catid, deg=>$degree} )
+sub addCat {
+  my ($sig,$cat) = @_;
+  $sig->{cat2id}{$cat->{name}}  = $cat->{id}                    if (!defined($sig->{cat2id}{$cat->{name}}));
+  $sig->{cat2deg}{$cat->{name}} = $cat->{deg}||$CAT_DEG_DEFAULT if (!defined($sig->{cat2deg}{$cat->{name}}));
+  return $sig;
+}
+
 ##==============================================================================
 ## Methods: Pruning
 
@@ -156,11 +164,11 @@ sub lemmatize {
 ## Methods: I/O: CSV
 
 ## $sig = $sig->loadCsvFile($file_or_fh,%opts)
-##  + alias: loadTextFile()
+##  + OBSOLETE alias: loadTextFile()
 ##  + $file_or_fh is assumed to be utf-8 encoded
 ##  + %opts:
 ##     lemmatized => $bool, ##-- are we loading a lemma-map (true) or a type-map (false)? (default=true)
-BEGIN { *loadTextFile = \&loadCsvFile; }
+#BEGIN { *loadTextFile = \&loadCsvFile; }
 sub loadCsvFile {
   my ($sig,$file,%opts) = @_;
   my $lemmatized = defined($opts{lemmatized}) ? $opts{lemmatized} : 1;
@@ -214,13 +222,13 @@ sub loadCsvFile {
 }
 
 ## $sig = $sig->saveCsvFile($file_or_fh,%opts)
-##  + alias: saveTextFile()
+##  + OBSOLETE alias: saveTextFile()
 ##  + $file_or_fh will be be utf-8 encoded
 ##  + %$opts:
 ##     dumpCats => $bool,   ##-- dump category data? (default=true)
 ##     dumpFreqs => $bool,  ##-- dump term-frequency data? (default=true)
 ##     lemmatized => $bool, ##-- dump a lemma-map (true) or a type-map (false)? (default=true)
-BEGIN { *saveTextFile = \&saveCsvFile; }
+#BEGIN { *saveTextFile = \&saveCsvFile; }
 sub saveCsvFile {
   my ($sig,$file,%opts) = @_;
   my $lemmatized = defined($opts{lemmatized}) ? $opts{lemmatized} : 1;
@@ -255,6 +263,94 @@ sub saveCsvFile {
   return $sig;
 }
 
+
+##--------------------------------------------------------------
+## Methods: I/O: TT-1grams (see also Lingua::TT::Ngrams)
+
+## $sig = $sig->load1gFile($file_or_fh,%opts)
+##  + $file_or_fh is assumed to be utf-8 encoded
+BEGIN { *loadTextFile = \&load1gFile; }
+sub load1gFile {
+  my ($sig,$file,%opts) = @_;
+
+  my $fh = ref($file) ? $file : IO::File->new("<$file");
+  confess(ref($sig)."::load1gFile(): open failed for file '$file': $!") if (!defined($fh));
+  $fh->binmode(':utf8') if ($fh->can('binmode'));
+
+  ##-- parse rest of file (TAB-separated: (TERM FREQ ...) or tab-less ("<"DEG">"? CAT_ID? CAT_NAME) or comment /^%%/)
+  my ($deg,$cid,$cat);
+  my ($f,$item);
+  my ($xf,$Nr) = ($sig->{tf}, \$sig->{N});
+  while (defined($_=<$fh>)) {
+    chomp;
+    if (/^%%/ || /^\s*$/) {
+      if (/^%%\$dc.cat(?:\.([0-9\.\-\+eE]+))?=(?:([0-9]+)_)?(.*)$/) {
+	##-- parse category
+	($deg,$cid,$cat) = (($1//1), ($2||$CAT_DEG_DEFAULT), ($2//'unknown'));
+	$sig->{cat2deg}{$cat} = min2( $deg, $CAT_DEG_MAX );
+	$sig->{cat2id}{$cat}  = $cid if (defined($cid) && !defined($sig->{cat2id}{$cat}));
+      }
+      elsif (/^%%\$dc.terms$/) {
+	($xf,$Nr) = ($sig->{tf}, \$sig->{N});
+      }
+      elsif (/^%%\$dc.lemma(?:ta|s)$/) {
+	$sig->{lf} //= {};
+	($xf,$Nr) = ($sig->{lf}, \$sig->{Nl});
+      }
+      next;
+    }
+
+    ##-- parse csv lines
+    ($f,$item) = split(/\t/, $_, 2);
+    $f //= 1;
+    $xf->{$item} += $f;
+    $$Nr         += $f;
+  }
+  $fh->close if (!ref($file));
+
+  ##-- cleanup
+  delete @$sig{qw(tf N)}  if (!$sig->{N});
+  delete @$sig{qw(lf Nl)} if (!$sig->{Nl});
+
+  return $sig;
+}
+
+## $sig = $sig->save1gFile($file_or_fh,%opts)
+##  + alias: saveTextFile()
+##  + $file_or_fh will be be utf-8 encoded
+BEGIN { *saveTextFile = \&save1gFile; }
+sub save1gFile {
+  my ($sig,$file,%opts) = @_;
+
+  my $fh = ref($file) ? $file : IO::File->new(">$file");
+  confess(ref($sig)."::save1gFile(): open failed for file '$file': $!") if (!defined($fh));
+  $fh->binmode(':utf8') if ($fh->can('binmode'));
+
+  ##-- dump category data
+  foreach (sort {$sig->{cat2deg}{$a}<=>$sig->{cat2deg}{$b}} keys(%{$sig->{cat2deg}})) {
+    $fh->print("%%\$dc.cat.".($sig->{cat2deg}{$_}||$CAT_DEG_DEFAULT)."=".$sig->{cat2id}{$_}."_".$_."\n");
+  }
+
+  ##-- dump frequency data: terms  if ($sig->{N} && $sig->{tf}) {
+  if ($sig->{N} && $sig->{tf}) {
+    my $xf = $sig->{tf};
+    $fh->print("%%\$dc.terms\n",
+	       map {"$xf->{$_}\t$_\n"} sort {$xf->{$b}<=>$xf->{$a}} keys(%$xf)
+	      );
+  }
+
+  ##-- dump frequency data: lemmata
+  if ($sig->{Nl} && $sig->{lf}) {
+    my $xf = $sig->{lf};
+    $fh->print("%%\$dc.lemmata\n",
+	       map {"$xf->{$_}\t$_\n"} sort {$xf->{$b}<=>$xf->{$a}} keys(%$xf)
+	      );
+  }
+
+  ##-- cleanup & return
+  $fh->close() if (!ref($file));
+  return $sig;
+}
 
 
 ##==============================================================================

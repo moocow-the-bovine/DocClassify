@@ -32,6 +32,7 @@ our %fcopts = (
 	       inputFileTrim=>qr/\.[^\.]*$/,
 	       outputFile=>undef,
 	       outputFileSuffix=>'.sig.csv',
+	       outputMode=>'csv',
 	      );
 
 ##------------------------------------------------------------------------------
@@ -45,6 +46,7 @@ GetOptions(##-- General
 	   'recursive|recurse|r!' => \$fcopts{recursive},
 	   'output-file|outfile|out|of|o=s'=> \$fcopts{outputFile},
 	   'output-suffix|os=s' => \$fcopts{outputFileSuffix},
+	   'output-mode|om=s' => \$fcopts{outputMode},
 	   #'format|f=1' => \$format
 	  );
 $verbose=$fcopts{verbose};
@@ -64,8 +66,13 @@ sub cb_sig2csv {
     or die("$0: loadCsvFile() failed for '$infile': $!");
   my ($outfile,$outfh) = $fc->in2out($infile);
   $outfh->binmode(':utf8');
-  $sig->saveCsvFile($outfh)
-    or die("$0: saveCsvFile() failed for '$outfile': $!");
+  if ($fc->{outputMode} eq '1g') {
+    $sig->save1gFile($outfh)
+      or die("$0: save1gFile() failed for '$outfile': $!");
+  } else {
+    $sig->saveCsvFile($outfh)
+      or die("$0: saveCsvFile() failed for '$outfile': $!");
+  }
   $outfh->close() if (!defined($fc->{outputFile}));
 }
 
@@ -92,8 +99,10 @@ dc-sig2csv.perl - convert DocClassify signatures to CSV term-frequency files
  Options:
   -help                  # this help message
   -verbose LEVEL         # verbosity level
+  -[no]recursive         # do/don't recurse (default=do)
   -output-file FILE      # all output to a single file
   -output-suffix SUFFIX  # one outfile per infile, suffix SUFFIX (default=.sig.csv)
+  -output-mode MODE      # output mode (csv or 1g; default=csv)
 
 =cut
 

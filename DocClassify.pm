@@ -15,6 +15,7 @@ use DocClassify::Signature;
 use DocClassify::Document;
 use DocClassify::Document::VzXml;
 use DocClassify::Document::CabXml;
+use DocClassify::Document::CabCsv1g;
 
 use DocClassify::Lemmatizer;
 use DocClassify::Lemmatizer::VzPlain;

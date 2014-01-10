@@ -26,7 +26,7 @@ our $verbose = setVerboseOptions(1);
 	 fcNew => {
 		   %{$opts{fcNew}},
 		   recursive=>1,
-		   inputFileMatch=>qr/\.xml$/,
+		   inputFileMatch=>undef,
 		  },
 	 #corpusSave => { saveCats=>undef, saveSigs=>undef, },
 	 ##--
@@ -92,6 +92,22 @@ sub fc_callback {
 ##-- vars
 $corpus = DocClassify::Corpus->new( newOpts('corpus') );
 
+##-- input mode hacks
+my $dclass = $opts{docNew}{class} // 'default';
+DocClassify::Program->vlog('info', "docClass=$dclass") if ($verbose >= 2);
+my $fregex = $opts{fcNew}{inputFileMatch};
+if (!defined($fregex)) {
+  if ($dclass =~ /1g/) {
+    $fregex = '(?i:\.1g$)';
+  } elsif ($dclass =~ /csv/) {
+    $fregex = '(?i:\.csv$)';
+  } else {
+    $fregex = '(?i:\.xml$)';
+  }
+  $opts{fcNew}{inputFileMatch} = $fregex;
+}
+$opts{fcNew}{inputFileMatch} = qr/$opts{fcNew}{inputFileMatch}/;
+
 ##-- load inputs
 push(@ARGV,'-') if (!@ARGV);
 $fc = DocClassify::FileChurner->new( newOpts('fc'), fileCallback=>\&fc_callback );
@@ -136,6 +152,7 @@ dc-corpus-create.perl - make a corpus directory (XML or binary)
   -output-file FILE      # set corpus output file (default=-)
   -label LABEL           # set global corpus label
   -dclass CLASS          # set input document class
+  -iregex REGEX          # set input file regex (default=(?i:\.xml$)))
   -compile , -nocompile  # do/don't (re-)compile corpus (default: false if -union, otherwise true)
   -cats , -nocats        # do/don't save category data (default: true iff -compile)
   -sigs , -nosigs        # do/don't save signature data (default: true iff -compile)
