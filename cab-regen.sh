@@ -1,13 +1,15 @@
 #!/bin/bash
 
-src=data/cab-ner
-base="${src%.d}"
+src="$1"
+base="$2"
+test -n "$src"  || src=data/cab-ner
+test -n "$base" || base="${src%.d}"
 
 dummy=""
 
 runcmd() {
   echo "$@" >&2
-  test -z "$dummy" || "$@"
+  test -n "$dummy" || "$@"
 }
 
 ##-- create
