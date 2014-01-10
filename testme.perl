@@ -3,6 +3,7 @@
 use lib qw(. ./MUDL);
 
 use DocClassify;
+use DocClassify::Mapper::Train;
 use DocClassify::Utils qw(:all);
 
 use MUDL;
@@ -19,7 +20,7 @@ use PDL::CCS::Nd;
 use IO::File;
 
 use Encode qw(encode decode);
-use File::Basename qw(basename);
+use File::Basename qw(basename dirname);
 
 use Benchmark qw(cmpthese timethese);
 
@@ -3299,7 +3300,7 @@ sub test_map_cutoff {
   print STDERR "$0: test_eval_cutoff() done: what now?\n";
   exit 0;
 }
-test_map_cutoff(@ARGV);
+#test_map_cutoff(@ARGV);
 
 ## $acc = testaccx($expr)
 ## $acc = testaccx($expr, $fromCatId,$toCatId, ...)
@@ -3477,6 +3478,47 @@ sub test_catambig {
   print STDERR "$0: test_catambig() done: what now?\n";
 }
 #test_catambig(@ARGV);
+
+##======================================================================
+sub test_cab_map {
+  my $mapfile = shift || 'cab-ner.map.bin';
+
+  my $map = DocClassify::Mapper->loadFile($mapfile)
+    or die("$0: failed to load $mapfile: $!");
+
+  ##-- use tdm0 or tdm?
+  my $use_raw = (grep {$_ eq '-raw'} @_);
+
+  ##-- get extended term frequency
+  my $tw  = $map->{tw};
+  my $tdm = $use_raw ? $map->get_tdm0() : $map->{tdm};
+
+  ##-- dump "best" terms by doc (see dc-mapper-info.perl)
+  my $ntpd    = 4; ##-- number of terms by doc
+  my $denum   = $map->{denum};
+  my $tenum   = $map->{tenum};
+  binmode(STDOUT,':utf8');
+  foreach my $dname (sort keys %{$denum->{sym2id}}) {
+    (my $dbase = File::Basename::basename($dname)) =~ s/\..*$//;
+    my $di  = $denum->{sym2id}{$dname};
+    my $tf  = $tdm->dice_axis(1,$di)->decode->flat;
+    my $tfi = $tf->qsorti->slice("-1:0");
+
+    print "$dbase";
+    foreach (0..($ntpd-1)) {
+      my $ti  = $tfi->at($_);
+      my $val = $tf->at($ti);
+      my $f   = $use_raw ? $val : exp($val/$tw->at($ti))-$map->{smoothf};
+      my $w   = $tw->at($ti);
+      printf "\t%s <%.1f ~ %d @ %.2f>", $tenum->{id2sym}[$ti], $val,$f,$w;
+    }
+    print "\n";
+  }
+  exit 0;
+
+  print STDERR "$0: test_cab_map() done: what now?\n";
+}
+test_cab_map(@ARGV);
 
 ##======================================================================
 ## MAIN (dummy)

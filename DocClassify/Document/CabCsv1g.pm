@@ -98,7 +98,7 @@ sub parseSource {
   my @names = grep {($_//'') ne ''} split(/[\s\,]+/, $doc->{csvAttrNames}//$CSV_ATTR_NAMES);
 
   ##-- chug doc, building sig term frequencies
-  my $cats = $doc->{cats} = [];
+  my $cats = [];
   my $sig  = $doc->{sig}  = DocClassify::Signature->new();
   my $tf   = $sig->{tf};
   my $N    = 0;
@@ -121,8 +121,11 @@ sub parseSource {
   }
   $sig->{N} = $N;
 
+  ##-- ensure doc cats
+  $doc->{cats} = $cats if (@$cats || !$doc->{cats});
+
   ##-- ensure sig cats
-  $sig->addCat($_) foreach (@{$doc->cats});
+  $sig->addCat($_) foreach (@{$doc->{cats}});
 
   ##-- cleanup
   close($fh) if (!ref($doc->{file}));

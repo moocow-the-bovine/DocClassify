@@ -41,7 +41,7 @@ our $verbose = setVerboseOptions(1);
 
 
 our $inputCorpora = 0; ##-- where INPUTs are corpora or document files/dirs
-our $compile = undef;  ##-- default: true for new corpora, false for union
+our $compile      = undef;  ##-- default: true for new corpora, false for union
 
 ##------------------------------------------------------------------------------
 ## Command-line
@@ -55,7 +55,10 @@ GetOptions(##-- common options
 	  );
 $verbose=$opts{verbose};
 $compile=1 if (!defined($compile) && !$inputCorpora);
-$opts{corpusSave}{saveCats}=$opts{corpusSave}{saveSigs}=1 if ($compile);
+if ($compile) {
+  $opts{corpusSave}{saveCats} //= 1;
+  $opts{corpusSave}{saveSigs} //= 1;
+}
 $opts{fcNew}{outputFile} = $opts{outputFile};
 
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
@@ -154,8 +157,8 @@ dc-corpus-create.perl - make a corpus directory (XML or binary)
   -dclass CLASS          # set input document class
   -iregex REGEX          # set input file regex (default=(?i:\.xml$)))
   -compile , -nocompile  # do/don't (re-)compile corpus (default: false if -union, otherwise true)
-  -cats , -nocats        # do/don't save category data (default: true iff -compile)
-  -sigs , -nosigs        # do/don't save signature data (default: true iff -compile)
+  -cats    , -nocats     # do/don't save category data (default: true iff -compile)
+  -sigs    , -nosigs     # do/don't save signature data (default: true iff -compile)
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output corpus (default=guess or xml)
 
