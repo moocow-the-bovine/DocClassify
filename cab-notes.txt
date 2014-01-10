@@ -1,0 +1,14 @@
+#!/bin/sh
+
+src=data/cab-ner
+base=cab-ner
+
+##-- create
+./dc-corpus-create.perl -v=3 -dc=cab1g -o=$base.corpus.xml $src
+
+##-- train
+./dc-mapper-train.perl -r=64 -lzc=Cab -mdf=2 -mf=5 -nonull -mo=weightByCat=0 -noclear -v=3 -o=$base.map.bin $base.corpus.xml
+
+##-- test
+./testme.perl $base.map.bin -raw   > $base.prof-raw
+./testme.perl $base.map.bin -noraw > $base.prof-cooked
