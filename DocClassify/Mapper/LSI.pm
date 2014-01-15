@@ -52,6 +52,7 @@ our $verbose = 3;
 ##  svd => $svd,                     ##-- a MUDL::SVD object
 ##  xdm => $xdm_pdl,                 ##-- dense PDL ($svdr,$ND) = $svd->apply( $tdm_pdl )
 ##  xcm => $xcm_pdl,                 ##-- dense PDL ($svdr,$NC) = $svd->apply( $TERM_CAT_MATRIX($NT,$NC) )
+
 ##  #dc_dist => $dc_dist,             ##-- dense PDL ($NDx,$NC) : [$dxi,$ci] -> dist($ci,$dxi)
 ##  #dc_d2c  => $dc_d2c,              ##-- dense PDL ($NDx)     : [$dxi]     -> $ci : $dxi \in $ci
 ##  #                                 ##   + NOTE: $NDx may be != $ND
@@ -70,6 +71,8 @@ our $verbose = 3;
 ##  minDocFreq => $ndocs,            ##-- minimum number of docs with f(t,d)>0 for term-inclusion (default=0)
 ##  smoothf => $f0,                  ##-- global frequency smoothing constant (undef~(NTypes/NTokens); default=1.00001)
 ##  termWeight => $how,              ##-- term "weighting" method ('uniform', 'entropy'): default='entropy'
+##  twRaw    => $wRaw,               ##-- coefficient for term raw-frequency (unweighted) in tdm, cdm (default=0)
+##  twCooked => $wCooked,            ##-- coefficient for weighted term-frequency (weighted) in tdm, cdm (default=1)
 ##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
 ##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=0)
@@ -94,7 +97,8 @@ our $verbose = 3;
 ##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  PDL::CCS::Nd ($ND,$NC): [$di,$ci] -> deg($di \in $ci)||0
 ##  tdm0=> $tdm0_pdl,                ##-- raw term-doc mx: PDL::CCS::Nd ($NT,$ND): [$ti,$di] ->     f($ti,$di)
 ##  tcm0=> $tcm0_pdl,                ##-- raw term-cat mx: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] ->     f($ti,$ci)
-##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> w($ti)
+##  tw0 => $tw0_pdl,                 ##-- raw tweight pdl: dense:       ($NT)    : [$ti]     -> w($ti)
+##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> $wRaw + $wCooked*w($ti)
 ##  tdm => $tdm_pdl,                 ##-- term-doc matrix: PDL::CCS::Nd ($NT,$ND): [$ti,$di] -> log(f($ti,$di)+$f0)*w($ti)
 ##  tcm => $tcm_pdl,                 ##-- term-cat matrix: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] -> log(f($ti,$ci)+$f0)*w($ti)
 sub new {

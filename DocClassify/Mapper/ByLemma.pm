@@ -53,6 +53,8 @@ our $verbose = 3;
 ##                                   ##    'entropy-quotient'        ##-- w($t) = H(Doc|T=$t) / H(Doc); aka 'Hq'
 ##                                   ##    'conditional-entropy'     ##-- w($t) = H(Doc|T=$t); aka 'Hc'
 ##                                   ##    'entropy'                 ##-- alias for 'max-entropy-quotient' (default); aka 'H'
+##  twRaw    => $wRaw,               ##-- coefficient for raw term log-frequency in tw (default=0)
+##  twCooked => $wCooked,            ##-- coefficient for estimated term weight in tw (default=1)
 ##  cleanDocs => $bool,              ##-- whether to implicitly clean $doc->{sig} on train, map [default=true]
 ##  byCat => $bool,                  ##-- compile() tcm instead of tdm0, tdm? (default=0)
 ##  weightByCat => $bool,            ##-- compile() tw using tcm0 insteadm of tdm0? (default=1)
@@ -79,7 +81,8 @@ our $verbose = 3;
 ##  dcm => $dcm_pdl,                 ##-- doc-cat matrix:  PDL::CCS::Nd ($ND,$NC): [$di,$ci] -> deg($di \in $ci) || 0
 ##  tdm0=> $tdm0_pdl,                ##-- raw term-doc mx: PDL::CCS::Nd ($NT,$ND): [$ti,$di] ->     f($ti,$di)
 ##  tcm0=> $tcm0_pdl,                ##-- raw term-cat mx: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] ->     f($ti,$ci)
-##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> w($ti)
+##  tw0 => $tw0_pdl,                 ##-- raw tweight pdl: dense:       ($NT)    : [$ti]     -> w($ti)
+##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> $wRaw + $wCooked*w($ti)
 ##  tdm => $tdm_pdl,                 ##-- term-doc matrix: PDL::CCS::Nd ($NT,$ND): [$ti,$di] -> log(f($ti,$di)+$f0)*w($ti)
 ##  tcm => $tcm_pdl,                 ##-- term-cat matrix: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] -> log(f($ti,$ci)+$f0)*w($ti)
 ##  ##
@@ -98,6 +101,8 @@ sub new {
 			       maxTermsPerDoc =>1,
 			       smoothf =>1,
 			       termWeight  => 'uniform',
+			       twRaw => 0,
+			       twCooked => 1,
 			       cleanDocs => 1,
 			       byCat => 0,
 			       weightByCat => 0,
@@ -120,6 +125,7 @@ sub new {
 			       disto=>undef,
 			       dcm=>undef,
 			       tw=>undef,
+			       tw0=>undef,
 			       tdm0=>undef,
 			       tcm0=>undef,
 			       tdm=>undef,

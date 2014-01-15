@@ -3483,20 +3483,27 @@ sub test_catambig {
 sub test_cab_map {
   my $mapfile = shift || 'cab-ner.map.bin';
 
+  { select STDERR; $|=1; select STDOUT; }
+  print STDERR "$0: loading $mapfile ... ";
   my $map = DocClassify::Mapper->loadFile($mapfile)
     or die("$0: failed to load $mapfile: $!");
+  print STDERR "loaded.\n";
 
   ##-- use tdm0 or tdm?
-  my $use_raw = (grep {$_ eq '-raw'} @_);
+  my $use_raw  =  (grep {$_ eq '-raw'} @_);
+  my $use_json = (grep {$_ eq '-json'} @_);
+  my $ntpd     = (map {$_ =~ /^-n=(\d+)/ ? $1 : qw()} @_)[0] || 500; ##-- number of terms by doc
+  require JSON if ($use_json);
 
   ##-- get extended term frequency
   my $tw  = $map->{tw};
+  my $tw0 = $map->{tw0} // $map->{tw};
   my $tdm = $use_raw ? $map->get_tdm0() : $map->{tdm};
 
   ##-- dump "best" terms by doc (see dc-mapper-info.perl)
-  my $ntpd    = 4; ##-- number of terms by doc
   my $denum   = $map->{denum};
   my $tenum   = $map->{tenum};
+  my $prof    = {};
   binmode(STDOUT,':utf8');
   foreach my $dname (sort keys %{$denum->{sym2id}}) {
     (my $dbase = File::Basename::basename($dname)) =~ s/\..*$//;
@@ -3504,16 +3511,24 @@ sub test_cab_map {
     my $tf  = $tdm->dice_axis(1,$di)->decode->flat;
     my $tfi = $tf->qsorti->slice("-1:0");
 
-    print "$dbase";
+    print "$dbase\n" if (!$use_json);
     foreach (0..($ntpd-1)) {
       my $ti  = $tfi->at($_);
+      my $term = $tenum->{id2sym}[$ti];
       my $val = $tf->at($ti);
+      next if ($val <= 0);
       my $f   = $use_raw ? $val : exp($val/$tw->at($ti))-$map->{smoothf};
-      my $w   = $tw->at($ti);
-      printf "\t%s <%.1f ~ %d @ %.2f>", $tenum->{id2sym}[$ti], $val,$f,$w;
+      my $w   = $tw0->at($ti);
+      if ($use_json) {
+	push(@{$prof->{$dbase}}, {text=>$term, weight=>$val});
+      } else {
+	printf("\t%s  <%.1f ~ %d @ %.2f>\n", $term, $val,$f,$w);
+      }
     }
-    print "\n";
+    print "\n" if (!$use_json);
   }
+  print "doctags = ", JSON::to_json($prof, {utf8=>0,pretty=>1,canonical=>1}), ";\n" if ($use_json);
+
   exit 0;
 
   print STDERR "$0: test_cab_map() done: what now?\n";

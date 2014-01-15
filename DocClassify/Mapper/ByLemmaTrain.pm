@@ -176,6 +176,7 @@ sub clearTrainingCache {
   %{$map->{df}} = qw();
   @{$map->{sigs}} = qw();
   @{$map->{docs}} = qw(); ##-- still needed for category mapping?
+  delete($map->{tw0});    ##-- useful for debugging, but recoverable as ($tw-$Raw) / $wCooked
   delete($map->{tdm0});   ##-- useful for debugging, but recoverable as ($tdm/$tw)->exp - $smoothf
   delete($map->{tcm0});   ##-- useful for debugging, but recoverable as ($tcm/$tw)->exp - $smoothf
   delete($map->{doc_wt});
@@ -525,12 +526,16 @@ sub compile_tw {
   #my $NT = $map->{tenum}->size;
   #my $ND = $map->{denum}->size;
   my ($NT,$ND) = $tdm0->dims;
+  my $wRaw    = $map->{twRaw} = $map->{twRaw} // 0;
+  my $wCooked = $map->{twCooked} = $map->{twCooked} // 1;
 
   ##-- guts
   if ($map->{verbose}) {
     $map->vlog('info',"compile_tw(): vector: tw: (NT=$NT) [Term -> Weight]");
-    $map->vlog('info',"compile_tw(): tw=$termWeight, weightByCat=".($map->{weightByCat} ? 1 : 0)) ;
+    $map->vlog('info',"compile_tw(): tw=$termWeight, weightByCat=".($map->{weightByCat} ? 1 : 0).", wRaw=$wRaw, wCooked=$wCooked");
   }
+
+  my $t_f = $tdm0->xchg(0,1)->sumover;              ##-- ccs: [$ti] -> f($ti)
   my ($tw);
   if ($termWeight eq 'uniform') {
     $tw = ones($NT);                                ##-- identity weighting
@@ -585,8 +590,13 @@ sub compile_tw {
   else {
     $map->logconfess("compile_tw(): unknown term-weighting method '$termWeight'");
   }
-  #$map->{tdm} = $map->{tdm}*$tw;
-  $map->{tw} = $tw->todense;
+
+  ##-- "pure" weights
+  $map->{tw0} = $tw->todense;
+
+  ##-- adjusted weights
+  $map->{tw}  = $map->{tw0}*$wCooked;
+  $map->{tw} += $wRaw;
 
   ##-- sanity check(s)
   if (!all($map->{tw}->isfinite)) {

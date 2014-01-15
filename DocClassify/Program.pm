@@ -95,6 +95,8 @@ our %opts =
 	      trainExclusive=>1,	  ##-- exclusive-mode training?
 	      catProfile => 'fold-in',##-- how to do category profiling
 	      termWeight => 'uniform',##-- how to do term weighting
+	      termWeightRaw => 0,     ##-- tw raw log-freq coefficient
+	      termWeightCooked => 1,  ##-- tw estimated weight coefficient
 	      dist => 'e',            ##-- PDL::Cluster distance function
 	      xn => 0,                    ##-- number of splits for parameter-fitting cross-check
 	      seed =>0,    		  ##-- random seed for x-check
@@ -197,6 +199,8 @@ sub dcOptions {
    'exclusive|x!' => \$opts{mapNew}{trainExclusive},
    'cat-profile|catProfile|profile|cp=s' => \$opts{mapNew}{catProfile},
    'term-weight|termWeight|tw|w=s'       => \$opts{mapNew}{termWeight},
+   'term-weight-raw|termWeightRaw|twRaw|twraw|wraw|tw0=s' => \$opts{mapNew}{twRaw},
+   'term-weight-cooked|termWeightCooked|twCooked|twcooked|wcooked|tw1=s' => \$opts{mapNew}{twCooked},
    'cross-check-n|xcheck-n|txn|xn=i' => \$opts{mapNew}{xn},
    #'random-seed|seed|rs=i' => \$opts{mapNew}{seed},
    'clear-training-cache|clear-cache|clear!' => \$opts{mapNew}{clearCache},
