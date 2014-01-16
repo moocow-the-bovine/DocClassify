@@ -111,7 +111,10 @@ sub compiled { return 0; }
 ##  + clears any cached data from training
 ##  + after calling this, $map may no longer be able to train
 ##  + default implementation does nothing
-sub clearTrainingCache { return $_[0]; }
+sub clearTrainingCache {
+  $_[0]->info("clearTrainingCache()") if (ref($_[0]) && $_[0]{verbose});
+  return $_[0];
+}
 
 ##==============================================================================
 ## Methods: API: Classification

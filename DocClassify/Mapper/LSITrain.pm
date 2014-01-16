@@ -77,7 +77,7 @@ sub compiled { return defined($_[0]{xcm}); }
 ##  + additionally clears @$map{qw(tdm0 tcm0)}
 sub clearTrainingCache {
   my $map = shift;
-  $map->SUPER::clearTrainingCache();
+  $map->SUPER::clearTrainingCache() or return undef;
   delete($map->{tdm0});
   delete($map->{tcm0});
   #delete($map->{tdm});    ##-- still useful for debugging

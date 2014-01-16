@@ -258,8 +258,7 @@ sub compiled { return defined($_[0]{cutoff}); }
 ##  + additionally clears @$map{qw(denum dc_dist eval)}
 sub clearTrainingCache {
   my $map = shift;
-  $map->info("clearTrainingCache()") if ($map->{verbose});
-  $map->SUPER::clearTrainingCache();
+  $map->SUPER::clearTrainingCache() or return undef;
   delete($map->{eval});
   delete($map->{dc_dist});
   $map->{denum}->clear() if (defined($map->{denum}));

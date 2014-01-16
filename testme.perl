@@ -3522,7 +3522,7 @@ sub test_cab_map {
       if ($use_json) {
 	push(@{$prof->{$dbase}}, {text=>$term, weight=>$val});
       } else {
-	printf("\t%s  <%.1f ~ %d @ %.2f>\n", $term, $val,$f,$w);
+	printf("\t%s  <%.1f ~ f=%d, w=%.2f>\n", $term, $val,$f,$w);
       }
     }
     print "\n" if (!$use_json);

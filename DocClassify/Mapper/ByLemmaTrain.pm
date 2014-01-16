@@ -172,6 +172,7 @@ sub compiled { return defined($_[0]{tcm}); }
 ##  + override clears training data @$map{qw(gf df sigs docs tdm0 tcm0 doc_wt)} #c2sigs
 sub clearTrainingCache {
   my $map = shift;
+  $map->SUPER::clearTrainingCache() or return undef;
   %{$map->{gf}} = qw();
   %{$map->{df}} = qw();
   @{$map->{sigs}} = qw();
