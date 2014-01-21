@@ -54,12 +54,14 @@ our $logger = 'DocClassify::Program';
 our $mapfile = shift(@ARGV);
 our $mapper = DocClassify::Mapper->loadFile($mapfile, optsLoad('map') )
   or die("$0: Mapper->load() failed for '$mapfile': $!");
-$mapper->{verbose} = $verbose;
-@$mapper{keys %$mapUser} = values %$mapUser; ##-- user overrides
+@$mapper{keys %$mapUser} = values %$mapUser; ##-- user overrides a la dc-mapper-apply.perl
 our %mapopts = optsNew('map');
+$mapper->{verbose} = $verbose;
 
 $mapper->clearTrainingCache() if ($mapper->{clearCache} ||= $mapopts{clearCache});
 $mapper->saveFile($outfile, optsSave('map'));
+
+__END__
 
 =pod
 

@@ -83,6 +83,8 @@ our $verbose = 3;
 ##  tcm0=> $tcm0_pdl,                ##-- raw term-cat mx: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] ->     f($ti,$ci)
 ##  tw0 => $tw0_pdl,                 ##-- raw tweight pdl: dense:       ($NT)    : [$ti]     -> w($ti)
 ##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> $wRaw + $wCooked*w($ti)
+##  #tf0 => $tf0_pdl,                ##-- raw term-freq  : dense:       ($NT)    : [$ti]     -> f($ti)         : see get_tf0()
+##  #tdf0=> $tdn0_pdl,               ##-- raw term-dfreq : dense:       ($NT)    : [$ti]     -> ndocs($ti)     : "doc-frequency", see get_tdf0()
 ##  tdm => $tdm_pdl,                 ##-- term-doc matrix: PDL::CCS::Nd ($NT,$ND): [$ti,$di] -> log(f($ti,$di)+$f0)*w($ti)
 ##  tcm => $tcm_pdl,                 ##-- term-cat matrix: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] -> log(f($ti,$ci)+$f0)*w($ti)
 ##  ##
@@ -99,6 +101,7 @@ sub new {
 			       minFreq =>10,
 			       minDocFreq =>4,
 			       maxTermsPerDoc =>1,
+
 			       smoothf =>1,
 			       termWeight  => 'uniform',
 			       twRaw => 0,
@@ -145,7 +148,7 @@ sub new {
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()
 ##  + override returns qw(gf df lcenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt disto)
 sub noShadowKeys {
-  return qw(gf df clenum denum tenum docs sigs dcm tw tdm0 tcm0 tdm tcm doc_wt disto);
+  return qw(gf df clenum denum tenum docs sigs dcm tw tdm0 tcm0 tf0 td0 tw0 tdm tcm doc_wt disto);
 }
 
 ##==============================================================================

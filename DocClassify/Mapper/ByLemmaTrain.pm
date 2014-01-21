@@ -180,6 +180,8 @@ sub clearTrainingCache {
   delete($map->{tw0});    ##-- useful for debugging, but recoverable as ($tw-$Raw) / $wCooked
   delete($map->{tdm0});   ##-- useful for debugging, but recoverable as ($tdm/$tw)->exp - $smoothf
   delete($map->{tcm0});   ##-- useful for debugging, but recoverable as ($tcm/$tw)->exp - $smoothf
+  delete($map->{tf0});
+  delete($map->{tdf0});
   delete($map->{doc_wt});
   return $map;
 }
@@ -628,7 +630,7 @@ sub logwm {
 
 ##----------------------------------------------
 ## $tdm0 = $map->get_tdm0()
-##  + computes & re-caches $map->{tcm0}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tdm0}
+##  + computes & re-caches $map->{tcm0}: CCS::Nd: ($NT x $ND) [Term x Doc -> Freq] from $map->{tdm0}
 ##  + requires $map->{tdm}, $map->{tw}
 sub get_tdm0 {
   my $map = shift;
@@ -637,8 +639,39 @@ sub get_tdm0 {
 }
 
 ##----------------------------------------------
+## $tf0 = $map->get_tf0()
+##  + computes & (re-)caches tf0: dense: ($NT) [Term -> Freq] from $map->{tdm0}
+sub get_tf0 {
+  my $map = shift;
+  return $map->{tf0} if (defined($map->{tf0}));
+  return $map->{tf0} = $map->get_tdm0()->xchg(0,1)->sumover->todense;
+}
+
+##----------------------------------------------
+## $tdf0 = $map->get_tdf0()
+##  + computes & (re-)caches tdn0: CCS::Nd: ($NT x $NC) [Term -> NDocs] from $map->{tdm0}
+##  + requires $map->{tdm}, $map->{tw}
+sub get_tdf0 {
+  my $map = shift;
+  return $map->{tdf0} if (defined($map->{tdf0}));
+  my $tdn = $map->get_tdm0()->pdl();
+  (my $tmp = $tdn->_nzvals) .= ($tdn->_nzvals >= 1);
+  return $map->{tdf0} = $tdn->xchg(0,1)->sumover->todense->long;
+}
+
+##----------------------------------------------
+## $tw0 = $map->get_tw0()
+##  + computes & re-caches $map->{tw0} from @$map{qw(tw twRaw twCooked)}
+sub get_tw0 {
+  my $map = shift;
+  return $map->{tw0} if (defined($map->{tw0}));
+  return $map->{tw0} = $map->{tw} if (($map->{twRaw}//0)==0 && ($map->{twCooked}//1)==1);
+  return $map->{tw0} = ($map->{tw} - ($map->{twRaw}//0)) / ($map->{twCooked}//1);
+}
+
+##----------------------------------------------
 ## $doc_wt = $map->get_doc_wt()
-##  + compites & re-caches $map->{doc_wt} from $map->{tdm0}
+##  + computes & re-caches $map->{doc_wt} from $map->{tdm0}
 sub get_doc_wt {
   my $map = shift;
   return $map->{doc_wt} if (defined($map->{doc_wt}) && @{$map->{doc_wt}});
