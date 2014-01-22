@@ -3576,13 +3576,13 @@ sub test_cab_query {
 
   if (1) {
     ##-- compute distance to each *document* (WAS:to each *centroid*)
-    $map->{disto} = MUDL::Cluster::Distance->new(class=>'cos',link=>'avg');
+    #$map->{disto} = MUDL::Cluster::Distance->new(class=>'cos',link=>'avg');
     my $q_tdm   = $q_tdm0->pdl;
     my $q_xdm   = $map->svdApply($q_tdm);
-    #my $qd_xdist = $map->{disto}->clusterDistanceMatrix(data=>$q_xdm,cdata=>$map->{xdm})->flat->lclip(0);
+    my $qd_xdist = $map->{disto}->clusterDistanceMatrix(data=>$q_xdm,cdata=>$map->{xdm})->flat->lclip(0);
     ##
-    my $q_ldm    = (($q_tdm0+1)->log * $map->{tw})->toccs;
-    my $qd_ldist = $map->{disto}->clusterDistanceMatrix(data=>$q_ldm,cdata=>$map->{tdm})->flat->lclip(0);
+    #my $q_ldm    = (($q_tdm0+1)->log * $map->{tw})->toccs;
+    #my $qd_ldist = $map->{disto}->clusterDistanceMatrix(data=>$q_ldm,cdata=>$map->{tdm})->flat->lclip(0);
     ##
     ##-- weirdness: not getting back out what we put in: maybe svd on docs is too coarse for term-queries?
     ##   + works well for "real" docs, e.g. $q_tdm0 = $map->{tdm0}->dice_axis(1,42)->pdl;
@@ -3593,7 +3593,7 @@ sub test_cab_query {
 
     ##-- report k-nearest output docs
     my $kdocs = 10;
-    my $qd_dist = $qd_ldist;
+    my $qd_dist = $qd_xdist;
     my $qdi   = $qd_dist->qsorti;
     my ($doci,$docname);
     foreach $doci ($qdi->slice("0:".($kdocs-1))->list) {
