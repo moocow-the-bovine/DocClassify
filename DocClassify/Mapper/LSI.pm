@@ -52,7 +52,6 @@ our $verbose = 3;
 ##  svd => $svd,                     ##-- a MUDL::SVD object
 ##  xdm => $xdm_pdl,                 ##-- dense PDL ($svdr,$ND) = $svd->apply( $tdm_pdl )
 ##  xcm => $xcm_pdl,                 ##-- dense PDL ($svdr,$NC) = $svd->apply( $TERM_CAT_MATRIX($NT,$NC) )
-
 ##  #dc_dist => $dc_dist,             ##-- dense PDL ($NDx,$NC) : [$dxi,$ci] -> dist($ci,$dxi)
 ##  #dc_d2c  => $dc_d2c,              ##-- dense PDL ($NDx)     : [$dxi]     -> $ci : $dxi \in $ci
 ##  #                                 ##   + NOTE: $NDx may be != $ND
@@ -247,7 +246,7 @@ sub svdApply {
     $vals += $map->{smoothf};
     $vals->inplace->log;
     if (defined($map->{tw}) && $vals->nelem > 1) {
-      $vals->slice("0:-2") *= $map->{tw}->index($wnd->slice("(0),")) ##-- apply term weights
+      (my $tmp=$vals->slice("0:-2")) *= $map->{tw}->index($wnd->slice("(0),")) ##-- apply term weights
     }
     $fpdl->missing($map->ccsDocMissing);                             ##-- approximate "missing" value
     return $map->{svd}->apply0($fpdl,$map->ccsSvdNil);               ##-- apply SVD

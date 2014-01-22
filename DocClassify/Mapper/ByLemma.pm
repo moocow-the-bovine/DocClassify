@@ -263,7 +263,7 @@ sub sigPdlRaw {
   }
   ##-- dense mode
   my $dtf = zeroes(double,$tenum->size);
-  $dtf->index($dtf_wt) .= $dtf_nz;
+  (my $tmp=$dtf->index($dtf_wt)) .= $dtf_nz;
   return $dtf->slice(",*1");
 }
 

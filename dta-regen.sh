@@ -30,6 +30,7 @@ if test -z "$src" ; then showhelp; exit 0; fi
 test -n "$src"  || src=data/dta-ner
 test -n "$base" || base="${src%.d}"
 
+test "$1" = "-dummy" && dummy=y
 #dummy=""
 
 runcmd() {
@@ -45,10 +46,10 @@ for wraw in 0 1 ; do
  echo "=== twRaw=$wraw"
  map="$base.wraw${wraw}.map.bin"
  test -n "$no_train" \
- || runcmd ./dc-mapper-train.perl -r=64 -lzc=Cab -mdf=1 -mf=2 -nonull -mo=twRaw=$wraw -mo=weightByCat=0 -noclear -v=3 -o=$map $base.corpus.xml
+ || runcmd ./dc-mapper-train.perl -r=1024 -lzc=Cab -mdf=1 -mf=2 -nonull -mo=twRaw=$wraw -mo=weightByCat=0 -noclear -v=3 -o=$map $base.corpus.xml
 
  ##-- test
  #runcmd ./testme.perl $map -raw    > $base.prof-raw
  #runcmd ./testme.perl $map -cooked > $base.prof-cooked
- runcmd ./testme.perl $map -json > $base.json
+ #runcmd ./testme.perl $map -json > $base.json
 done

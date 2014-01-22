@@ -3480,7 +3480,7 @@ sub test_catambig {
 #test_catambig(@ARGV);
 
 ##======================================================================
-sub test_cab_map {
+sub test_cab_profile {
   my $mapfile = shift || 'cab-ner.map.bin';
 
   { select STDERR; $|=1; select STDOUT; }
@@ -3530,10 +3530,82 @@ sub test_cab_map {
   print "doctags = ", JSON::to_json($prof, {utf8=>0,pretty=>1,canonical=>1}), ";\n" if ($use_json);
 
   exit 0;
-
-  print STDERR "$0: test_cab_map() done: what now?\n";
+  print STDERR "$0: test_cab_profile() done: what now?\n";
 }
-test_cab_map(@ARGV);
+#test_cab_profile(@ARGV);
+
+##======================================================================
+sub test_cab_query {
+  my $mapfile = shift(@_) || 'data/dta-ner.map.bin';
+
+  { select STDERR; $|=1; select STDOUT; }
+  my $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1)
+    or die("$0: failed to load $mapfile: $!");
+  $map->info("loaded.");
+
+  ##-- parse query into signature
+  my $qstr  = join(' ',@_) || 'Eisen:1897 Erz:644 Stahl:447';
+  my $qf     = {};
+  my $qn     = 0;
+  my ($t,$f);
+  foreach (split(/[\,\s\;]+/,$qstr)) {
+    ($t,$f) = /^(.+):([0-9eE\+\-]+)$/ ? ($1,$2) : ($_,1);
+    $f        ||= 1;
+    $qf->{$t} += $f;
+    $qn       += $f;
+  }
+  my $q_sig = DocClassify::Signature->new(tf=>$qf,lf=>$qf,N=>0,Nl=>$qn);
+  $q_sig->save1gFile('-');  ##-- debug: dump signature
+
+  ##-- tweaked version of DocClassify::Mapper::LSI::mapDocument
+
+  ##-- get query-doc pdl
+  #$map->{mapccs} = 0; ##-- doesn't seem to work
+  my ($q_tdm0);
+  if (1) {
+    ##-- user query
+    $q_tdm0 = $map->sigPdlRaw($q_sig, $map->{mapccs});
+    my $q_tdN  = $q_tdm0->sum;
+    $map->logwarn("mapQuery(): null vector for query-string '$qstr'")
+      if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdN==0);
+  }
+  else {
+    ##-- test-query with a "real" document
+    $q_tdm0 = $map->{tdm0}->dice_axis(1,42)->pdl;
+  }
+
+  if (1) {
+    ##-- compute distance to each *document* (WAS:to each *centroid*)
+    $map->{disto} = MUDL::Cluster::Distance->new(class=>'cos',link=>'avg');
+    my $q_tdm   = $q_tdm0->pdl;
+    my $q_xdm   = $map->svdApply($q_tdm);
+    #my $qd_xdist = $map->{disto}->clusterDistanceMatrix(data=>$q_xdm,cdata=>$map->{xdm})->flat->lclip(0);
+    ##
+    my $q_ldm    = (($q_tdm0+1)->log * $map->{tw})->toccs;
+    my $qd_ldist = $map->{disto}->clusterDistanceMatrix(data=>$q_ldm,cdata=>$map->{tdm})->flat->lclip(0);
+    ##
+    ##-- weirdness: not getting back out what we put in: maybe svd on docs is too coarse for term-queries?
+    ##   + works well for "real" docs, e.g. $q_tdm0 = $map->{tdm0}->dice_axis(1,42)->pdl;
+    ##   + fails miserably for short "query" docs e.g. "Eisen:9 Erz:3 Stahl:2"
+    #my $q_tdm1 = ($map->{svd}->unapply0( $q_xdm ) / $map->{tw})->exp - $map->{smoothf};
+    #my $q_diff = ($q_tdm0 - $q_tdm1);
+    #print $q_diff->index($q_tdm0->whichND->slice("(0),"));
+
+    ##-- report k-nearest output docs
+    my $kdocs = 10;
+    my $qd_dist = $qd_ldist;
+    my $qdi   = $qd_dist->qsorti;
+    my ($doci,$docname);
+    foreach $doci ($qdi->slice("0:".($kdocs-1))->list) {
+      ($docname = basename($map->{denum}{id2sym}[$doci])) =~ s/\..*$//;
+      print $qd_dist->at($doci), "\t", $docname, "\n";
+    }
+  }
+
+  exit 0;
+  print STDERR "$0: test_cab_query() done: what now?\n";
+}
+test_cab_query(@ARGV);
 
 ##======================================================================
 ## MAIN (dummy)
