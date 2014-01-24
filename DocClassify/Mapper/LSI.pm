@@ -1,6 +1,6 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::Mapper::LSI.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: document classifier: document-to-class mapper: LSI / SVD
 
 package DocClassify::Mapper::LSI;

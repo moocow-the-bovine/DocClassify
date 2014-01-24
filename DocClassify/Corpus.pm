@@ -1,6 +1,6 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::Corpus.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: document classifier: corpus (set of documents)
 
 

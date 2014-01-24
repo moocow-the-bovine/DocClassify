@@ -1,6 +1,6 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::Lemmatizer::VzPlain.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: document classifier: lemmatizer: from Vz-signatures to plaintext lemmata
 
 package DocClassify::Lemmatizer::VzPlain;

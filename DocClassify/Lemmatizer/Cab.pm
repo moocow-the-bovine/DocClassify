@@ -1,6 +1,6 @@
 ## -*- Mode: CPerl ; coding: utf-8 -*-
 ## File: DocClassify::Lemmatizer::Cab.pm
-## Author: Bryan Jurish <jurish@bbaw.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: document classifier: lemmatizer:
 ##  + from vz-like cab-signatures to content lemmata
 

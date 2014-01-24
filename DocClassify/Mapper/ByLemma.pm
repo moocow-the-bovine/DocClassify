@@ -1,6 +1,6 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::Mapper::ByLemma.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: document classifier: document-to-class mapper: by lemma
 
 package DocClassify::Mapper::ByLemma;

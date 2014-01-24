@@ -1,7 +1,7 @@
 ## -*- Mode: CPerl -*-
 ##
 ## File: DocClassify::Client::XmlRpc.pm
-## Author: Bryan Jurish <jurish@uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Description: DocClassify XML-RPC server clients
 
 package DocClassify::Client::XmlRpc;
@@ -402,7 +402,7 @@ Analyze a DTA::CAB-style document.  Guts for analyzeDocument() and analyzeSignat
 
 =head1 AUTHOR
 
-Bryan Jurish E<lt>jurish@uni-potsdam.deE<gt>
+Bryan Jurish E<lt>moocow@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 

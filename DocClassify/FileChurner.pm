@@ -1,6 +1,6 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify::FileChurner.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: document classifier: file churner
 
 
@@ -36,6 +36,7 @@ our @ISA = qw(DocClassify::Object DocClassify::Logger);
 ##  outputFh   => $fh,         ##-- fh for output file                                   : for in2out
 ##  fileCallback => \&cb,      ##-- file callback, called as cb($infile,\@args) : REQUIRED
 ##  fileCallbackData => $data, ##-- user data for callback (default=undef)
+##  sortFiles => $bool,        ##-- whether to sort files on findFiles() (default=1)
 ##  ##
 ##  ##-- other data
 ##  #inputs => \@INPUTS,        ##-- file and/or directory list
@@ -55,6 +56,7 @@ sub new {
 			     outputFh=>undef,
 			     fileCallback=>undef,
 			     fileCallbackData=>undef,
+			     sortFiles=>1,
 			     files=>[],
 			     done=>[],
 			     @_,
@@ -82,7 +84,7 @@ sub findFiles {
   $fc->vlog('info', "findFiles()") if ($fc->{verbose} >= 1);
   foreach (@inputs) {
     if    (-d $_ && $fc->{recursive}) {
-      find({wanted=>$fc->wantedSub,follow=>1,no_chdir=>1},$_);
+      find({wanted=>$fc->wantedSub,follow=>1,no_chdir=>1,},$_);
     }
     elsif (-d $_) {
       push(@{$fc->{files}}, grep {$_=~$fc->{inputFileMatch}} map {glob("$_/*")} grep {-d $_} @inputs);
@@ -91,6 +93,7 @@ sub findFiles {
       push(@{$fc->{files}},$_);
     }
   }
+  @{$fc->{files}} = sort @{$fc->{files}} if ($fc->{sortFiles});
   return wantarray ? @{$fc->{files}} : $fc->{files};
 }
 

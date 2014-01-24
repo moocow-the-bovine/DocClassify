@@ -1,7 +1,7 @@
 ## -*- Mode: CPerl -*-
 ##
 ## File: DocClassify::Server::XmlRpc.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Description: DocClassify XML-RPC server using RPC::XML
 
 package DocClassify::Server::XmlRpc;
