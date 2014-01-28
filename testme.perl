@@ -22,7 +22,7 @@ use IO::File;
 use Encode qw(encode decode encode_utf8 decode_utf8);
 use File::Basename qw(basename dirname);
 
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 use Benchmark qw(cmpthese timethese);
 
 BEGIN { $,=' '; }
@@ -3563,7 +3563,7 @@ sub kbestDocs {
   my ($docname);
   return kbestObjects($qd_dist, $map->{denum}, $k,
 		      sub {
-			($docname = shift) =~ s/\.\D.*$//;
+			($docname = basename(shift)) =~ s/\.\D.*$//;
 			return $docname;
 		      });
 }
@@ -3582,7 +3582,7 @@ sub kbestCats {
   my ($name);
   return kbestObjects($qc_dist, $map->{lcenum}, $k,
 		      sub {
-			($name = shift) =~ s/\.\D.*$//;
+			($name = basename(shift)) =~ s/\.\D.*$//;
 			return $name;
 		      });
 }
@@ -3634,6 +3634,8 @@ sub test_cab_query {
   my $mapfile = 'data/dta-ner.pages.map.bin';
   my $nbest = 10;
   my $get   = 'docs';
+  my $min_term_freq = 0;
+  my $min_term_ndocs = 0;
   Getopt::Long::GetOptionsFromArray(\@_,
 				    'help|h'  => sub { print STDERR "$0 [-bycat|-bydoc] [-terms|-docs] [-n NBEST] [-m MAPFILE=$mapfile] QUERY...\n"; exit 1; },
 				    'mapfile|map|m=s' => \$mapfile,
@@ -3642,6 +3644,8 @@ sub test_cab_query {
 				    'similar-terms|terms|t' => sub { $get='terms'; },
 				    'similar-documents|documents|docs|d' => sub { $get='docs'; },
 				    'nbest|n=i' => \$nbest,
+				    'min-term-frequency|mtf|tf|f=i' => \$min_term_freq,
+				    'min-term-docfrequency|mdf|df|F=i' => \$min_term_ndocs,
 				   );
   $mapby = ($mapfile =~ /pages/ ? 'cat' : 'doc') if (!defined($mapby));
 
@@ -3730,41 +3734,33 @@ sub test_cab_query {
     ##-- get=terms
 
     ##-- get reduced (term x R) matrix
-    my $xtm = $svd->{v};
+    $map->trace('get xtm');
+    my $xtm = $mapby eq 'cat' ? $svd->{v} : $map->{tdm}->xchg(0,1);
 
-    ##-- just iterate over terms
-    foreach my $qti ($q_tdm0->_whichND->slice("(0),")->list) {
-      my $qt = $map->{tenum}{id2sym}[$qti];
+    ##-- group-average query terms
+    $map->trace('group-average query terms');
+    my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
+    my $xqm = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->slice(",*1");
 
-      my $qt_dist = $map->{disto}->clusterDistanceMatrix(data=>$xtm->slice(",$qti"), cdata=>$xtm);
-      print "$qt\n", bestTermStrings($map, $qt_dist, $nbest);
+    $map->trace("clusterDistanceMatrix [R=".$xtm->dim(0)."; NT=".$xtm->dim(1)."]");
+    my $qt_dist = $map->{disto}->clusterDistanceMatrix(data=>$xqm, cdata=>$xtm);
+    my @qt_drng = $qt_dist->minmax;
+
+    ##-- get result filter mask
+    if ($min_term_freq || $min_term_ndocs) {
+      $map->trace('result filter mask');
+      my $mask = $map->get_tf0 < $min_term_freq;
+      $mask   |= $map->get_tdf0 < $min_term_ndocs;
+      (my $tmp=$qt_dist->where($mask)) += 'inf';
     }
+    $map->trace('bestTermStrings');
+    print "$q_sig->{str} \[".join(":",@qt_drng)."]\n", bestTermStrings($map, $qt_dist, $nbest);
   }
 
   exit 0;
   print STDERR "$0: test_cab_query() done: what now?\n";
 }
-#test_cab_query(@ARGV);
-
-##--------------------------------------------------------------
-sub debug_dcm {
-  my $mapfile = shift || "map.pre_compile_dcm.bin";
-
-  { select STDERR; $|=1; select STDOUT; }
-  my $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1)
-    or die("$0: failed to load $mapfile: $!");
-  $map->info("loaded.");
-
-  ##-- see DocClassify/Mapper/ByLemmaTrain.pm method compile(), line 123
-  $map->compile_dcm();
-
-  ##-- cleanup
-  #$map->clearTrainingCache();
-
-  $map->saveFile("map.out.bin");
-}
-debug_dcm(@ARGV);
-
+test_cab_query(@ARGV);
 
 
 ##======================================================================

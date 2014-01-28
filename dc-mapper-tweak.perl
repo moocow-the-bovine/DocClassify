@@ -21,6 +21,7 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 our $prog = basename($0);
 our $verbose = setVerbose(2);
 our $doProfile = 1;
+our $eval_code = undef;
 %opts = (%opts,
 	 outputFile => '-',
 	);
@@ -33,7 +34,8 @@ $_ = $mapUser foreach (grep {$_ eq $opts{mapNew}} values %dcOpts);
 ##------------------------------------------------------------------------------
 ## Command-line
 ##------------------------------------------------------------------------------
-GetOptions(%dcOpts
+GetOptions(%dcOpts,
+	   'eval|e=s' => \$eval_code,
 	  );
 $verbose = $opts{verbose};
 our $outfile = $opts{outputFile};
@@ -58,6 +60,20 @@ our $mapper = DocClassify::Mapper->loadFile($mapfile, optsLoad('map') )
 our %mapopts = optsNew('map');
 $mapper->{verbose} = $verbose;
 
+##-- evaluate?
+if (defined $eval_code) {
+  $logger->info('evaluating user code');
+  my $rc = eval $eval_code;
+  if ($@) {
+    $logger->logwarn("ERROR while evaluating user code: $@");
+    exit 1;
+  }
+  elsif (!$rc) {
+    $logger->logwarn("ERROR: user code did not return a true value: aborting");
+    exit 2;
+  }
+}
+
 $mapper->clearTrainingCache() if ($mapper->{clearCache} ||= $mapopts{clearCache});
 $mapper->saveFile($outfile, optsSave('map'));
 
@@ -78,6 +94,7 @@ dc-mapper-tweak.perl - tweak DocClassify::Mapper options
   -verbose LEVEL         # verbosity level
   -map-option OPT=VALUE  # override stored mapper option
   -map-input-mode MODE   # I/O mode for input mapfile (default=guess)
+  -eval CODE             # evaluate CODE (default=none)
   -[no]clear-cache       # do/don't clear training cache (default=do)
   -output-file FILE      # set mapper output file (default=-)
 
