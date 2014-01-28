@@ -3538,54 +3538,75 @@ sub test_cab_profile {
 ##======================================================================
 
 ##--------------------------------------------------------------
-## @docname_dist_pairs = kbestDocs($mapper,$dist_pdl,$k=10)
-sub kbestDocs {
-  my ($map,$qd_dist,$kdocs) = @_;
-  $kdocs //= 10;
+## ([$dist,$name],...) = kbestObjects($dist_pdl,$enum,$k, [\&munge_name_sub])
+sub kbestObjects {
+  my ($qx_dist,$enum,$k,$munge_name) = @_;
+  $k //= 10;
+  $munge_name //= sub { return $_[0] };
 
   ##-- report k-nearest output docs
-  my @dnames = qw();
-  $qd_dist = $qd_dist->flat->lclip(0);
-  my $qdi  = $qd_dist->qsorti;
-  my ($doci,$docname);
-  foreach $doci ($qdi->slice("0:".($kdocs-1))->list) {
-    $docname = basename($map->{denum}{id2sym}[$doci]);
-    $docname =~ s/\.\D.*$//;
-    push(@dnames, [$qd_dist->at($doci),$docname]);
+  my @names = qw();
+  $qx_dist = $qx_dist->flat->lclip(0);
+  my $qxi  = $qx_dist->qsorti;
+  my ($xi,$xname);
+  foreach $xi ($qxi->slice("0:".($k-1))->list) {
+    $xname = $munge_name->( $enum->{id2sym}[$xi] );
+    push(@names, [$qx_dist->at($xi),$xname]);
   }
-  return @dnames;
+  return @names;
+}
+
+##--------------------------------------------------------------
+## @docname_dist_pairs = kbestDocs($mapper,$dist_pdl,$k=10)
+sub kbestDocs {
+  my ($map,$qd_dist,$k) = @_;
+  my ($docname);
+  return kbestObjects($qd_dist, $map->{denum}, $k,
+		      sub {
+			($docname = shift) =~ s/\.\D.*$//;
+			return $docname;
+		      });
 }
 
 ##--------------------------------------------------------------
 ## @strings = bestDocStrings($mapper,$dist_pdl,$k=10)
 sub bestDocStrings {
-  my @docs = kbestDocs(@_);
-  return map {"$_ ".(ref($docs[$_]) ? join("\t",@{$docs[$_]}) : $docs[$_])."\n"} (0..$#docs)
+  my @kbest = kbestDocs(@_);
+  return map {"$_ ".(ref($kbest[$_]) ? join("\t",@{$kbest[$_]}) : $kbest[$_])."\n"} (0..$#kbest)
 }
 
 ##--------------------------------------------------------------
 ## @catname_dist_pairs = kbestCats($mapper,$dist_pdl,$k=10)
 sub kbestCats {
-  my ($map,$qc_dist,$kcats) = @_;
-  $kcats //= 10;
-
-  ##-- report k-nearest output categories
-  my @cnames = qw();
-  $qc_dist = $qc_dist->flat->lclip(0);
-  my $qci  = $qc_dist->qsorti;
-  my ($cati,$catname);
-  foreach $cati ($qci->slice("0:".($kcats-1))->list) {
-    ($catname = basename($map->{lcenum}{id2sym}[$cati])) =~ s/\..*$//;
-    push(@cnames, [$qc_dist->at($cati),$catname]);
-  }
-  return @cnames;
+  my ($map,$qc_dist,$k) = @_;
+  my ($name);
+  return kbestObjects($qc_dist, $map->{lcenum}, $k,
+		      sub {
+			($name = shift) =~ s/\.\D.*$//;
+			return $name;
+		      });
 }
 
 ##--------------------------------------------------------------
 ## @strings = bestCatStrings($mapper,$dist_pdl,$k=10)
 sub bestCatStrings {
-  my @cats = kbestCats(@_);
-  return map {"$_ ".(ref($cats[$_]) ? join("\t",@{$cats[$_]}) : $cats[$_])."\n"} (0..$#cats)
+  my @kbest = kbestCats(@_);
+  return map {"$_ ".(ref($kbest[$_]) ? join("\t",@{$kbest[$_]}) : $kbest[$_])."\n"} (0..$#kbest)
+}
+
+##--------------------------------------------------------------
+## @term_dist_pairs = kbestTerms($mapper,$dist_pdl,$k=10)
+sub kbestTerms {
+  my ($map,$qt_dist,$k) = @_;
+  my ($name);
+  return kbestObjects($qt_dist, $map->{tenum}, $k);
+}
+
+##--------------------------------------------------------------
+## @strings = bestTermStrings($mapper,$dist_pdl,$k=10)
+sub bestTermStrings {
+  my @kbest = kbestTerms(@_);
+  return map {"  + $_ ".(ref($kbest[$_]) ? join("\t",@{$kbest[$_]}) : $kbest[$_])."\n"} (0..$#kbest)
 }
 
 ##--------------------------------------------------------------
@@ -3707,15 +3728,43 @@ sub test_cab_query {
   }
   else {
     ##-- get=terms
-    my $ti = $q_tdm0->_whichND->slice("(0),");
-    my $tn = $q_tdm0->_whichVals;
 
+    ##-- get reduced (term x R) matrix
+    my $xtm = $svd->{v};
+
+    ##-- just iterate over terms
+    foreach my $qti ($q_tdm0->_whichND->slice("(0),")->list) {
+      my $qt = $map->{tenum}{id2sym}[$qti];
+
+      my $qt_dist = $map->{disto}->clusterDistanceMatrix(data=>$xtm->slice(",$qti"), cdata=>$xtm);
+      print "$qt\n", bestTermStrings($map, $qt_dist, $nbest);
+    }
   }
 
   exit 0;
   print STDERR "$0: test_cab_query() done: what now?\n";
 }
-test_cab_query(@ARGV);
+#test_cab_query(@ARGV);
+
+##--------------------------------------------------------------
+sub debug_dcm {
+  my $mapfile = shift || "map.pre_compile_dcm.bin";
+
+  { select STDERR; $|=1; select STDOUT; }
+  my $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1)
+    or die("$0: failed to load $mapfile: $!");
+  $map->info("loaded.");
+
+  ##-- see DocClassify/Mapper/ByLemmaTrain.pm method compile(), line 123
+  $map->compile_dcm();
+
+  ##-- cleanup
+  #$map->clearTrainingCache();
+
+  $map->saveFile("map.out.bin");
+}
+debug_dcm(@ARGV);
+
 
 
 ##======================================================================

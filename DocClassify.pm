@@ -44,6 +44,10 @@ use strict;
 our $VERSION = 0.08;
 our @ISA = ('DocClassify::Logger'); ##-- for convenience
 
+BEGIN {
+#  $PDL::BIGPDL = 1; ##-- allow piddles >= 1Gb (disable "Probably false alloc of over 1Gb PDL" error)
+}
+
 ##==============================================================================
 ## Constructors etc.
 

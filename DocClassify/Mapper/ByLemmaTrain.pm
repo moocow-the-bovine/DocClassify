@@ -17,6 +17,7 @@ use PDL::CCS::Nd;
 use PDL::VectorValued;
 
 use IO::File;
+use File::Basename qw(basename dirname);
 use Carp;
 use strict;
 
@@ -32,11 +33,11 @@ use strict;
 ##  + calls $map->lemmaSignature($doc)
 sub trainDocument {
   my ($map,$doc) = @_;
-  if ($map->{verbose} >= 2 && File::Basename::dirname($doc->label) ne ($map->{trainDocumentDir_}//'')) {
-    $map->{trainDocumentDir_} = File::Basename::dirname($doc->label);
+  if ($map->{verbose} >= 2 && dirname($doc->label) ne ($map->{trainDocumentDir_}//'')) {
+    $map->{trainDocumentDir_} = dirname($doc->label);
     $map->vlog('trace',"trainDocument(DIR=$map->{trainDocumentDir_})");
   }
-  $map->vlog('trace',"trainDocument(".$doc->label.")") if ($map->{verbose} >= 3)
+  $map->vlog('trace',"trainDocument(".$doc->label.")") if ($map->{verbose} >= 3);
   my $sig = $map->lemmaSignature($doc);
 
   ##-- add sig frequency data to global hash(es)
@@ -309,15 +310,24 @@ sub compile_dcm {
   my ($ND,$NC) = map {$_->size} @$map{qw(denum lcenum)};
 
   $map->vlog('info', "compile_dcm(): matrix: dcm: (ND=$ND x NC=$NC) [Doc x Cat -> Deg]") if ($map->{verbose});
-  my $dcm = zeroes(double, $ND,$NC); #+'inf';
-  my ($doc,$cat);
+
+  my $ndc = 0;
+  $ndc += scalar(@{$_->{cats}}) foreach (@{$map->{docs}});
+
+  my $dc_which = zeroes(long,2,$ndc);
+  my $dc_vals  = zeroes(double,$ndc);
+  my $nzi      = 0;
+  my ($doc,$cat,$tmp);
   foreach $doc (@{$map->{docs}}) {
     foreach $cat (@{$doc->{cats}}) {
       $cat->{id} = $lcenum->{sym2id}{$cat->{name}}; ##-- re-assign category IDs !
-      (my $tmp=$dcm->slice("($doc->{id}),($cat->{id})")) .= $cat->{deg};
+      $dc_which->set(0,$nzi, $doc->{id});
+      $dc_which->set(1,$nzi, $cat->{id});
+      $dc_vals->set($nzi,    $cat->{deg});
+      ++$nzi;
     }
   }
-  $map->{dcm} = PDL::CCS::Nd->newFromDense($dcm);
+  $map->{dcm} = PDL::CCS::Nd->newFromWhich($dc_which,$dc_vals);
   #(...,'inf')->badmissing->nanmissing;
   return $map;
 }
