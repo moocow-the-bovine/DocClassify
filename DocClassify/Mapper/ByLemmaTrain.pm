@@ -32,7 +32,11 @@ use strict;
 ##  + calls $map->lemmaSignature($doc)
 sub trainDocument {
   my ($map,$doc) = @_;
-  $map->vlog('trace',"trainDocument(".$doc->label.")") if ($map->{verbose} >= 3);
+  if ($map->{verbose} >= 2 && File::Basename::dirname($doc->label) ne ($map->{trainDocumentDir_}//'')) {
+    $map->{trainDocumentDir_} = File::Basename::dirname($doc->label);
+    $map->vlog('trace',"trainDocument(DIR=$map->{trainDocumentDir_})");
+  }
+  $map->vlog('trace',"trainDocument(".$doc->label.")") if ($map->{verbose} >= 3)
   my $sig = $map->lemmaSignature($doc);
 
   ##-- add sig frequency data to global hash(es)
@@ -183,6 +187,7 @@ sub clearTrainingCache {
   delete($map->{tf0});
   delete($map->{tdf0});
   delete($map->{doc_wt});
+  delete($map->{trainDocumentDir_});
   return $map;
 }
 

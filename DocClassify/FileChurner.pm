@@ -118,10 +118,13 @@ sub processFiles {
   my $cwd = cwd();
   my @files = @{$fc->{files}};
   my ($file);
+  my $dir = '';
   my $cb = $fc->{fileCallback};
   confess(ref($fc)."::processFiles(): no fileCallback defined!") if (!defined($cb));
   foreach $file (@files) {
-    $fc->vlog('trace', "FILE: $file") if ($fc->{verbose} >= 2);
+    $fc->vlog('trace', "FILE: $file") if ($fc->{verbose} >= 3);
+    $fc->vlog('trace', "DIR: ".dirname($file)) if ($fc->{verbose} >= 2 && dirname($file) ne $dir);
+    $dir = dirname($file);
     #chdir(dirname($file));
     eval { $cb->($file,$file,$fc->{callbackData}); };
     #chdir($cwd);

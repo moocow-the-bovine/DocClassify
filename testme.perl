@@ -22,6 +22,7 @@ use IO::File;
 use Encode qw(encode decode encode_utf8 decode_utf8);
 use File::Basename qw(basename dirname);
 
+use Getopt::Long;
 use Benchmark qw(cmpthese timethese);
 
 BEGIN { $,=' '; }
@@ -3548,7 +3549,8 @@ sub kbestDocs {
   my $qdi  = $qd_dist->qsorti;
   my ($doci,$docname);
   foreach $doci ($qdi->slice("0:".($kdocs-1))->list) {
-    ($docname = basename($map->{denum}{id2sym}[$doci])) =~ s/\..*$//;
+    $docname = basename($map->{denum}{id2sym}[$doci]);
+    $docname =~ s/\.\D.*$//;
     push(@dnames, [$qd_dist->at($doci),$docname]);
   }
   return @dnames;
@@ -3561,10 +3563,66 @@ sub bestDocStrings {
   return map {"$_ ".(ref($docs[$_]) ? join("\t",@{$docs[$_]}) : $docs[$_])."\n"} (0..$#docs)
 }
 
+##--------------------------------------------------------------
+## @catname_dist_pairs = kbestCats($mapper,$dist_pdl,$k=10)
+sub kbestCats {
+  my ($map,$qc_dist,$kcats) = @_;
+  $kcats //= 10;
+
+  ##-- report k-nearest output categories
+  my @cnames = qw();
+  $qc_dist = $qc_dist->flat->lclip(0);
+  my $qci  = $qc_dist->qsorti;
+  my ($cati,$catname);
+  foreach $cati ($qci->slice("0:".($kcats-1))->list) {
+    ($catname = basename($map->{lcenum}{id2sym}[$cati])) =~ s/\..*$//;
+    push(@cnames, [$qc_dist->at($cati),$catname]);
+  }
+  return @cnames;
+}
 
 ##--------------------------------------------------------------
+## @strings = bestCatStrings($mapper,$dist_pdl,$k=10)
+sub bestCatStrings {
+  my @cats = kbestCats(@_);
+  return map {"$_ ".(ref($cats[$_]) ? join("\t",@{$cats[$_]}) : $cats[$_])."\n"} (0..$#cats)
+}
+
+##--------------------------------------------------------------
+## $q_sig = parse_query(@qstrs)
+sub parse_query {
+  ##-- parse query into signature
+  my $qstr  = join(' ',map {utf8::is_utf8($_) ? $_ : Encode::decode_utf8($_)} @_);
+  my $qf     = {};
+  my $qn     = 0;
+  my ($t,$f);
+  foreach (split(/[\,\s\;]+/,$qstr)) {
+    ($t,$f) = /^(.+):([0-9eE\+\-]+)$/ ? ($1,$2) : ($_,1);
+    $f        ||= 1;
+    $qf->{$t} += $f;
+    $qn       += $f;
+  }
+  my $q_sig = DocClassify::Signature->new(tf=>$qf,lf=>$qf,N=>0,Nl=>$qn, str=>$qstr);
+  return $q_sig;
+}
+
+##--------------------------------------------------------------
+## get similar documents
 sub test_cab_query {
-  my $mapfile = shift(@_) || 'data/dta-ner.map.bin';
+  my $mapby   = undef;
+  my $mapfile = 'data/dta-ner.pages.map.bin';
+  my $nbest = 10;
+  my $get   = 'docs';
+  Getopt::Long::GetOptionsFromArray(\@_,
+				    'help|h'  => sub { print STDERR "$0 [-bycat|-bydoc] [-terms|-docs] [-n NBEST] [-m MAPFILE=$mapfile] QUERY...\n"; exit 1; },
+				    'mapfile|map|m=s' => \$mapfile,
+				    'bycat' => sub { $mapby='cat'; },
+				    'bydoc' => sub { $mapby='doc'; },
+				    'similar-terms|terms|t' => sub { $get='terms'; },
+				    'similar-documents|documents|docs|d' => sub { $get='docs'; },
+				    'nbest|n=i' => \$nbest,
+				   );
+  $mapby = ($mapfile =~ /pages/ ? 'cat' : 'doc') if (!defined($mapby));
 
   { select STDERR; $|=1; select STDOUT; }
   my $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1)
@@ -3575,83 +3633,90 @@ sub test_cab_query {
   my $svd = $map->{svd};
 
   ##-- parse query into signature
-  my $qstr  = join(' ',map {utf8::is_utf8($_) ? $_ : Encode::decode_utf8($_)} @_) || 'Eisen:9 Erz:3 Stahl:2';
-  my $qf     = {};
-  my $qn     = 0;
-  my ($t,$f);
-  foreach (split(/[\,\s\;]+/,$qstr)) {
-    ($t,$f) = /^(.+):([0-9eE\+\-]+)$/ ? ($1,$2) : ($_,1);
-    $f        ||= 1;
-    $qf->{$t} += $f;
-    $qn       += $f;
-  }
-  my $q_sig = DocClassify::Signature->new(tf=>$qf,lf=>$qf,N=>0,Nl=>$qn);
+  my $q_sig = parse_query(@_ ? @_ : 'Eisen:9 Erz:3 Stahl:2');
   $q_sig->save1gFile('-');  ##-- debug: dump signature
 
   ##-- tweaked version of DocClassify::Mapper::LSI::mapDocument
 
-  ##-- query a "real" doc
-  my $q_tdm0_doc = $map->{tdm0}->dice_axis(1,42)->pdl;
+  ##-- query a "real" doc (debug)
+  #my $q_tdm0_doc = $map->{tdm0}->dice_axis(1,42)->pdl;
 
   ##-- user query pdl
   #$map->{mapccs} = 0; ##-- doesn't seem to work
   my $q_tdm0_user = $map->sigPdlRaw($q_sig, $map->{mapccs});
   my $q_tdN  = $q_tdm0_user->sum;
-  $map->logwarn("mapQuery(): null vector for query-string '$qstr'")
+  $map->logwarn("mapQuery(): null vector for query-string '$q_sig->{str}'")
     if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdN==0);
 
   ##-- query dispatch
   my $q_tdm0   = $q_tdm0_user;
-  my $tf0_avg  = $map->{tdm0}->xchg(0,1)->average->todense->slice(",*1");
-  my $tf0_lavg = $map->{tdm}->xchg(0,1)->average->todense->slice(",*1");
-  #my $tf0_elavg = ($tf0_lavg/$map->{tw})->exp - $map->{smoothf};
-  my $q_lavg   = $tf0_lavg->pdl;
-  (my $tmp = $q_lavg->dice_axis(0, $q_tdm0->whichND->slice("(0),"))) += $q_tdm0->whichVals;
 
-  if (1) {
-    ##-- compute distance to each *document* (WAS:to each *centroid*)
-    #$map->{disto} = MUDL::Cluster::Distance->new(class=>'cos',link=>'avg');
-    my $q_tdm   = $q_tdm0->pdl;
-    my $q_xdm   = $map->svdApply($q_tdm);
-    my $qd_xdist = $map->{disto}->clusterDistanceMatrix(data=>$q_xdm,cdata=>$map->{xdm})->flat->lclip(0);
-    ##
-    #my $q_ldm    = (($q_tdm0+1)->log * $map->{tw})->toccs;
-    #my $qd_ldist = $map->{disto}->clusterDistanceMatrix(data=>$q_ldm,cdata=>$map->{tdm})->flat->lclip(0);
-    ##
-    ##-- weirdness: not getting back out what we put in: maybe svd on docs is too coarse for term-queries?
-    ##   + works well for "real" docs, e.g. $q_tdm0 = $map->{tdm0}->dice_axis(1,42)->pdl;
-    ##   + fails miserably for short "query" docs e.g. "Eisen:9 Erz:3 Stahl:2"
-    #my $q_tdm1 = ($map->{svd}->unapply0( $q_xdm ) / $map->{tw})->exp - $map->{smoothf};
-    #my $q_diff = ($q_tdm0 - $q_tdm1);
-    #print $q_diff->index($q_tdm0->whichND->slice("(0),"));
+  $map->trace("get=$get ; mapby=$mapby ; nbest=$nbest\n");
+  if ($get eq 'docs') {
+    ##-- get=docs
+    if ($mapby eq 'doc') {
+      ##-- get=docs, mapby=doc: compute distance to each *document* (WAS:to each *centroid*)
 
-    ##-- variants
-    my ($qd_dist);
+      ##-- query dispatch
+      #my $tf0_avg  = $map->{tdm0}->xchg(0,1)->average->todense->slice(",*1");
+      #my $tf0_lavg = $map->{tdm}->xchg(0,1)->average->todense->slice(",*1");
+      ##my $tf0_elavg = ($tf0_lavg/$map->{tw})->exp - $map->{smoothf};
+      #my $q_lavg   = $tf0_lavg->pdl;
+      #(my $tmp = $q_lavg->dice_axis(0, $q_tdm0->whichND->slice("(0),"))) += $q_tdm0->whichVals;
 
-    $qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($q_tdm0->pdl), cdata=>$map->{xdm}); ##-- orig
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{xdm}); ##-- ~=orig
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0->todense+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{xdm}); ##-- ~=orig,dense
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0+$map->{smoothf})->log), cdata=>$map->{xdm}); ##-- unweighted query
+      #$map->{disto} = MUDL::Cluster::Distance->new(class=>'cos',link=>'avg');
+      my $q_tdm   = $q_tdm0->pdl;
+      #my $q_xdm   = $map->svdApply($q_tdm);
+      #my $qd_xdist = $map->{disto}->clusterDistanceMatrix(data=>$q_xdm,cdata=>$map->{xdm})->flat->lclip(0);
+      ##
+      #my $q_ldm    = (($q_tdm0+1)->log * $map->{tw})->toccs;
+      #my $qd_ldist = $map->{disto}->clusterDistanceMatrix(data=>$q_ldm,cdata=>$map->{tdm})->flat->lclip(0);
+      ##
+      ##-- weirdness: not getting back out what we put in: maybe svd on docs is too coarse for term-queries?
+      ##   + works well for "real" docs, e.g. $q_tdm0 = $map->{tdm0}->dice_axis(1,42)->pdl;
+      ##   + fails miserably for short "query" docs e.g. "Eisen:9 Erz:3 Stahl:2"
+      #my $q_tdm1 = ($map->{svd}->unapply0( $q_xdm ) / $map->{tw})->exp - $map->{smoothf};
+      #my $q_diff = ($q_tdm0 - $q_tdm1);
+      #print $q_diff->index($q_tdm0->whichND->slice("(0),"));
 
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($tf0_avg->pdl), cdata=>$map->{xdm});
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply(($tf0_lavg/$map->{tw})->exp - $map->{smoothf}), cdata=>$map->{xdm});
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0($q_lavg), cdata=>$map->{xdm});
+      ##-- variants
+      my ($qd_dist);
+      $qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($q_tdm0->pdl), cdata=>$map->{xdm}); ##-- orig
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{xdm}); ##-- ~=orig
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0->todense+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{xdm}); ##-- ~=orig,dense
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0+$map->{smoothf})->log), cdata=>$map->{xdm}); ##-- unweighted query
 
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0($tf0_lavg + $q_tdm0->todense), cdata=>$map->{xdm});
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($tf0_avg->pdl), cdata=>$map->{xdm});
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply(($tf0_lavg/$map->{tw})->exp - $map->{smoothf}), cdata=>$map->{xdm});
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0($q_lavg), cdata=>$map->{xdm});
 
-    ##-- ok-ish: dense and expensive
-    $qd_dist = $map->{disto}->clusterDistanceMatrix(data=>(($q_tdm0->todense+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{tdm}->todense);
-    #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>(($q_tdm0->todense+$map->{smoothf})->log), cdata=>$map->{tdm}->todense);
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0($tf0_lavg + $q_tdm0->todense), cdata=>$map->{xdm});
 
+      ##-- ok-ish: dense and expensive
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>(($q_tdm0->todense+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{tdm}->todense);
+      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>(($q_tdm0->todense+$map->{smoothf})->log), cdata=>$map->{tdm}->todense);
 
-    ##-- report k-nearest output docs
-    print bestDocStrings($map,  $qd_dist, 10);
+      ##-- report k-nearest output docs
+      print bestDocStrings($map,  $qd_dist, $nbest);
+    } else {
+      ##~~~~~~ get=docs, map by cat
+      my ($qc_dist);
+      $qc_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($q_tdm0->pdl), cdata=>$map->{xcm}); ##-- orig, looks good w/doc~page , cat~book
+      print bestCatStrings($map,  $qc_dist, $nbest);
+    }
+  }
+  else {
+    ##-- get=terms
+    my $ti = $q_tdm0->_whichND->slice("(0),");
+    my $tn = $q_tdm0->_whichVals;
+
   }
 
   exit 0;
   print STDERR "$0: test_cab_query() done: what now?\n";
 }
 test_cab_query(@ARGV);
+
 
 ##======================================================================
 ## MAIN (dummy)

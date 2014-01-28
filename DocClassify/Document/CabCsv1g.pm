@@ -107,7 +107,7 @@ sub parseSource {
     chomp;
     if (/^%%\$dc\.cat(?:\.([0-9\.\-\+eE]+))?=(?:([0-9]+)_)?(.*)$/) {
       ##-- parse category
-      push(@$cats, {id=>($1//1), deg=>($2//1), name=>($2//'unknown')});
+      push(@$cats, {id=>($2//1), deg=>($1//1), name=>($3//'unknown')});
       next;
     }
     elsif (/^%%/ || /^\s*$/) {

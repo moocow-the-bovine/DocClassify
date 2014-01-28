@@ -120,7 +120,7 @@ $fc->churn(@ARGV);
 if ($compile) {
   DocClassify::Program->vlog('info', "compile()") if ($verbose);
   foreach $doc (@{$corpus->{docs}}) {
-    DocClassify::Program->vlog('trace', "COMPILE: ", $doc->label) if ($verbose>=2);
+    DocClassify::Program->vlog('trace', "COMPILE: ", $doc->label) if ($verbose>=3);
 
     ##-- compile: categories
     if ($opts{corpusSave}{saveCats}) {
