@@ -21,7 +21,7 @@ BEGIN { select(STDERR); $|=1; select(STDOUT); }
 our $prog = basename($0);
 our $verbose = setVerbose(2);
 our $doProfile = 1;
-our $eval_code = undef;
+our $user_code = undef;
 %opts = (%opts,
 	 outputFile => '-',
 	);
@@ -35,7 +35,8 @@ $_ = $mapUser foreach (grep {$_ eq $opts{mapNew}} values %dcOpts);
 ## Command-line
 ##------------------------------------------------------------------------------
 GetOptions(%dcOpts,
-	   'eval|e=s' => \$eval_code,
+	   'eval|e=s' => \$user_code,
+	   'no-output|nooutput|noout' => sub { $opts{outputFile}=undef; },
 	  );
 $verbose = $opts{verbose};
 our $outfile = $opts{outputFile};
@@ -61,21 +62,21 @@ our %mapopts = optsNew('map');
 $mapper->{verbose} = $verbose;
 
 ##-- evaluate?
-if (defined $eval_code) {
-  $logger->info('evaluating user code');
-  my $rc = eval $eval_code;
+our $map = $mapper;
+if (defined $user_code) {
+  $logger->info('eval q{'.(length($user_code) < 32 ? $user_code : (substr($user_code,0,32)."..."))."}");
+  #my $rc = eval $user_code;
+  my $rc = $map->recompile();
   if ($@) {
-    $logger->logwarn("ERROR while evaluating user code: $@");
-    exit 1;
+    $logger->logdie("error evaluating user code: $@");
   }
   elsif (!$rc) {
-    $logger->logwarn("ERROR: user code did not return a true value: aborting");
-    exit 2;
+    $logger->logdie("user code did not return a true value: aborting");
   }
 }
 
 $mapper->clearTrainingCache() if ($mapper->{clearCache} ||= $mapopts{clearCache});
-$mapper->saveFile($outfile, optsSave('map'));
+$mapper->saveFile($outfile, optsSave('map')) if (defined($outfile));
 
 __END__
 
@@ -97,6 +98,7 @@ dc-mapper-tweak.perl - tweak DocClassify::Mapper options
   -eval CODE             # evaluate CODE (default=none)
   -[no]clear-cache       # do/don't clear training cache (default=do)
   -output-file FILE      # set mapper output file (default=-)
+  -no-output             # disable output
 
 =cut
 

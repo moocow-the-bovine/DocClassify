@@ -107,6 +107,15 @@ sub compile { return $_[0]; }
 ##  + default always returns false
 sub compiled { return 0; }
 
+## $map = $map->recompile()
+##  + re-compile underlying map data
+##  + may be called after map options have changed
+##  + default just returns $map
+sub recompile {
+  #$_[0]->logconfess("recompile(): operation not supported");
+  return $_[0];
+}
+
 ## $map = $map->clearTrainingCache()
 ##  + clears any cached data from training
 ##  + after calling this, $map may no longer be able to train

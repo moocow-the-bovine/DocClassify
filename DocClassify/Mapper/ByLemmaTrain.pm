@@ -171,6 +171,42 @@ sub compile {
 ##  + override checks for $map->{tcm}
 sub compiled { return defined($_[0]{tcm}); }
 
+## $map = $map->recompile()
+##  + re-compile underlying map data
+##  + may be called after map options have changed
+##  + not supported by all mappers
+sub recompile {
+  my ($map,%opts) = @_;
+
+  ##-- inherited re-compilation
+  $map->SUPER::recompile(%opts)
+    or $map->logconfess("recompile() inherited re-compilation failed: $!");
+
+  ##-- recover local training data: $map->{sigs}
+  if (!@{$map->{sigs}//[]}) {
+    $map->vlog('info', "recompile(): lemma signatures") if ($map->{verbose});
+    my $tdm0   = $map->get_tdm0();
+    my $tdm0_w = $tdm0->_whichND;
+    my $tdm0_v = $tdm0->_whichVals;
+    my $t2sym  = $map->{tenum}{id2sym};
+    my $sigs   = $map->{sigs} = [map {DocClassify::Signature->new(lf=>{})} @{$map->{docs}}];
+    my $nzimax = $tdm0_v->nelem-1;
+    my ($di,$ti);
+    foreach (0..$nzimax) {
+      ($ti,$di) = $tdm0_w->slice(",($_)")->list;
+      $sigs->[$di]{lf}{$t2sym->[$ti]} = $tdm0_v->at($_);
+    }
+    my $dNl = $tdm0->sumover->todense;
+    foreach (0..$#$sigs) {
+      $sigs->[$_]{Nl} = $dNl->at($_);
+    }
+  }
+
+  ##-- compile()
+  return $map->compile(%opts);
+}
+
+
 ## $map = $map->clearTrainingCache()
 ##  + clears any cached data from training
 ##  + after calling this, $map may no longer be able to train
