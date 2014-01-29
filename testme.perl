@@ -3610,21 +3610,106 @@ sub bestTermStrings {
 }
 
 ##--------------------------------------------------------------
-## $q_sig = parse_query(@qstrs)
+## $q_sig = parse_query($map,@qstrs)
 sub parse_query {
   ##-- parse query into signature
+  my $map   = shift;
   my $qstr  = join(' ',map {utf8::is_utf8($_) ? $_ : Encode::decode_utf8($_)} @_);
-  my $qf     = {};
-  my $qn     = 0;
+  my $qf    = {};
+  my $qn    = 0;
+  my @docs    = qw();
+  my @classes = qw();
   my ($t,$f);
   foreach (split(/[\,\s\;]+/,$qstr)) {
     ($t,$f) = /^(.+):([0-9eE\+\-]+)$/ ? ($1,$2) : ($_,1);
     $f        ||= 1;
-    $qf->{$t} += $f;
-    $qn       += $f;
+
+    if ($t =~ /^doc:(.*)/) {
+      ##-- add a document
+      my $darg = $1;
+      my $did  = $map->{denum}{sym2id}{$darg};
+      if (!defined($did)) {
+	##-- approximate search for doc name regex
+	my $darg_re = qr{$darg};
+	my $dsym    = (grep {($_//'') =~ $darg_re} @{$map->{denum}{id2sym}})[0];
+	if (!$dsym || !defined($did = $map->{denum}{sym2id}{$dsym})) {
+	  warn("$0: no document found matching m/$darg/ - skipping");
+	  next;
+	}
+      }
+      push(@docs,$did);
+    }
+    elsif ($t =~ /^(?:class:|cls:)(.*)/) {
+      ##-- add a document
+      my $carg = $1;
+      my $cid  = $map->{lcenum}{sym2id}{$carg};
+      if (!defined($cid)) {
+	##-- approximate search for class name regex
+	my $carg_re = qr{$carg};
+	my $csym    = (grep {($_//'') =~ $carg_re} @{$map->{lcenum}{id2sym}})[0];
+	if (!$csym || !defined($cid = $map->{lcenum}{sym2id}{$csym})) {
+	  warn("$0: no class found matching m/$carg/ - skipping");
+	  next;
+	}
+      }
+      push(@classes,$cid);
+    }
+    else {
+      ##-- "normal" TERM:FREQ query
+      $qf->{$t} += $f;
+      $qn       += $f;
+    }
   }
-  my $q_sig = DocClassify::Signature->new(tf=>$qf,lf=>$qf,N=>0,Nl=>$qn, str=>$qstr);
+  my $q_sig = DocClassify::Signature->new(tf=>$qf,lf=>$qf,N=>0,Nl=>$qn, str=>$qstr,docs_=>\@docs,classes_=>\@classes);
   return $q_sig;
+}
+
+##--------------------------------------------------------------
+## cosine comparison, tweaked from MUDL::Cluster::Distance::Cosine
+
+## $dist = vcosine($data, $cdata, [$norm=0])
+##  + args:
+##       data    # pdl($d,$nR)  : $d=N_features, $nR=N_rows
+##       cdata   # pdl($d,$nC)  : $d=N_features, $nC=N_centers
+##    [o]dist    # pdl($nC,$nR) : output distances
+##      $norm    # one of 'g(aussian)', 'a(dditive)'
+##  + local implementation with no mask, weight, etc: ca 2x faster than MUDL::Cluster::Distance
+use MUDL::PDL::Smooth;
+use MUDL::PDL::Stats;
+sub vcosine {
+  my ($data,$cdata,$norm) = @_;
+
+  ##-- dist(x,y) = 1 - 1/d * (\sum_{i=1}^d (x[i]-mean(x))/stddev(x) * (y[i]-mean(y))/stddev(y))
+  ##             = 1 - 1/d * 1/stddev(x) * 1/stddev(y) * (\sum_{i=1}^d (x[i]-mean(x)) * (y[i]-mean(y)))
+  ##             = 1 - (\sum_{i=1}^d (x[i]-mean(x)) * (y[i]-mean(y))) / (d * stddev(x) * stddev(y))
+  ## + where:
+  ##     mean(x)   := 0
+  ##     stddev(x) := sqrt( E(X^2) )
+  my $dr1    = $data;
+  my $dr2    = $cdata;
+  my $d      = $dr1->dim(0);
+  my $sigma1 = $dr1->pow(2)->average; $sigma1->inplace->sqrt;
+  my $sigma2 = $dr2->pow(2)->average; $sigma2->inplace->sqrt;
+
+  my $dist = ($dr1*$dr2)->sumover;
+  ($dist
+   ->inplace->divide($sigma1,0)
+   ->inplace->divide($sigma2,0)
+   ->inplace->divide($d,0)
+  );
+  $dist = $dist->todense;
+  $dist->minus(1,$dist,1);
+  $dist->inplace->setnantobad->inplace->setbadtoval(2);
+  $dist->inplace->clip(0,2);
+
+  if ($norm && $norm =~ /^a/i) {
+    $dist->inplace->divide(2,0);
+  }
+  elsif ($norm && $norm =~ /^g/i) {
+    $dist = $dist->gausscdf($dist->average,$dist->stddev);
+  }
+
+  return $dist;
 }
 
 ##--------------------------------------------------------------
@@ -3636,18 +3721,30 @@ sub test_cab_query {
   my $get   = 'docs';
   my $min_term_freq = 0;
   my $min_term_ndocs = 0;
-  Getopt::Long::GetOptionsFromArray(\@_,
-				    'help|h'  => sub { print STDERR "$0 [-bycat|-bydoc] [-terms|-docs] [-n NBEST] [-m MAPFILE=$mapfile] QUERY...\n"; exit 1; },
-				    'mapfile|map|m=s' => \$mapfile,
-				    'bycat' => sub { $mapby='cat'; },
-				    'bydoc' => sub { $mapby='doc'; },
-				    'similar-terms|terms|t' => sub { $get='terms'; },
-				    'similar-documents|documents|docs|d' => sub { $get='docs'; },
-				    'nbest|n=i' => \$nbest,
-				    'min-term-frequency|mtf|tf|f=i' => \$min_term_freq,
-				    'min-term-docfrequency|mdf|df|F=i' => \$min_term_ndocs,
-				   );
-  $mapby = ($mapfile =~ /pages/ ? 'cat' : 'doc') if (!defined($mapby));
+  my $niters = 0;
+  my $shell = 0;
+  my $dnorm = 'a';
+  my ($help);
+  my %optSpec = ('help|h'  => \$help,
+		 'mapfile|map|m=s' => \$mapfile,
+		 'bycat' => sub { $mapby='cat'; },
+		 'bydoc' => sub { $mapby='doc'; },
+		 'similar-terms|terms|t' => sub { $get='terms'; },
+		 'similar-documents|documents|docs|d' => sub { $get='docs'; },
+		 'nbest|n=i' => \$nbest,
+		 'min-term-frequency|mtf|tf|f=i' => \$min_term_freq,
+		 'min-term-docfrequency|mdf|df|F=i' => \$min_term_ndocs,
+		 'profile-iterations|iterate|i=i' => \$niters,
+		 'shell|interactive!' => \$shell,
+		 'normalize|norm=s' => \$dnorm,
+		 'no-normalize|nonormalize|no-norm|nonorm' => sub {$dnorm='no'},
+		);
+  Getopt::Long::GetOptionsFromArray(\@_,%optSpec);
+  if ($help) {
+    print STDERR "$0 [-bycat|-bydoc] [-terms|-docs] [-norm=HOW|-nonorm] [-n NBEST] [-i ITERS] [-shell] [-m MAPFILE=$mapfile] QUERY...\n";
+    exit 1;
+  }
+  $mapby //= ($mapfile =~ /pages/ || $get eq 'terms' ? 'cat' : 'doc');
 
   { select STDERR; $|=1; select STDOUT; }
   my $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1)
@@ -3658,8 +3755,8 @@ sub test_cab_query {
   my $svd = $map->{svd};
 
   ##-- parse query into signature
-  my $q_sig = parse_query(@_ ? @_ : 'Eisen:9 Erz:3 Stahl:2');
-  $q_sig->save1gFile('-');  ##-- debug: dump signature
+  my $q_sig = parse_query($map,@_ ? @_ : 'Eisen:9 Erz:3 Stahl:2');
+  $q_sig->save1gFile('-') if (!$shell && !$niters);  ##-- debug: dump signature
 
   ##-- tweaked version of DocClassify::Mapper::LSI::mapDocument
 
@@ -3669,93 +3766,96 @@ sub test_cab_query {
   ##-- user query pdl
   #$map->{mapccs} = 0; ##-- doesn't seem to work
   my $q_tdm0_user = $map->sigPdlRaw($q_sig, $map->{mapccs});
-  my $q_tdN  = $q_tdm0_user->sum;
   $map->logwarn("mapQuery(): null vector for query-string '$q_sig->{str}'")
-    if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdN==0);
+    if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdm0_user->sum==0 && !$shell && !@{$q_sig->{docs_}} && !@{$q_sig->{classes_}});
 
   ##-- query dispatch
   my $q_tdm0   = $q_tdm0_user;
 
-  $map->trace("get=$get ; mapby=$mapby ; nbest=$nbest\n");
-  if ($get eq 'docs') {
-    ##-- get=docs
-    if ($mapby eq 'doc') {
-      ##-- get=docs, mapby=doc: compute distance to each *document* (WAS:to each *centroid*)
+  ##-- guts
+  my $getBest = sub {
+    if ($get eq 'docs') {
+      ##-- merge in doc data
+      my $q_xdm = $map->svdApply($q_tdm0->pdl);
+      my $n_t0  = $q_tdm0->sum;
+      my $n_src = scalar(@{$q_sig->{docs_}}) + scalar(@{$q_sig->{classes_}}) + ($n_t0 > 0 ? 1 : 0);
+      if ($n_t0 > 0) { $q_xdm /= $n_src; }
+      else           { $q_xdm .= 0; }
+      $q_xdm += ($map->{xdm}->dice_axis(1,pdl(long,$q_sig->{docs_}))    / $n_src)->xchg(0,1)->sumover->slice(",*1") if (@{$q_sig->{docs_}});
+      $q_xdm += ($map->{xcm}->dice_axis(1,pdl(long,$q_sig->{classes_})) / $n_src)->xchg(0,1)->sumover->slice(",*1") if (@{$q_sig->{classes_}});
 
-      ##-- query dispatch
-      #my $tf0_avg  = $map->{tdm0}->xchg(0,1)->average->todense->slice(",*1");
-      #my $tf0_lavg = $map->{tdm}->xchg(0,1)->average->todense->slice(",*1");
-      ##my $tf0_elavg = ($tf0_lavg/$map->{tw})->exp - $map->{smoothf};
-      #my $q_lavg   = $tf0_lavg->pdl;
-      #(my $tmp = $q_lavg->dice_axis(0, $q_tdm0->whichND->slice("(0),"))) += $q_tdm0->whichVals;
-
-      #$map->{disto} = MUDL::Cluster::Distance->new(class=>'cos',link=>'avg');
-      my $q_tdm   = $q_tdm0->pdl;
-      #my $q_xdm   = $map->svdApply($q_tdm);
-      #my $qd_xdist = $map->{disto}->clusterDistanceMatrix(data=>$q_xdm,cdata=>$map->{xdm})->flat->lclip(0);
-      ##
-      #my $q_ldm    = (($q_tdm0+1)->log * $map->{tw})->toccs;
-      #my $qd_ldist = $map->{disto}->clusterDistanceMatrix(data=>$q_ldm,cdata=>$map->{tdm})->flat->lclip(0);
-      ##
-      ##-- weirdness: not getting back out what we put in: maybe svd on docs is too coarse for term-queries?
-      ##   + works well for "real" docs, e.g. $q_tdm0 = $map->{tdm0}->dice_axis(1,42)->pdl;
-      ##   + fails miserably for short "query" docs e.g. "Eisen:9 Erz:3 Stahl:2"
-      #my $q_tdm1 = ($map->{svd}->unapply0( $q_xdm ) / $map->{tw})->exp - $map->{smoothf};
-      #my $q_diff = ($q_tdm0 - $q_tdm1);
-      #print $q_diff->index($q_tdm0->whichND->slice("(0),"));
-
-      ##-- variants
-      my ($qd_dist);
-      $qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($q_tdm0->pdl), cdata=>$map->{xdm}); ##-- orig
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{xdm}); ##-- ~=orig
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0->todense+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{xdm}); ##-- ~=orig,dense
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0(($q_tdm0+$map->{smoothf})->log), cdata=>$map->{xdm}); ##-- unweighted query
-
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($tf0_avg->pdl), cdata=>$map->{xdm});
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply(($tf0_lavg/$map->{tw})->exp - $map->{smoothf}), cdata=>$map->{xdm});
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0($q_lavg), cdata=>$map->{xdm});
-
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->{svd}->apply0($tf0_lavg + $q_tdm0->todense), cdata=>$map->{xdm});
-
-      ##-- ok-ish: dense and expensive
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>(($q_tdm0->todense+$map->{smoothf})->log*$map->{tw}), cdata=>$map->{tdm}->todense);
-      #$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>(($q_tdm0->todense+$map->{smoothf})->log), cdata=>$map->{tdm}->todense);
-
-      ##-- report k-nearest output docs
-      print bestDocStrings($map,  $qd_dist, $nbest);
+      if ($mapby eq 'doc') {
+	##~~~~~~ get=docs, mapby=doc: compute distance to each *document* (WAS:to each *centroid*)
+	my ($qd_dist);
+	#$qd_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($q_tdm0->pdl), cdata=>$map->{xdm}); ##-- orig
+	$qd_dist = vcosine($q_xdm, $map->{xdm}, $dnorm);
+	return bestDocStrings($map,  $qd_dist, $nbest);
+      } else {
+	##~~~~~~ get=docs, mapby=cat
+	my ($qc_dist);
+	#$qc_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($q_tdm0->pdl), cdata=>$map->{xcm}); ##-- orig, looks good w/doc~page , cat~book
+	$qc_dist = vcosine($q_xdm, $map->{xcm}, $dnorm);
+	return bestCatStrings($map,  $qc_dist, $nbest);
+      }
     } else {
-      ##~~~~~~ get=docs, map by cat
-      my ($qc_dist);
-      $qc_dist = $map->{disto}->clusterDistanceMatrix(data=>$map->svdApply($q_tdm0->pdl), cdata=>$map->{xcm}); ##-- orig, looks good w/doc~page , cat~book
-      print bestCatStrings($map,  $qc_dist, $nbest);
+      ##~~~~~~ get=terms
+
+      ##-- get reduced (term x R) matrix
+      $map->trace('get xtm') if (!$niters);
+      my $xtm = $mapby eq 'cat' ? $svd->{v} : $map->{tdm}->xchg(0,1);
+
+      ##-- group-average query terms
+      $map->trace('group-average query terms') if (!$niters);
+      my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
+      my $xqm = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->dummy(1,1);
+
+      $map->trace("clusterDistanceMatrix [R=".$xtm->dim(0)."; NT=".$xtm->dim(1)."]") if (!$niters);
+      my ($qt_dist);
+      #$qt_dist = $map->{disto}->clusterDistanceMatrix(data=>$xqm, cdata=>$xtm);
+      $qt_dist  = vcosine($xqm,$xtm,$dnorm);
+      my @qt_drng = $qt_dist->minmax;
+
+      ##-- get result filter mask
+      if ($min_term_freq || $min_term_ndocs) {
+	$map->trace('result filter mask');
+	my $mask = $map->get_tf0 < $min_term_freq;
+	$mask   |= $map->get_tdf0 < $min_term_ndocs;
+	(my $tmp=$qt_dist->where($mask)) += 'inf';
+      }
+      $map->trace('bestTermStrings') if (!$niters);
+      return "$q_sig->{str} \[".join(":",@qt_drng)."]\n", bestTermStrings($map, $qt_dist, $nbest);
     }
+  };
+
+  if ($shell) {
+    binmode($_,':utf8') foreach (\*STDIN,\*STDOUT,\*STDERR);
+    (my $prompt = sub { print "NBEST:$mapfile:$get-by-$mapby> "; })->();
+    while (defined($_=<STDIN>)) {
+      chomp;
+      next if (/^\s*$/);
+      if (/^(?:set)?opt(?:ion(?:s?))?\s(.*)/) {
+	my $optstr = $1;
+	Getopt::Long::GetOptionsFromString($optstr,%optSpec);
+	next;
+      }
+      $q_sig  = parse_query($map,$_);
+      $q_tdm0 = $map->sigPdlRaw($q_sig, $map->{mapccs});
+      $map->logwarn("mapQuery(): null vector for query-string '$q_sig->{str}'")
+	if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdm0->sum==0);
+      print $getBest->();
+    } continue {
+      $prompt->();
+    }
+  }
+  elsif ($niters) {
+    Benchmark::timethese($niters,{"nbest-$get,by-$mapby"=>$getBest});
   }
   else {
-    ##-- get=terms
-
-    ##-- get reduced (term x R) matrix
-    $map->trace('get xtm');
-    my $xtm = $mapby eq 'cat' ? $svd->{v} : $map->{tdm}->xchg(0,1);
-
-    ##-- group-average query terms
-    $map->trace('group-average query terms');
-    my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
-    my $xqm = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->slice(",*1");
-
-    $map->trace("clusterDistanceMatrix [R=".$xtm->dim(0)."; NT=".$xtm->dim(1)."]");
-    my $qt_dist = $map->{disto}->clusterDistanceMatrix(data=>$xqm, cdata=>$xtm);
-    my @qt_drng = $qt_dist->minmax;
-
-    ##-- get result filter mask
-    if ($min_term_freq || $min_term_ndocs) {
-      $map->trace('result filter mask');
-      my $mask = $map->get_tf0 < $min_term_freq;
-      $mask   |= $map->get_tdf0 < $min_term_ndocs;
-      (my $tmp=$qt_dist->where($mask)) += 'inf';
-    }
-    $map->trace('bestTermStrings');
-    print "$q_sig->{str} \[".join(":",@qt_drng)."]\n", bestTermStrings($map, $qt_dist, $nbest);
+    $map->trace("get=$get ; mapby=$mapby ; nbest=$nbest\n");
+    my @best = $getBest->();
+    print @best;
   }
+
 
   exit 0;
   print STDERR "$0: test_cab_query() done: what now?\n";
