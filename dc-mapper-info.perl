@@ -186,10 +186,13 @@ $outfh->print("\n",
 ## Dump: Cats: Size: total SEM term-freq
 my $tcm0_sem1 = $tcm0->dice_axis(0,$t_sem_mask->which);
 
-my $lc_tf_sem1 = $tcm0_sem1->sumover->decode->rint;
 my $gc_tf_sem1 = zeroes($NCg);
-$gc_tf_sem1->index($gcids) .= $lc_tf_sem1;
-my $Ntf_sem1 = $gc_tf_sem1->sum;
+my $Ntf_sem1   = 0;
+if ($t_sem_mask->any) {
+  my $lc_tf_sem1 = $tcm0_sem1->sumover->decode->rint;
+  (my $tmp=$gc_tf_sem1->index($gcids)) .= $lc_tf_sem1;
+  $Ntf_sem1 = $gc_tf_sem1->sum;
+}
 
 $outfh->print("\n",
 	      banner("Category Size (SEM Term Frequency)"),
