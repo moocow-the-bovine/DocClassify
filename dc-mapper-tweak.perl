@@ -65,8 +65,7 @@ $mapper->{verbose} = $verbose;
 our $map = $mapper;
 if (defined $user_code) {
   $logger->info('eval q{'.(length($user_code) < 32 ? $user_code : (substr($user_code,0,32)."..."))."}");
-  #my $rc = eval $user_code;
-  my $rc = $map->recompile();
+  my $rc = eval $user_code;
   if ($@) {
     $logger->logdie("error evaluating user code: $@");
   }
