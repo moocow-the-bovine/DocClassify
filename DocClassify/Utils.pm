@@ -34,6 +34,7 @@ our %EXPORT_TAGS =
    si=>[qw(sistr)],
    fit=>[qw(ylinfit ylogfit li1 F1 Fb)],
    norm=>[qw(_gausscdf _gausswidth)],
+   dist=>[qw(_vcos)],
    cmp=>[qw(min2 max2 catcmp)],
    io=>[qw(slurpFile slurpLines stringfh)],
    libxml=>[qw(libxmlParser)],
@@ -41,7 +42,7 @@ our %EXPORT_TAGS =
    plot=>[qw(usepgplot)],
    encode => [qw(deep_encode deep_decode deep_recode deep_utf8_upgrade)],
    perms => [qw(setuids setgids)],
-   profile => [qw(profile_start profile_stop profile_elapsed profile_string)],
+   profile => [qw(profile_reset profile_start profile_stop profile_elapsed profile_string)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
@@ -51,6 +52,9 @@ $EXPORT_TAGS{all} = [@EXPORT_OK];
 ## Functions: profiling
 
 our @tv_values = qw();
+sub profile_reset {
+  @tv_values = [];
+}
 sub profile_start {
   require Time::HiRes;
   return if (scalar(@tv_values) % 2 != 0); ##-- timer already running
@@ -74,15 +78,16 @@ sub profile_elapsed {
   return $elapsed;
 }
 
-## $stats_str = profile_string($ndocs)
+## $stats_str = profile_string($ndocs, [$what='docs'])
 ##  + implicitly calls profile_stop(), profile_elapsed();
 sub profile_string {
-  my $ndocs = shift;
-  $ndocs = 0 if (!defined($ndocs));
+  my ($nitems,$what) = @_;
+  $what   ||= 'docs';
+  $nitems //= 0 if (!defined($nitems));
   profile_stop();
   my $elapsed = profile_elapsed();
-  my $docsPerSec = sistr($ndocs>0 && $elapsed>0 ? ($ndocs/$elapsed) : 0);
-  return sprintf("%d docs in %.2f sec: %s docs/sec", $ndocs, $elapsed, $docsPerSec);
+  my $itemsPerSec = sistr($nitems>0 && $elapsed>0 ? ($nitems/$elapsed) : 0);
+  return sprintf("%d %s in %.2f sec: %s %s/sec", $nitems,$what, $elapsed, $itemsPerSec,$what);
 }
 
 
@@ -395,6 +400,40 @@ sub _gausswidth {
   my $w  = erfi($conf) * sqrt(2) * $sigma;
   return wantarray ? ($mu-$w,$mu+$w) : $w;
 }
+
+## $dist = _vcos($data, $cdata)
+##  + args:
+##       data    # pdl($d,$nR)  : $d=N_features, $nR=N_rows
+##       cdata   # pdl($d,$nC)  : $d=N_features, $nC=N_centers
+##    [o]dist    # pdl($nC,$nR) : output distances
+##  + local implementation with no mask, weight, etc: ca 2x faster than MUDL::Cluster::Distance::Builtin
+sub _vcos {
+  my ($dr1,$dr2,$norm) = @_;
+
+  ##-- dist(x,y) = 1 - 1/d * (\sum_{i=1}^d (x[i]-mean(x))/stddev(x) * (y[i]-mean(y))/stddev(y))
+  ##             = 1 - 1/d * 1/stddev(x) * 1/stddev(y) * (\sum_{i=1}^d (x[i]-mean(x)) * (y[i]-mean(y)))
+  ##             = 1 - (\sum_{i=1}^d (x[i]-mean(x)) * (y[i]-mean(y))) / (d * stddev(x) * stddev(y))
+  ## + where:
+  ##     mean(x)   := 0
+  ##     stddev(x) := sqrt( E(X^2) )
+  my $d      = $dr1->dim(0);
+  my $sigma1 = $dr1->pow(2)->average; $sigma1->inplace->sqrt;
+  my $sigma2 = $dr2->pow(2)->average; $sigma2->inplace->sqrt;
+
+  my $dist = ($dr1*$dr2)->sumover;
+  ($dist
+   ->inplace->divide($sigma1,0)
+   ->inplace->divide($sigma2,0)
+   ->inplace->divide($d,0)
+  );
+  $dist = $dist->todense;
+  $dist->minus(1,$dist,1);
+  $dist->inplace->setnantobad->inplace->setbadtoval(2);
+  $dist->inplace->clip(0,2);
+
+  return $dist;
+}
+
 
 ##==============================================================================
 ## Hacks: Regexp::Storable fixes

@@ -174,7 +174,8 @@ sub mapDocument {
 
   ##-- compute distance to each centroid
   my $xdm   = $map->svdApply($tdm);
-  my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$xdm,cdata=>$map->{xcm})->lclip(0);
+  #my $cd_dist = $map->{disto}->clusterDistanceMatrix(data=>$xdm,cdata=>$map->{xcm})->lclip(0);
+  my $cd_dist = $map->qdistance($xdm,$map->{xcm})->lclip(0);
 
   ##-- convert distance to similarity
   my ($cd_sim);
@@ -207,6 +208,87 @@ sub mapDocument {
   $doc->{cats}[$_]{deg} = $_+1 foreach (0..$#{$doc->{cats}});
 
   return $doc;
+}
+
+##==============================================================================
+## Methods: API: Query
+
+## \@kbest = $map->mapQuery($querySignatureOrString,%opts)
+## + %opts
+##    mapto => $mapto,		  ##-- one of qw(cats docs terms)
+##    kbest => $k,		  ##-- get $k nearest neighbors
+##    minFreq => $minFreq,	  ##-- [mapto=>'terms'] post-filter; default=0
+##    minDocFreq => $minDocFreq,  ##-- [mapto=>'terms'] post-filter; default=0
+##    norm => $normHow,           ##-- normalization method qw(linear|cosine|vcosine|2 gaussian|normal none); default=none
+## + returns @kbest = ([$id,$dist,$label],...)
+## + side-effects:
+##   - sets $q_sig->{drange_} = [$min,$max] if $querySigatureOrString is passed as a DocClassify::Signature and it's not already set
+sub mapQuery {
+  my ($map,$query,%opts) = @_;
+
+  ##-- parse options
+  my $mapto = $opts{mapto} || ($map->{lcenum}->size > 1 ? 'cats' : 'docs');
+
+  ##-- parse query
+  my $q_sig = UNIVERSAL::isa($query,'DocClassify::Signature') ? $query : $map->querySignature($query);
+  my $q_str = $q_sig->{qstr_} // "$q_sig";
+
+  ##-- pdl-ize query
+  my $q_tdm0 = $map->sigPdlRaw($q_sig, $map->{mapccs});
+  $map->logwarn("mapQuery(): null vector for query-string '$q_str'")
+    if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdm0->sum==0
+	&& ($mapto ne 'docs' || @{$q_sig->{qdocs_}} || @{$q_sig->{qclasses_}})
+       );
+
+  ##-- target object dispatch
+  my ($qx_dist,$qx_enum);
+  if ($mapto =~ /^[dc]/i) {
+    ##~~~~~~ mapto=(docs|cats): merge in qdocs_, qclasses_ data
+    my $q_xdm = $map->svdApply($q_tdm0->pdl);
+    my $n_t0  = $q_tdm0->sum;
+    my $n_src = scalar(@{$q_sig->{qdocs_}}) + scalar(@{$q_sig->{qclasses_}}) + ($n_t0 > 0 ? 1 : 0);
+    if ($n_t0 > 0) { $q_xdm /= $n_src; }
+    else           { $q_xdm .= 0; }
+    $q_xdm += ($map->{xdm}->dice_axis(1,pdl(long,$q_sig->{qdocs_}))    / $n_src)->xchg(0,1)->sumover->slice(",*1") if (@{$q_sig->{qdocs_}});
+    $q_xdm += ($map->{xcm}->dice_axis(1,pdl(long,$q_sig->{qclasses_})) / $n_src)->xchg(0,1)->sumover->slice(",*1") if (@{$q_sig->{qclasses_}});
+
+    if ($mapto =~ /^d/i) {
+      ##-- mapto=docs: compute distance to each *document*
+      $qx_dist = $map->qdistance($q_xdm, $map->{xdm});
+      $qx_enum = $map->{denum};
+    } else {
+      ##-- mapto=cats: compute distance to each *centroid*
+      $qx_dist = $map->qdistance($q_xdm, $map->{xcm});
+      $qx_enum = $map->{lcenum};
+    }
+  }
+  elsif ($mapto =~ /^[t]/i) {
+    ##~~~~~~ mapto=terms
+
+    ##-- get reduced (term x R) matrix
+    my $xtm = $map->{svd}{v};
+
+    ##-- group-average query terms
+    my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
+    my $xqm = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->dummy(1,1);
+
+    $qx_dist = $map->qdistance($xqm,$xtm);
+    $qx_enum = $map->{tenum};
+    $q_sig->{drange_} //= [$qx_dist->minmax];
+
+    ##-- apply result-filter mask
+    if (($opts{minFreq}//0) > $map->{minFreq} || ($opts{minDocFreq}//0) > $map->{minDocFreq}) {
+      my $mask = $map->get_tf0  < $opts{minFreq};
+      $mask   |= $map->get_tdf0 < $opts{minDocFreq};
+      (my $tmp=$qx_dist->where($mask)) += 'inf';
+    }
+  }
+
+  ##-- set distance range
+  $q_sig->{drange_} //= [$qx_dist->minmax];
+
+  ##-- format distance+enum into k-best list
+  return $map->kBestItems($qx_dist, $qx_enum, %opts);
 }
 
 ##==============================================================================

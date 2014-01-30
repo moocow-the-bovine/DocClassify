@@ -220,7 +220,118 @@ sub mapDocument {
 }
 
 ##==============================================================================
+## Methods: API: Query: Utils
+
+## $q_sig = $map->querySignature(@query_strings)
+##  + also sets @$q_sig{qw(qstr_ qdocs_ qclasses_)}
+sub querySignature {
+  my $map   = shift;
+  my $qstr  = join(' ',map {utf8::is_utf8($_) ? $_ : Encode::decode_utf8($_)} @_);
+
+  ##-- variables
+  my $qf    = {};
+  my $qn    = 0;
+  my @docs    = qw();
+  my @classes = qw();
+  my ($t,$f, $xarg,$xid,$xre,@xsyms);
+  foreach (split(/[\,\s\;]+/,$qstr)) {
+    ($t,$f) = /^(.+):([0-9eE\+\-]+)$/ ? ($1,$2) : ($_,1);
+    $f     ||= 1;
+
+    if ($t =~ /^doc:(.*)/) {
+      ##-- doc:LABEL_OR_REGEX : add a document
+      $xarg = $1;
+      if (defined($xid = $map->{denum}{sym2id}{$xarg})) {
+	##-- add a document given full label
+	push(@docs,$xid);
+      } else {
+	##-- approximate search for doc-label regex: add all matches
+	$xre   = qr{$xarg};
+	@xsyms = grep {($_//'') =~ $xre} @{$map->{denum}{id2sym}};
+	$map->logwarn("querySignature(): no documents found matching m/$xre/ - skipping") if (!@xsyms);
+	push(@docs,@xsyms);
+      }
+    }
+    elsif ($t =~ /^(?:class:|cls:)(.*)/) {
+      ##-- class:LABEL_OR_REGEX : add a class
+      $xarg = $1;
+      if (defined($xid = $map->{lcenum}{sym2id}{$xarg})) {
+	##-- add a single class given exact label match
+	push(@classes,$xid);
+      } else {
+	##-- approximate search for class-label regex: add all matches
+	$xre   = qr{$xarg};
+	@xsyms = grep {($_//'') =~ $xre} @{$map->{lcenum}{id2sym}};
+	$map->logwarn("querySignature(): no classes found matching m/$xre/ - skipping") if (!@xsyms);
+	push(@classes,@xsyms);
+      }
+    }
+    else {
+      ##-- "normal" TERM:FREQ query
+      $qf->{$t} += $f;
+      $qn       += $f;
+    }
+  }
+  my $q_sig = DocClassify::Signature->new(tf=>$qf,lf=>$qf,N=>0,Nl=>$qn,
+					  qstr_=>$qstr,
+					  qdocs_=>\@docs,
+					  qclasses_=>\@classes
+					 );
+  return $q_sig;
+}
+
+## \@kbest = $map->kBestItems($dist_pdl, $obj_enum, %opts)
+##  + gets k-best indices from $dist_pdl as labelled by $obj_enum
+##  + suitable for use by mapQuery()
+##  + %opts:
+##     k    => $k,                 ##-- get $k best items (default=1)
+##     norm => $normHow,           ##-- normalization method qw(linear|cosine|vcosine|2 gaussian|normal none); default=none
+##  + returns @kbest = ({id=>$id,dist=>$dist,label=>$label},...)
+sub kBestItems {
+  my ($map,$dist,$enum,%opts) = @_;
+
+  ##-- normalize $qx_dist
+  if ($opts{norm} && $opts{norm} =~ /^(?:[lvc2])/i) {
+    $dist->inplace->divide(2,0);
+  }
+  elsif ($opts{norm} && $opts{norm} =~ /^(?:g|nor)/i) {
+    $dist = _gausscdf($dist,$dist->average,$dist->stddev);
+  }
+
+  ##-- get k-best items
+  my @kbest = qw();
+  $dist     = $dist->flat;
+  my $k     = $opts{k} || 1;
+  if ($k == 1) {
+    ##-- special case for k=1
+    my $i = $dist->minimum_ind->sclr;
+    @kbest = ( {id=>$i, dist=>$dist->at($i), label=>$enum->{id2sym}[$i]} );
+  }
+  else {
+    ##-- general case for k-best
+    my $xi = $dist->qsorti;
+    foreach ($xi->slice("0:".($k-1))->list) {
+      push(@kbest, {id=>$_, dist=>$dist->at($_), label=>$enum->{id2sym}[$_]});
+    }
+  }
+  return \@kbest;
+}
+
+##==============================================================================
 ## Methods: Misc
+
+## $dist_pdl = $map->qdistance($data,$cdata,%opts)
+##  + like $map->{disto}->clusterDistanceMatrix(data=>$data, cdata=>$cdata, %opts)
+##    but uses DocClassify::Utils::_vcos() if appropriate (faster)
+sub qdistance {
+  my $map = shift;
+  return _vcos($_[0],$_[1])
+    if (@_==2
+	&& ((UNIVERSAL::isa($map->{disto},'MUDL::Cluster::Distance::Builtin') && ($map->{disto}{distFlag}//'') eq 'u')
+	    || UNIVERSAL::isa($map->{disto},'MUDL::Cluster::Distance::Cosine')
+	   ));
+  return $map->{disto}->clusterDistanceMatrix(data=>$_[0], cdata=>$_[1], @_[2..$#_]);
+}
 
 ## $lz = $map->lemmatizer()
 ##  + gets or creates $map->{lz}

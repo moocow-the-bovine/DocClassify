@@ -3727,8 +3727,8 @@ sub test_cab_query {
   my ($help);
   my %optSpec = ('help|h'  => \$help,
 		 'mapfile|map|m=s' => \$mapfile,
-		 'bycat' => sub { $mapby='cat'; },
-		 'bydoc' => sub { $mapby='doc'; },
+		 'map-by-category|by-category|bycat|bc' => sub { $mapby='cat'; },
+		 'map-by-document|by-document|bydoc|bd' => sub { $mapby='doc'; },
 		 'similar-terms|terms|t' => sub { $get='terms'; },
 		 'similar-documents|documents|docs|d' => sub { $get='docs'; },
 		 'nbest|n=i' => \$nbest,

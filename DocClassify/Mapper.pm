@@ -148,6 +148,21 @@ sub mapDocument {
   return $doc;
 }
 
+## \@kbest = $map->mapQuery($querySignatureOrString,%opts)
+## + %opts
+##    mapby => $mapby,		  ##-- one of qw(doc cat)
+##    mapto => $mapto,		  ##-- one of qw(cats docs terms)
+##    k     => $lbest,		  ##-- get k-best
+##    minFreq => $minFreq,	  ##-- post-filter
+##    minDocFreq => $minDocFreq,  ##-- post-filter
+##    normalize => $normHow,      ##-- normalization method qw(linear gaussian none)
+## + returns @kbest = ({id=>$id,dist=>$dist,label=>$label}, ...)
+sub mapQuery {
+  my ($map,$query,%opts) = @_;
+  $map->logconfess("mapQuery(): not implemented!");
+  return [];
+}
+
 ##==============================================================================
 ## Methods: API: I/O
 ##  + see DocClassify::Object
