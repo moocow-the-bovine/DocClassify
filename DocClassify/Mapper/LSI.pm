@@ -237,7 +237,7 @@ sub mapQuery {
   my $q_tdm0 = $map->sigPdlRaw($q_sig, $map->{mapccs});
   $map->logwarn("mapQuery(): null vector for query-string '$q_str'")
     if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdm0->sum==0
-	&& ($mapto ne 'docs' || @{$q_sig->{qdocs_}} || @{$q_sig->{qclasses_}})
+	&& ($mapto !~ /^[dc]/i || (@{$q_sig->{qdocs_}} && @{$q_sig->{qclasses_}}))
        );
 
   ##-- target object dispatch

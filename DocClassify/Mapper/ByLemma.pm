@@ -238,8 +238,8 @@ sub querySignature {
     ($t,$f) = /^(.+):([0-9eE\+\-]+)$/ ? ($1,$2) : ($_,1);
     $f     ||= 1;
 
-    if ($t =~ /^doc:(.*)/) {
-      ##-- doc:LABEL_OR_REGEX : add a document
+    if ($t =~ /^doc=(.*)/) {
+      ##-- doc=LABEL_OR_REGEX : add a document
       $xarg = $1;
       if (defined($xid = $map->{denum}{sym2id}{$xarg})) {
 	##-- add a document given full label
@@ -249,11 +249,11 @@ sub querySignature {
 	$xre   = qr{$xarg};
 	@xsyms = grep {($_//'') =~ $xre} @{$map->{denum}{id2sym}};
 	$map->logwarn("querySignature(): no documents found matching m/$xre/ - skipping") if (!@xsyms);
-	push(@docs,@xsyms);
+	push(@docs,grep {defined($_)} @{$map->{denum}{sym2id}}{@xsyms});
       }
     }
-    elsif ($t =~ /^(?:class:|cls:)(.*)/) {
-      ##-- class:LABEL_OR_REGEX : add a class
+    elsif ($t =~ /^(?:class=|cls=)(.*)/) {
+      ##-- class=LABEL_OR_REGEX : add a class
       $xarg = $1;
       if (defined($xid = $map->{lcenum}{sym2id}{$xarg})) {
 	##-- add a single class given exact label match
@@ -263,7 +263,7 @@ sub querySignature {
 	$xre   = qr{$xarg};
 	@xsyms = grep {($_//'') =~ $xre} @{$map->{lcenum}{id2sym}};
 	$map->logwarn("querySignature(): no classes found matching m/$xre/ - skipping") if (!@xsyms);
-	push(@classes,@xsyms);
+	push(@classes,grep {defined($_)} @{$map->{lcenum}{sym2id}}{@xsyms});
       }
     }
     else {

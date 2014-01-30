@@ -10,8 +10,8 @@ use DocClassify::Utils ':all';
 #use PDL::Ngrams;
 
 use Getopt::Long qw(:config no_ignore_case);
-use Encode qw(encode decode);
-use File::Basename qw(basename);
+use Encode qw(encode decode encode_utf8 decode_utf8);
+use File::Basename qw(basename dirname);
 use Pod::Usage;
 
 use Benchmark qw(timethese :hireswallclock);
@@ -43,11 +43,11 @@ my %qopts =
    minTermFreq => 0,
    minDocFreq  => 0,
    norm => 'no',
-   xlate_label => 'xlate_label',
+   xlate => 'xlate_dta',
    bench_iters => 0,
    do_shell => 0,
   );
-my $xlate_label0 = '';
+my $xlate0 = '';
 my $xlate_sub = undef;
 my %mqOpts =
   (
@@ -61,7 +61,7 @@ my %mqOpts =
    'no-normalize|nonormalize|no-norm|nonorm' => sub {$qopts{norm}='no'},
    'profile-iterations|iterate|iters|i=i' => \$qopts{bench_iters},
    'shell|interactive!' => \$qopts{do_shell},
-   'xlate-label|xlate|xl|x=s' => \$qopts{xlate_label},
+   'xlate-label|xlate|xl|x=s' => \$qopts{xlate},
   );
 
 ##------------------------------------------------------------------------------
@@ -130,11 +130,13 @@ sub evalCommand {
   }
 
   ##-- re-commpile xlate sub?
-  if ($qopts{xlate_label} ne $xlate_label0) {
-    $qopts{xlate_label} .= ';' if ($qopts{xlate_label} !~ /;\s*$/s);
-    $xlate_sub           = eval q( sub {$qopts{xlate_label}} );
-    die("$prog: could not compile -xlate-label sub {$qopts{xlate_label}}: $@") if ($@);
-    $xlate_label0 = $qopts{xlate_label};
+  if ($qopts{xlate} ne $xlate0) {
+    if (!defined($xlate_sub=UNIVERSAL::can('main',$qopts{xlate}))) {
+      $qopts{xlate} .= ';' if ($qopts{xlate} !~ /;\s*$/s);
+      $xlate_sub = eval qq( sub {$qopts{xlate}} );
+      die("$prog: could not compile -xlate sub {$qopts{xlate}}: $@") if ($@);
+    }
+    $xlate0 = $qopts{xlate};
   }
 
   ##-- get query string
@@ -143,7 +145,7 @@ sub evalCommand {
 
   if ($qopts{bench_iters}) {
     ##-- benchmark
-    Benchmark::timethese($qopts{bench_iters},{"kbest-$qopts{mapto}"=>\&evalQuery});
+    Benchmark::timethese($qopts{bench_iters},{"kbest-$qopts{mapto}"=>sub { evalQuery($map,$query); }});
   }
   else {
     ##-- real query
@@ -166,9 +168,9 @@ sub evalQuery {
 
   ##-- translate labels
   if ($xlate_sub) {
-    foreach (map {$_->{label}} @$kbest) {
+    foreach (@$kbest) {
       $xlate_sub->($_);
-      die("$prog: -xlate-label sub failed for '$_': $@") if ($@);
+      die("$prog: -xlate sub failed for '$_': $@") if ($@);
     }
   }
 
@@ -176,17 +178,18 @@ sub evalQuery {
   $kbest->[$_]{i} = $_ foreach (0..$#$kbest);
   print
     (($q_sig->{qstr_}//'QUERY')." [".join(":",@{$q_sig->{drange_}//['?','?']})."]\n",
-     (map {" [$_->{i}]\t$_->{dist}\t$_->{id}:$_->{label}\n"} @$kbest),
+     (map {" [$_->{i}]\t$_->{dist}\t$_->{id}\t".($_->{label}//'')."\n"} @$kbest),
     );
 }
 
 ##--------------------------------------------------------------
-## undef = xlate_label()
-##  + translates label $_
-sub xlate_label {
+## undef = xlate_dta()
+##  + translates label of current k-best item in $_
+sub xlate_dta {
   return if ($qopts{mapto} !~ /^[dc]/i);
-  (my $lab = basename($_)) =~ s/\.\D.*$//;
-  $_ = $lab;
+  (my $lab = basename($_->{label})) =~ s/\.\D.*$//;
+  $lab =~ s/\.(\d+)$/?p=$1/;
+  $_->{label} = $lab;
 }
 
 ##--------------------------------------------------------------
@@ -262,8 +265,8 @@ dc-mapper-query.perl - query DocClassify::Mapper objects
  Query Syntax:
   TERM:WEIGHT            # query TERM with relative weight WEIGHT
   TERM                   # alias for TERM:1
-  doc=DQUERY             # [-to-docs only] query doc DQUERY if it exists, else all docs matching regex DQUERY
-  cls=CQUERY             # [-to-docs only] query class CQUERY of it exists, else all classes matching regex CQUERY
+  doc=DQUERY             # [-(docs|cats) only] query doc DQUERY if it exists, else all docs matching regex DQUERY
+  cls=CQUERY             # [-(docs|cats) only] query class CQUERY of it exists, else all classes matching regex CQUERY
   QUERY, QUERY           # multiple query conditions can be separated with spaces, tabs, or commas
 
 =cut
