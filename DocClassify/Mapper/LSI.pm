@@ -235,22 +235,31 @@ sub mapQuery {
 
   ##-- pdl-ize query
   my $q_tdm0 = $map->sigPdlRaw($q_sig, $map->{mapccs});
+  my $n_tdm0 = $q_tdm0->sum;
+  my $qdocs  = pdl(long,$q_sig->{qdocs_}//[]);
+  my $qcats  = pdl(long,$q_sig->{qcats_}//[]);
   $map->logwarn("mapQuery(): null vector for query-string '$q_str'")
-    if ($map->{verbose} && $map->{warnOnNullDoc} && $q_tdm0->sum==0
-	&& ($mapto !~ /^[dc]/i || (@{$q_sig->{qdocs_}} && @{$q_sig->{qclasses_}}))
+    if ($map->{verbose}
+	&& $map->{warnOnNullDoc}
+	&& $n_tdm0==0
+	&& $qdocs->isempty
+	&& $qcats->isempty
        );
+
+  ##-- retrieve doc and class sub-queries
+  my $n_qsrc = $qdocs->nelem + $qcats->nelem + ($n_tdm0 ? 1 : 0);
+  my $qq_xdm = $map->{xdm}->dice_axis(1,$qdocs);
+  my $qq_xcm = $map->{xcm}->dice_axis(1,$qcats);
 
   ##-- target object dispatch
   my ($qx_dist,$qx_enum);
   if ($mapto =~ /^[dc]/i) {
-    ##~~~~~~ mapto=(docs|cats): merge in qdocs_, qclasses_ data
+    ##~~~~~~ mapto=(docs|cats): merge in qdocs_, qcats_ sub-queries
     my $q_xdm = $map->svdApply($q_tdm0->pdl);
-    my $n_t0  = $q_tdm0->sum;
-    my $n_src = scalar(@{$q_sig->{qdocs_}}) + scalar(@{$q_sig->{qclasses_}}) + ($n_t0 > 0 ? 1 : 0);
-    if ($n_t0 > 0) { $q_xdm /= $n_src; }
-    else           { $q_xdm .= 0; }
-    $q_xdm += ($map->{xdm}->dice_axis(1,pdl(long,$q_sig->{qdocs_}))    / $n_src)->xchg(0,1)->sumover->slice(",*1") if (@{$q_sig->{qdocs_}});
-    $q_xdm += ($map->{xcm}->dice_axis(1,pdl(long,$q_sig->{qclasses_})) / $n_src)->xchg(0,1)->sumover->slice(",*1") if (@{$q_sig->{qclasses_}});
+    if ($n_tdm0 > 0) { $q_xdm /= $n_qsrc; }
+    else             { $q_xdm .= 0; }
+    $q_xdm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
+    $q_xdm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
 
     if ($mapto =~ /^d/i) {
       ##-- mapto=docs: compute distance to each *document*
@@ -271,7 +280,13 @@ sub mapQuery {
     ##-- group-average query terms
     my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
     my $xqm = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->dummy(1,1);
+    if (!$n_tdm0) { $xqm .= 0; }
 
+    ##-- merge in qdocs_, qcats_ sub-queries
+    $xqm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
+    $xqm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
+
+    ##-- distance guts
     $qx_dist = $map->qdistance($xqm,$xtm);
     $qx_enum = $map->{tenum};
     $q_sig->{drange_} //= [$qx_dist->minmax];

@@ -223,7 +223,7 @@ sub mapDocument {
 ## Methods: API: Query: Utils
 
 ## $q_sig = $map->querySignature(@query_strings)
-##  + also sets @$q_sig{qw(qstr_ qdocs_ qclasses_)}
+##  + also sets @$q_sig{qw(qstr_ qdocs_ qcats_)}
 sub querySignature {
   my $map   = shift;
   my $qstr  = join(' ',map {utf8::is_utf8($_) ? $_ : Encode::decode_utf8($_)} @_);
@@ -231,39 +231,38 @@ sub querySignature {
   ##-- variables
   my $qf    = {};
   my $qn    = 0;
-  my @docs    = qw();
-  my @classes = qw();
-  my ($t,$f, $xarg,$xid,$xre,@xsyms);
+  my @docs  = qw();
+  my @cats  = qw();
+  my ($which,$t,$f, $xarg,$xid,$xre,@xsyms);
   foreach (split(/[\,\s\;]+/,$qstr)) {
-    ($t,$f) = /^(.+):([0-9eE\+\-]+)$/ ? ($1,$2) : ($_,1);
+    ($which,$t,$f) = /^(?i:(doc|term|class|cls|cat)[:=])?(.+?)(?:\:([0-9eE\+\-]+))?$/ ? ($1,$2,$3) : ('term',$_,1);
+    $which ||= 'term';
     $f     ||= 1;
 
-    if ($t =~ /^doc=(.*)/) {
+    if ($which =~ /^d/i) {
       ##-- doc=LABEL_OR_REGEX : add a document
-      $xarg = $1;
-      if (defined($xid = $map->{denum}{sym2id}{$xarg})) {
+      if (defined($xid = $map->{denum}{sym2id}{$t})) {
 	##-- add a document given full label
 	push(@docs,$xid);
       } else {
 	##-- approximate search for doc-label regex: add all matches
-	$xre   = qr{$xarg};
+	$xre   = qr{$t};
 	@xsyms = grep {($_//'') =~ $xre} @{$map->{denum}{id2sym}};
 	$map->logwarn("querySignature(): no documents found matching m/$xre/ - skipping") if (!@xsyms);
 	push(@docs,grep {defined($_)} @{$map->{denum}{sym2id}}{@xsyms});
       }
     }
-    elsif ($t =~ /^(?:class=|cls=)(.*)/) {
-      ##-- class=LABEL_OR_REGEX : add a class
-      $xarg = $1;
-      if (defined($xid = $map->{lcenum}{sym2id}{$xarg})) {
-	##-- add a single class given exact label match
-	push(@classes,$xid);
+    elsif ($which =~ /^c/i) {
+      ##-- cat=LABEL_OR_REGEX : add a category
+      if (defined($xid = $map->{lcenum}{sym2id}{$t})) {
+	##-- add a single cat given exact label match
+	push(@cats,$xid);
       } else {
-	##-- approximate search for class-label regex: add all matches
-	$xre   = qr{$xarg};
+	##-- approximate search for cat-label regex: add all matches
+	$xre   = qr{$t};
 	@xsyms = grep {($_//'') =~ $xre} @{$map->{lcenum}{id2sym}};
-	$map->logwarn("querySignature(): no classes found matching m/$xre/ - skipping") if (!@xsyms);
-	push(@classes,grep {defined($_)} @{$map->{lcenum}{sym2id}}{@xsyms});
+	$map->logwarn("querySignature(): no categories found matching m/$xre/ - skipping") if (!@xsyms);
+	push(@cats,grep {defined($_)} @{$map->{lcenum}{sym2id}}{@xsyms});
       }
     }
     else {
@@ -275,7 +274,7 @@ sub querySignature {
   my $q_sig = DocClassify::Signature->new(tf=>$qf,lf=>$qf,N=>0,Nl=>$qn,
 					  qstr_=>$qstr,
 					  qdocs_=>\@docs,
-					  qclasses_=>\@classes
+					  qcats_=>\@cats,
 					 );
   return $q_sig;
 }
