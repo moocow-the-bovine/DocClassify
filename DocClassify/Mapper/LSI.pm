@@ -255,9 +255,20 @@ sub mapQuery {
   my ($qx_dist,$qx_enum);
   if ($mapto =~ /^[dc]/i) {
     ##~~~~~~ mapto=(docs|cats): merge in qdocs_, qcats_ sub-queries
-    my $q_xdm = $map->svdApply($q_tdm0->pdl);
-    if ($n_tdm0 > 0) { $q_xdm /= $n_qsrc; }
-    else             { $q_xdm .= 0; }
+    my ($q_xdm);
+
+    if (0) {
+      ##-- treat query as a document: old DocClassify/VZ classification method
+      $q_xdm = $map->svdApply($q_tdm0->pdl);
+      if ($n_tdm0 > 0) { $q_xdm /= $n_qsrc; }
+      else             { $q_xdm .= 0; }
+    } else {
+      ##-- treat query as weighted terms: term->term method (group-average query terms)
+      my $xtm = $map->{svd}{v};
+      my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
+      $q_xdm  = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->dummy(1,1);
+      if (!$n_tdm0) { $q_xdm .= 0; }
+    }
     $q_xdm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
     $q_xdm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
 
