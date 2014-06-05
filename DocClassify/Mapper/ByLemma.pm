@@ -360,8 +360,8 @@ sub sigPdlRaw {
   my ($map,$sig_or_doc, $as_ccs) = @_;
   my $sig = $map->lemmaSignature($sig_or_doc); ##-- ensure lemmatized signature
   my $tenum = $map->{tenum};
-  my $dtf_wt = pdl(long,   grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})});
-  my $dtf_nz = pdl(double, @{$sig->{lf}}{@{$tenum->{id2sym}}[$dtf_wt->list]});
+  my $dtf_wt = pdl(long,   [grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})}]);
+  my $dtf_nz = pdl(double, [@{$sig->{lf}}{@{$tenum->{id2sym}}[$dtf_wt->list]}]);
   if ($map->{cleanDocs} || !exists($map->{cleanDocs})) {
     ##-- cleanup
     #$sig->unlemmatize;
