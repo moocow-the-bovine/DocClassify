@@ -194,7 +194,7 @@ sub xlate_dta {
 
 ##--------------------------------------------------------------
 ## undef = shellPrompt()
-##  + promopts to stdout, for shell mode
+##  + prompts to stdout, for shell mode
 sub shellPrompt {
   print "${pbase}::${mapfile}::$qopts{mapto}> ";
 }
