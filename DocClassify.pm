@@ -1,6 +1,6 @@
 ## -*- Mode: CPerl -*-
 ## File: DocClassify.pm
-## Author: Bryan Jurish <moocow@ling.uni-potsdam.de>
+## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: language identification utilities: top-level
 
 
@@ -41,7 +41,7 @@ use strict;
 ##==============================================================================
 ## Globals & Constants
 
-our $VERSION = 0.08;
+our $VERSION = 0.09;
 our @ISA = ('DocClassify::Logger'); ##-- for convenience
 
 BEGIN {
@@ -140,7 +140,7 @@ Package version.
 
 =head1 AUTHOR
 
-Bryan Jurish E<lt>jurish@uni-potsdam.deE<gt>
+Bryan Jurish E<lt>moocow@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 

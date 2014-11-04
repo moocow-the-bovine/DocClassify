@@ -265,8 +265,8 @@ dc-mapper-query.perl - query DocClassify::Mapper objects
  Query Syntax:
   TERM:WEIGHT            # query TERM with relative weight WEIGHT
   TERM                   # alias for TERM:1
-  doc=DQUERY             # [-(docs|cats) only] query doc DQUERY if it exists, else all docs matching regex DQUERY
-  cls=CQUERY             # [-(docs|cats) only] query class CQUERY of it exists, else all classes matching regex CQUERY
+  doc=DOC                # query doc DOC if it exists, else all docs matching regex DQUERY
+  cat=CAT                # query class CAT of it exists, else all classes matching regex CQUERY
   QUERY, QUERY           # multiple query conditions can be separated with spaces, tabs, or commas
 
 =cut
