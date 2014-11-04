@@ -23,7 +23,8 @@ our @ISA = qw(DocClassify::Lemmatizer::VzContent);
 ## $POS_REGEX
 ##  + default pos regex for lemmatize()
 ##  + don't use qr// here, since Storable doesn't like pre-compiled Regexps
-our $POS_REGEX       = q/^NN$/; #q/^(?:N|TRUNC|VV|ADJ)/; #ITJ|FM|XY
+#our $POS_REGEX       = q/^NN$/; #q/^(?:N|TRUNC|VV|ADJ)/; #ITJ|FM|XY
+our $POS_REGEX       = q/^(?:N|TRUNC|VV|ADJ)/; #ITJ|FM|XY
 
 ## $TEXT_REGEX_GOOD
 ##  + default "good" text regex for lemmatize()
