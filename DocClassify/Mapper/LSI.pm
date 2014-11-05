@@ -266,7 +266,7 @@ sub mapQuery {
       ##-- treat query as weighted terms: term->term method (group-average query terms)
       my $xtm = $map->{svd}{v};
       my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
-      $q_xdm  = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->dummy(1,1);
+      $q_xdm  = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
       if (!$n_tdm0) { $q_xdm .= 0; }
     }
     $q_xdm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
