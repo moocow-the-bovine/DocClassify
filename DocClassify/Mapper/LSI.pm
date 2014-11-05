@@ -290,7 +290,7 @@ sub mapQuery {
 
     ##-- group-average query terms
     my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
-    my $xqm = ($xtm->dice_axis(1, $q_tdm0->_whichND->slice("(0),")) * $q_w->slice("*1,"))->xchg(0,1)->sumover->dummy(1,1);
+    my $xqm = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
     if (!$n_tdm0) { $xqm .= 0; }
 
     ##-- merge in qdocs_, qcats_ sub-queries
