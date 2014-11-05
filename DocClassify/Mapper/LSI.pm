@@ -257,7 +257,7 @@ sub mapQuery {
     ##~~~~~~ mapto=(docs|cats): merge in qdocs_, qcats_ sub-queries
     my ($q_xdm);
 
-    if (1) {
+    if (0) {
       ##-- treat query as a document: old DocClassify/VZ classification method
       $q_xdm = $map->svdApply($q_tdm0->pdl);
       if ($n_tdm0 > 0) { $q_xdm /= $n_qsrc; }
