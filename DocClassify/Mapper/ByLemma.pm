@@ -369,7 +369,7 @@ sub sigPdlRaw {
   }
   if ($as_ccs) {
     ##-- ccs mode
-    return PDL::CCS::Nd->newFromWhich($dtf_wt->slice("*1,"),$dtf_nz,dims=>pdl(long,[$tenum->size]),missing=>0)->dummy(1,1);
+    return PDL::CCS::Nd->newFromWhich($dtf_wt->dummy(0,1),$dtf_nz,dims=>pdl(long,[$tenum->size]),missing=>0)->dummy(1,1);
   }
   ##-- dense mode
   my $dtf = zeroes(double,$tenum->size);
