@@ -235,12 +235,12 @@ sub querySignature {
   my @cats  = qw();
   my ($which,$t,$f, $xarg,$xid,$xre,@xsyms);
   foreach (split(/[\,\s\;]+/,$qstr)) {
-    ($which,$t,$f) = /^(?i:(doc|term|class|cls|cat)[:=])?(.+?)(?:\:([0-9eE\+\-]+))?$/ ? ($1,$2,$3) : ('term',$_,1);
+    ($which,$t,$f) = /^(?i:(doc|term|class|cls|cat|page|pag|book|bk|volume|vol)[:=])?(.+?)(?:\:([0-9eE\+\-]+))?$/ ? ($1,$2,$3) : ('term',$_,1);
     $which ||= 'term';
     $f     ||= 1;
 
-    if ($which =~ /^d/i) {
-      ##-- doc=LABEL_OR_REGEX : add a document
+    if ($which =~ /^[dp]/i) {
+      ##-- doc=LABEL_OR_REGEX : add a document (aliases: page, pag)
       if (defined($xid = $map->{denum}{sym2id}{$t})) {
 	##-- add a document given full label
 	push(@docs,$xid);
@@ -252,8 +252,8 @@ sub querySignature {
 	push(@docs,grep {defined($_)} @{$map->{denum}{sym2id}}{@xsyms});
       }
     }
-    elsif ($which =~ /^c/i) {
-      ##-- cat=LABEL_OR_REGEX : add a category
+    elsif ($which =~ /^[cbv]/i) {
+      ##-- cat=LABEL_OR_REGEX : add a category (aliases: book, bk, volume, vol)
       if (defined($xid = $map->{lcenum}{sym2id}{$t})) {
 	##-- add a single cat given exact label match
 	push(@cats,$xid);
