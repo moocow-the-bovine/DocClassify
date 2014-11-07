@@ -253,7 +253,7 @@ sub mapQuery {
 
   ##-- target object dispatch
   my ($qx_dist,$qx_enum);
-  if ($mapto =~ /^[dcpv]/i) {
+  if ($mapto =~ /^[dpcbv]/) {
     ##~~~~~~ mapto=(docs~pages|cats~books~volume): merge in qdocs_, qcats_ sub-queries
     my ($q_xdm);
 

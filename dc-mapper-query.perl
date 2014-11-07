@@ -54,6 +54,11 @@ my %mqOpts =
    'map-to-categories|to-cats|tocats|cats|tc|c' => sub { $qopts{mapto}='cats'; },
    'map-to-documents|to-docs|todocs|docs|td|d' => sub { $qopts{mapto}='docs'; },
    'map-to-terms|to-terms|toterms|terms|tt|t'  => sub { $qopts{mapto}='terms'; },
+   ##-- mapping aliases
+   'map-to-books|to-books|books|b' => sub { $qopts{mapto}='books'; },
+   'map-to-volumes|to-volumes|volumes|vols' => sub { $qopts{mapto}='volumes'; },
+   'map-to-pages|to-pages|pages|p' => sub { $qopts{mapto}='pages'; },
+   ##
    'k-best|kbest|n-best|nbest|n|k=i' => \$qopts{k},
    'min-term-freq|min-freq|mtf|tf|f=i' => \$qopts{minTermFreq},
    'min-term-docfreq|min-docfreq|mdf|df|F=i' => \$qopts{minDocFreq},
@@ -186,7 +191,7 @@ sub evalQuery {
 ## undef = xlate_dta()
 ##  + translates label of current k-best item in $_
 sub xlate_dta {
-  return if ($qopts{mapto} !~ /^[dc]/i);
+  return if ($qopts{mapto} !~ /^[dpcbv]/i);
   (my $lab = basename($_->{label})) =~ s/\.\D.*$//;
   $lab =~ s/\.(\d+)$/?p=$1/;
   $_->{label} = $lab;
@@ -251,9 +256,13 @@ dc-mapper-query.perl - query DocClassify::Mapper objects
   -map-input-mode MODE   # I/O mode for input mapfile (default=guess)
   -shell , -noshell      # do/don't run as interactive shell (default=-noshell)
 
- Query Options:
-  -cats , -docs , -terms # get k-best categories, documents, or terms (default=-to-cats)
+ Mapping Target Options:
   -kbest=K               # retrieve K-best objects (default=10)
+  -terms                 # get k-best terms
+  -docs	                 # get k-best documents (alias: -pages)
+  -cats                  # get k-best categories (aliases: -books, -volumes)
+
+ Query Options:
   -norm=HOW              # distance normalization method: linear|gaussian|none; default='none'
   -nonorm                # alias for -norm=none
   -mtf=FREQ              # [-terms mode] result mask minimum term frequency
@@ -265,8 +274,8 @@ dc-mapper-query.perl - query DocClassify::Mapper objects
  Query Syntax:
   TERM:WEIGHT            # query TERM with relative weight WEIGHT
   TERM                   # alias for TERM:1
-  doc=DOC                # query doc DOC if it exists, else all docs matching regex DQUERY
-  cat=CAT                # query class CAT of it exists, else all classes matching regex CQUERY
+  doc=DOC                # query doc DOC if it exists, else all docs matching regex DQUERY (also page=, pag=)
+  cat=CAT                # query class CAT if it exists, else all classes matching regex CQUERY (also book=, vol=)
   QUERY, QUERY           # multiple query conditions can be separated with spaces, tabs, or commas
 
 =cut
