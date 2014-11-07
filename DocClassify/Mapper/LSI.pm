@@ -253,8 +253,8 @@ sub mapQuery {
 
   ##-- target object dispatch
   my ($qx_dist,$qx_enum);
-  if ($mapto =~ /^[dc]/i) {
-    ##~~~~~~ mapto=(docs|cats): merge in qdocs_, qcats_ sub-queries
+  if ($mapto =~ /^[dcpv]/i) {
+    ##~~~~~~ mapto=(docs~pages|cats~books~volume): merge in qdocs_, qcats_ sub-queries
     my ($q_xdm);
 
     if (0) {
@@ -272,12 +272,12 @@ sub mapQuery {
     $q_xdm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
     $q_xdm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
 
-    if ($mapto =~ /^d/i) {
-      ##-- mapto=docs: compute distance to each *document*
+    if ($mapto =~ /^[dp]/i) {
+      ##-- mapto=docs~pages: compute distance to each *document*
       $qx_dist = $map->qdistance($q_xdm, $map->{xdm});
       $qx_enum = $map->{denum};
     } else {
-      ##-- mapto=cats: compute distance to each *centroid*
+      ##-- mapto=cats~books~volumne: compute distance to each *centroid*
       $qx_dist = $map->qdistance($q_xdm, $map->{xcm});
       $qx_enum = $map->{lcenum};
     }
