@@ -105,9 +105,9 @@ sub parseSource {
   my ($f,@vals);
   while (defined($_=<$fh>)) {
     chomp;
-    if (/^%%\$dc\.cat(?:\.([0-9\.\-\+eE]+))?=(?:([0-9]+)_)?(.*)$/) {
+    if (/^%%\$dc\.(?:sym)?cat(?:\.([0-9\.\-\+eE]+))?=(.*)$/) {
       ##-- parse category
-      push(@$cats, {id=>($2//1), deg=>($1//1), name=>($3//'unknown')});
+      push(@$cats, {id=>(1), deg=>($1//1), name=>($2//'unknown')});
       next;
     }
     elsif (/^%%/ || /^\s*$/) {
