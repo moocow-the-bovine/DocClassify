@@ -285,8 +285,14 @@ sub load1gFile {
     chomp;
     if (/^%%/ || /^\s*$/) {
       if (/^%%\$dc.cat(?:\.([0-9\.\-\+eE]+))?=(?:([0-9]+)_)?(.*)$/) {
-	##-- parse category
+	##-- parse category, with optional ID_ prefix
 	($deg,$cid,$cat) = (($1//1), ($2||$CAT_DEG_DEFAULT), ($2//'unknown'));
+	$sig->{cat2deg}{$cat} = min2( $deg, $CAT_DEG_MAX );
+	$sig->{cat2id}{$cat}  = $cid if (defined($cid) && !defined($sig->{cat2id}{$cat}));
+      }
+      elsif (/^%%\$dc.symcat(?:\.([0-9\.\-\+eE]+))?=(.*)$/) {
+        ##-- parse category, withOUT ID_ prefix
+       	($deg,$cid,$cat) = (($1//1), undef, ($2//'unknown'));
 	$sig->{cat2deg}{$cat} = min2( $deg, $CAT_DEG_MAX );
 	$sig->{cat2id}{$cat}  = $cid if (defined($cid) && !defined($sig->{cat2id}{$cat}));
       }
