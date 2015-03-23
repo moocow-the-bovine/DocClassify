@@ -19,6 +19,7 @@ package DocClassify::Object;
 use PDL;
 use Storable;
 use PDL::IO::Storable;
+use PDL::IO::FastRaw;
 
 ##-- storable v2.18, v2.21 can't handle qr//-style Regexp regexes
 #use Regexp::Copy;     ##-- occasional segfaults with Regexp::Copy-0.06, Storable-2.21, perl-5.10.0 on SuSE x86-64
@@ -28,6 +29,8 @@ use DocClassify::Logger;
 use DocClassify::Utils ':all';  ##-- load this AFTER Regexp::Copy, Regexp::Storable (and don't store compiled regexes!)
 use Data::Dumper;
 use IO::File;
+use File::Path;			##-- for directory I/O e.g. make_path() etc.
+use JSON;
 use Carp;
 use strict;
 
@@ -83,6 +86,7 @@ BEGIN {
      {name=>'csv',re=>qr/\.(?:csv)$/i,method=>'Csv'},
      {name=>'xml',re=>qr/\.(?:xml)$/i,method=>'Xml'},
      {name=>'perl',re=>qr/\.(?:perl|pl|plm)$/i,method=>'Perl'},
+     {name=>'dir',re=>qr/\.d$/, method=>'Dir'},
     );
 }
 
@@ -96,6 +100,7 @@ BEGIN {
      (map {($_->{name}=>$_)} @IO_MODES),
      'txt'=>'text',
      'native'=>'text',
+     'directory'=>'dir',
      'DEFAULT' => 'bin',
     );
   foreach (keys(%IO_ALIAS)) {
@@ -115,7 +120,12 @@ sub guessFileMode {
   if (defined($file) && !defined($opts{mode})) {
     ##-- guess mode from filename
     foreach (@IO_MODES) {
-      return $_ if ($file =~ m/$_->{re}/);
+      return $_ if (defined($_->{re}) && $file =~ m/$_->{re}/);
+    }
+    ##-- try 'dir' mode for directories
+    if (defined($file) && -d $file) {
+      my $mode = (grep {$_->{name} eq 'dir'} @IO_MODES)[0];
+      return $mode if ($mode);
     }
   }
   ##-- use default mode: get class default
@@ -132,8 +142,8 @@ BEGIN { *save = \&saveFile; }
 sub saveFile {
   my ($obj,$file,%opts) = @_;
   my $mode = $obj->guessFileMode($file,%opts);
-  my $method = "save".($mode->{method} || ucfirst($mode->{name}))."File";
-  my $sub = $obj->can($method);
+  my $method = "save".($mode->{method} || ucfirst($mode->{name}));
+  my $sub = $obj->can($method) || $obj->can("${method}File");
   $obj->logconfess("saveFile(): no method for output mode '$mode->{name}'") if (!$sub);
   $obj->vlog('info', "saveFile($file) [mode=$mode->{name}]") if ($opts{verboseIO});
   return $sub->($obj,$file,%opts);
@@ -147,8 +157,8 @@ BEGIN { *load = \&loadFile; }
 sub loadFile {
   my ($that,$file,%opts) = @_;
   my $mode = $that->guessFileMode($file,%opts);
-  my $method = "load".($mode->{method} || ucfirst($mode->{name}))."File";
-  my $sub = $that->can($method);
+  my $method = "load".($mode->{method} || ucfirst($mode->{name}));
+  my $sub = $that->can($method) || $that->can("${method}File");
   $that->logconfess("loadFile(): no method for input mode '$mode->{name}'") if (!$sub);
   $that->vlog('info',"loadFile($file) [mode=$mode->{name}]") if ($opts{verboseIO});
   return $sub->($that,$file,%opts);
@@ -398,6 +408,178 @@ sub loadPerlString {
   return $that->loadPerlRef($loaded);
 }
 
+##==============================================================
+## Methods: I/O: Directory
+
+##--------------------------------------------------------------
+## Methods: I/O: Directory: save
+
+## @keys = $obj->dirHeaderKeys()
+##  + keys for header save
+##  + default returns keys of all non-referencesin %$obj
+sub dirHeaderKeys {
+  my $obj = shift;
+  return grep {!ref($obj->{$_})} keys %$obj;
+}
+
+## \%data = $obj->dirHeaderData()
+##  + local data to save in $dir/header.json for saveDir()
+##  + default returns hash of $obj->dirHeaderKeys() and special '__CLASS__' key
+sub dirHeaderData {
+  my $obj = shift;
+  return { __CLASS__=>(ref($obj)||$obj), (map {($_=>$obj->{$_})} grep {exists($obj->{$_})} $obj->dirHeaderKeys) };
+}
+
+## $bool = $obj->saveDirHeader($dirname_or_filename)
+##  + save "$dir/header.json"
+sub saveDirHeader {
+  my ($obj,$dir) = @_;
+  my $file = (-d $dir ? "$dir/header.json" : $dir);
+  return $obj->writeJsonFile($obj->dirHeaderData(), $file);
+}
+
+## $bool = $obj->saveDir($dirname)
+##  + abstract method loads header and calls saveDirData()
+sub saveDir {
+  my ($obj,$dir) = @_;
+  $dir =~ s{/$}{};
+  $obj->info("saveDir($dir)");
+  -d $dir || File::Path::make_path($dir)
+      or $obj->logconfess("saveDir(): failed to create directory $dir/: $!");
+
+  ##-- save: header
+  $obj->saveDirHeader($dir)
+    or $obj->logconfess("saveDir(): failed to save header to $dir/: $!");
+
+  ##-- save: data
+  return $obj->saveDirData($dir);
+}
+
+## $bool = $obj->saveDirData($dirname)
+##  + dummy method
+sub saveDirData {
+  my ($obj,$dir) = @_;
+  $obj->logconfess("saveDirData(): not implemented");
+}
+
+##--------------------------------------------------------------
+## Methods: I/O: Directory: load
+
+## $obj = $CLASS_OR_OBJECT->loadDirHeader($dirname_or_filename)
+##  + loads "$dir/header.json"
+sub loadDirHeader {
+  my ($that,$dir) = @_;
+  my $file = -d $dir ? "$dir/header.json" : $dir;
+  my $hdr = $that->readJsonFile($file)
+    or $that->logconfess("loadDirHeader(): failed to load $file: $!");
+  my $class = $hdr->{__CLASS__} || $hdr->{class} || ref($that) || $that || __PACKAGE__;
+  $class    = undef if ($class =~ /^(?:HASH|ARRAY|SCALAR)$/);
+  delete $hdr->{__CLASS__};
+  if (UNIVERSAL::isa($that,'HASH')) {
+    @$that{keys %$hdr} = values %$hdr;
+    bless($that,$class) if ($class && UNIVERSAL::isa($class,ref($that)));
+    return $that;
+  }
+  bless($hdr,$class) if ($class);
+  return $hdr;
+}
+
+## $bool = $CLASS_OR_OBJECT->loadDir($dirname,%opts)
+##  + abstract method loads header and calls loadDirData()
+sub loadDir {
+  my $that = shift;
+  my $dir  = shift;
+  $dir =~ s{/$}{};
+  $that->logconfess("loadDir(): no such directory $dir") if (!-d $dir);
+
+  ##-- load: header
+  my $obj = $that->loadDirHeader($dir)
+    or $that->logconfess("loadDir(): failed to load header from $dir/: $!");
+
+  ##-- load: data
+  return $obj->loadDirData($dir,@_);
+}
+
+## $obj = $obj->loadDirData($dirname,%opts)
+##  + dummy method
+sub loadDirData {
+  my ($obj,$dir) = @_;
+  $obj->logconfess("loadDirData(): not implemented");
+}
+
+##==============================================================================
+## Methods: I/O: JSON utilities
+
+## $data = $obj->TO_JSON()
+##  + wrapper for JSON module
+sub TO_JSON {
+  return { %{$_[0]} };
+}
+
+## $bool = $CLASS_OR_OJBECT->writeJsonFile($data,$filename_or_fh,%opts)
+sub writeJsonFile {
+  my ($that,$data,$file,%opts) = @_;
+  my $fh = ref($file) ? $file : IO::File->new(">$file");
+  $that->logconfess("writeJsonDataFile(): open failed for '$file': $!") if (!defined($fh));
+  binmode($fh,':raw');
+  $fh->print(to_json($data, {utf8=>1, allow_nonref=>1, allow_unknown=>1, allow_blessed=>1, convert_blessed=>1, pretty=>1, canonical=>1, %opts}));
+  if (!ref($file)) {
+    $fh->close() or $that->logconfess("writeJsonDataFile(): failed to close $file: $!");
+  }
+  return 1;
+}
+
+## $data = $CLASS_OR_OJBECT->readJsonFile($filename_or_fh,%opts)
+sub readJsonFile {
+  my ($that,$file,%opts) = @_;
+  my $fh = ref($file) ? $file : IO::File->new("<$file");
+  $that->logconfess("readJsonFile(): open failed for $file: $!") if (!defined($fh));
+  my $buf;
+  {
+    local $/ = undef;
+    $buf = <$fh>;
+  }
+  $fh->close() if (!ref($file));
+  return from_json($buf, {utf8=>!utf8::is_utf8($buf), relaxed=>1, allow_nonref=>1, %opts});
+}
+
+##==============================================================================
+## Methods: I/O: PDL utilities
+
+## $bool = $CLASS_OR_OBJECT->writePdlFile($pdl, $filename)
+sub writePdlFile {
+  my ($that,$pdl,$file) = @_;
+  $that->debug("writePdlFile($file)");
+  if (defined($pdl)) {
+    local $,='';
+    $pdl->writefraw($file)
+      or $that->logconfess("writePdlFile(): writefraw() failed for '$file': $!");
+  }
+  elsif (-e $file) {
+    unlink($file)
+      or $that->logconfess("writePdlFile(): failed to unlink '$file': $!");
+  }
+  return 1;
+}
+
+## $pdl = $CLASS_OR_OBJECT->readPdlFile($filename,$class='PDL',$mmap=0)
+sub readPdlFile {
+  my ($that,$file,$class,$mmap) = @_;
+  $that->debug("readPdlFile($file)");
+  return undef if (!-e $file);
+  $class //= 'PDL';
+  local $, = '';
+  my $pdl  = $mmap ? $class->mapfraw($file) : $class->readfraw($file);
+  $that->logconfess("readPdlFile(): failed to ".($mmap ? 'mmap' : 'read')." pdl file '$file' via class '$class'") if (!defined($pdl));
+  return $pdl;
+}
+
+## $pdl = $CLASS_OR_OBJECT->mmapPdlFile($filename)
+## $pdl = $CLASS_OR_OBJECT->mmapPdlFile($filename,$class='PDL')
+sub mmapPdlFile {
+  return $_[0]->readPdlFile($_[1],$_[2],1);
+}
+
 
 ##==============================================================================
 ## Methods: ...
@@ -603,7 +785,7 @@ Bryan Jurish E<lt>moocow@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009,2010 by Bryan Jurish
+Copyright (C) 2009-2015 by Bryan Jurish
 
 This package is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.4 or,

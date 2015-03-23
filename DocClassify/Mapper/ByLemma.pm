@@ -381,6 +381,131 @@ sub sigPdlRaw {
 ## Methods: API: I/O
 ##  + see DocClassify::Object
 
+##==============================================================================
+## Methods: API: I/O: Directory
+
+
+##--------------------------------------------------------------
+## Methods: I/O: Directory: save
+
+## @keys = $obj->dirHeaderKeys()
+##  + keys for header save
+sub dirHeaderKeys {
+  my $obj = shift;
+  return ($obj->SUPER::dirHeaderKeys(), qw(lzOpts));
+}
+
+## undef = $map->savePdl($pdl, $filebase)
+sub savePdl {
+  my ($map,$pdl,$file) = @_;
+}
+
+## $bool = $map->saveDirData($dirname)
+sub saveDirData {
+  my ($map,$dir) = @_;
+
+  ##-- DEBUG: save reference map
+  $map->writeJsonFile({map {($_=>ref($map->{$_}))} grep {ref($map->{$_})} keys %$map}, "$dir/refs.json");
+
+  ##-- save: enums: TODO
+  # "denum" : "MUDL::Enum"
+  # "gcenum" : "MUDL::Enum"
+  # "lcenum" : "MUDL::Enum"
+  # "tenum" : "MUDL::Enum"
+
+  ##-- save: ccs
+  ## "dcm" : "PDL::CCS::Nd"
+  ## "tdm" : "PDL::CCS::Nd"
+  ## -"tdm0" : "PDL::CCS::Nd" : recoverable as ($tdm/$tw)->exp - $smoothf
+  foreach (qw(dcm tdm)) { #tdm0
+    $map->writePdlFile($map->{$_}, "$dir/$_.ccs");
+  }
+
+  ##-- save: pdls
+  ## "tw" : "PDL"
+  ## "xcm" : "PDL"
+  ## "xdm" : "PDL"
+  ## -"tw0" : "PDL"
+  ## -?tf0
+  ## -?tdf0
+  ## -?dc_dist
+  foreach (qw(tw xdm xdm)) { #tw0 tf0 tdf0
+    $map->writePdlFile($map->{$_}, "$dir/$_.pdl");
+  }
+
+  ##-- save: misc
+  ## "disto" : "MUDL::Cluster::Distance::Builtin"
+  ## "lz" : "DocClassify::Lemmatizer::Cab"
+  ## "lzOpts" : "HASH" -> in global header.json
+  ## "svd" : "MUDL::SVD" --> LSI.pm
+  $map->{lz}->saveDirHeader("$dir/lz.json") if ($map->{lz});
+  $map->{disto}->saveJsonFile("$dir/disto.json") if ($map->{disto});
+
+  ##-- ?save: training temps
+  # -"df" : "HASH"
+  # -"doc_wt" : "ARRAY"
+  # -"docs" : "ARRAY"
+  # -"gf" : "HASH"
+  # -"sigs" : "ARRAY"
+
+  return 1;
+}
+
+##--------------------------------------------------------------
+## Methods: I/O: Directory: load
+
+## $obj = $obj->loadDirData($dirname,%opts)
+##  + %opts:
+##     mmap => $bool,  ##-- mmap pdls (default=0)
+sub loadDirData {
+  my ($map,$dir,%opts) = @_;
+
+  ##-- load: enums: TODO
+  # "denum" : "MUDL::Enum"
+  # "gcenum" : "MUDL::Enum"
+  # "lcenum" : "MUDL::Enum"
+  # "tenum" : "MUDL::Enum"
+
+  ##-- load: ccs:
+  ## "dcm" : "PDL::CCS::Nd"
+  ## "tdm" : "PDL::CCS::Nd"
+  ## -"tdm0" : "PDL::CCS::Nd" : recoverable as ($tdm/$tw)->exp - $smoothf
+  foreach (qw(dcm tdm)) { #tdm0
+    $map->{$_} = $map->readPdlFile("$dir/$_.ccs",'PDL::CCS::Nd',$opts{mmap})
+  }
+
+  ##-- load: pdls
+  ## "tw" : "PDL"
+  ## "xcm" : "PDL"
+  ## "xdm" : "PDL"
+  ## -"tw0" : "PDL"
+  ## -?tf0
+  ## -?tdf0
+  ## -?dc_dist
+  foreach (qw(tw xdm xdm)) { #tw0 tf0 tdf0
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+  }
+
+  ##-- load: misc
+  ## "disto" : "MUDL::Cluster::Distance::Builtin"
+  ## "lz" : "DocClassify::Lemmatizer::Cab"
+  ## "lzOpts" : "HASH" -> in global header.json
+  ## "svd" : "MUDL::SVD" --> LSI.pm
+  $map->{lz} = DocClassify::Lemmatizer->loadDirHeader("$dir/lz.json")
+    or $map->logconfess("loadDir(): failed to load lemmatizer from $dir/lz.json: $!");
+  $map->{disto} = MUDL::Cluster::Distance->loadJsonFile("$dir/disto.json")
+    or $map->logconfess("loadDir(): failed to load distance object from $dir/disto.json: $!");
+
+  ##-- ?save: training temps
+  # -"df" : "HASH"
+  # -"doc_wt" : "ARRAY"
+  # -"docs" : "ARRAY"
+  # -"gf" : "HASH"
+  # -"sigs" : "ARRAY"
+
+  return $map;
+}
+
 
 ##==============================================================================
 ## Footer

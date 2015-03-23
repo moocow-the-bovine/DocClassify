@@ -385,6 +385,29 @@ sub svdApply {
 ## Methods: API: I/O
 ##  + see DocClassify::Object
 
+## $bool = $map->saveDirData($dirname)
+sub saveDirData {
+  my ($map,$dir) = @_;
+
+  $map->SUPER::saveDirData($dir);
+  $map->{svd}->saveRawFiles("$dir/svd") if ($map->{svd});
+
+  return 1;
+}
+
+## $map = $map->loadDirData($dirname,%opts)
+##  + %opts
+##    mmap => $bool,
+sub loadDirData {
+  my ($map,$dir,%opts) = @_;
+
+  $map->SUPER::loadDirData($dir);
+  $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
+    or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
+
+  return $map;
+}
+
 
 ##==============================================================================
 ## Footer

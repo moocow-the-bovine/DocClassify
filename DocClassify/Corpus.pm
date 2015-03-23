@@ -68,7 +68,9 @@ sub clear {
 BEGIN { *addDocument = *addDocs = *addDoc = \&addDocuments; }
 sub addDocuments {
   my $corpus = shift;
-  push(@{$corpus->{docs}},@_);
+  push(@{$corpus->{docs}},
+       map {UNIVERSAL::isa($_->{docs},'ARRAY') ? @{$_->{docs}} : $_} ##-- handle multi-documents with 'docs' key
+       @_);
   return $corpus;
 }
 

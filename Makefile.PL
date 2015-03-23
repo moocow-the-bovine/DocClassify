@@ -20,6 +20,8 @@ WriteMakefile
 		    'Cwd' => undef,
 		    'File::Basename' => undef,
 		    'File::Find' => undef,
+		    'File::Path' => undef, ##-- make_path, remove_tree; 2.08_01
+		    'JSON'       => undef, ##-- 2.53
 		    'Log::Log4perl' => 1.07,
 		    'PDL' => undef,
 		    'PDL::IO::Storable' => undef,

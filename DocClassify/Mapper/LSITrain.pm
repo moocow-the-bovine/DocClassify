@@ -78,8 +78,8 @@ sub compiled { return defined($_[0]{xcm}); }
 sub clearTrainingCache {
   my $map = shift;
   $map->SUPER::clearTrainingCache() or return undef;
-  delete($map->{tdm0});
-  delete($map->{tcm0});
+  #delete($map->{tdm0});   ##-- removed by DocClassify::Mapper::ByLemma::clearTrainingCache()
+  #delete($map->{tcm0});   ##-- removed by DocClassify::Mapper::ByLemma::clearTrainingCache()
   #delete($map->{tdm});    ##-- still useful for debugging
   #delete($map->{tcm});    ##-- still useful for debugging
   delete($map->{dc_dist}); ##-- good for debugging, but huge!

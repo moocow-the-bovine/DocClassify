@@ -167,7 +167,6 @@ sub mapQuery {
 ## Methods: API: I/O
 ##  + see DocClassify::Object
 
-
 ##==============================================================================
 ## Footer
 1;

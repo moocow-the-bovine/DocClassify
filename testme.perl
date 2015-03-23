@@ -3860,7 +3860,47 @@ sub test_cab_query {
   exit 0;
   print STDERR "$0: test_cab_query() done: what now?\n";
 }
-test_cab_query(@ARGV);
+#test_cab_query(@ARGV);
+
+##--------------------------------------------------------------
+## test file2dir
+
+##-- trace object inheritance
+# DocClassify::Mapper::LSI
+# DocClassify::Mapper::ByLemma
+# DocClassify::Mapper
+# DocClassify::Object
+# DocClassify::Logger
+
+sub test_file2dir {
+  my $op = shift || 'file2dir';
+  $op    = ($op =~ /^-*d/ ? 'dir2file' : 'file2dir');
+  my ($mapfile,$mapdir) = ($op eq 'file2dir' ? @_[0,1] : @_[1,0]);
+  my $map;
+
+  if ($op eq 'file2dir') {
+    $mapfile ||= 'dta-map.bin';
+    $mapdir ||= 'map.d';
+    $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1)
+      or die("$0: failed to load file $mapfile: $!");
+    $map->info("loaded file $mapfile");
+
+    $map->saveDir($mapdir)
+      or die("$0: failed to save directory $mapdir: $!");
+    $Map->info("saved directory $mapdir");
+  }
+  else {
+    $map = DocClassify::Mapper->loadDir($mapdir, verboseIO=>1, mmap=>1)
+      or die("$0: failed to load directory $mapdir: $!");
+    $map->info("loaded directory $mapdir");
+    $map->saveBinFile($mapfile)
+      or die("$0: failed to save file $mapfile: $!");
+    $map->info("saved file $mapfile");
+  }
+
+  exit 0;
+}
+test_file2dir(@ARGV);
 
 
 ##======================================================================
