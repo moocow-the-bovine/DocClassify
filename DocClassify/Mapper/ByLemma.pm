@@ -407,11 +407,21 @@ sub saveDirData {
   ##-- DEBUG: save reference map
   $map->writeJsonFile({map {($_=>ref($map->{$_}))} grep {ref($map->{$_})} keys %$map}, "$dir/refs.json");
 
-  ##-- save: enums: TODO
+  ##-- save: enums
   # "denum" : "MUDL::Enum"
   # "gcenum" : "MUDL::Enum"
   # "lcenum" : "MUDL::Enum"
   # "tenum" : "MUDL::Enum"
+  foreach my $ekey (qw(denum gcenum lcenum tenum)) {
+    if (!defined($map->{$ekey})) {
+      unlink(map {"$dir/$ekey.$_"} qw(hdr es eix esx))
+	or $map->logconfess("failed to unlink enum file(s) $dir/$ekey.*: $!");
+    } else {
+      $map->debug("saveEnum $dir/$ekey");
+      $map->{$ekey}->saveRawFiles("$dir/$ekey")
+	or $map->logconfess("failed to save enum file(s) $dir/$ekey.*: $!")
+      }
+  }
 
   ##-- save: ccs
   ## "dcm" : "PDL::CCS::Nd"
@@ -423,13 +433,11 @@ sub saveDirData {
 
   ##-- save: pdls
   ## "tw" : "PDL"
-  ## "xcm" : "PDL"
-  ## "xdm" : "PDL"
   ## -"tw0" : "PDL"
   ## -?tf0
   ## -?tdf0
   ## -?dc_dist
-  foreach (qw(tw xdm xdm)) { #tw0 tf0 tdf0
+  foreach (qw(tw)) { #tw0 tf0 tdf0
     $map->writePdlFile($map->{$_}, "$dir/$_.pdl");
   }
 
@@ -460,29 +468,35 @@ sub saveDirData {
 sub loadDirData {
   my ($map,$dir,%opts) = @_;
 
-  ##-- load: enums: TODO
+  ##-- load: enums
   # "denum" : "MUDL::Enum"
   # "gcenum" : "MUDL::Enum"
   # "lcenum" : "MUDL::Enum"
   # "tenum" : "MUDL::Enum"
+  foreach my $ekey (qw(dcenum gcenum lcenum tenum)) {
+    if (-e "$dir/$ekey.hdr") {
+      $map->{$ekey} = MUDL::Enum->loadRawFiles("$dir/$ekey", mmap=>$opts{mmap})
+	or $map->logconfess("failed to load enum file(s) $dir/$ekey.*: $!");
+    } else {
+      delete $map->{$ekey};
+    }
+  }
 
   ##-- load: ccs:
   ## "dcm" : "PDL::CCS::Nd"
   ## "tdm" : "PDL::CCS::Nd"
   ## -"tdm0" : "PDL::CCS::Nd" : recoverable as ($tdm/$tw)->exp - $smoothf
   foreach (qw(dcm tdm)) { #tdm0
-    $map->{$_} = $map->readPdlFile("$dir/$_.ccs",'PDL::CCS::Nd',$opts{mmap})
+    $map->{$_} = $map->readPdlFile("$dir/$_.ccs",'PDL::CCS::Nd',$opts{mmap});
   }
 
   ##-- load: pdls
   ## "tw" : "PDL"
-  ## "xcm" : "PDL"
-  ## "xdm" : "PDL"
   ## -"tw0" : "PDL"
   ## -?tf0
   ## -?tdf0
   ## -?dc_dist
-  foreach (qw(tw xdm xdm)) { #tw0 tf0 tdf0
+  foreach (qw(tw)) { #tw0 tf0 tdf0
     $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
   }
 

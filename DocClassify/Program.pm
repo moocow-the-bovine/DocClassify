@@ -165,6 +165,7 @@ sub dcOptions {
    'output-mode|om=s' => \$opts{save}{mode},
    'format-xml|format|fx|f!' => sub { $opts{save}{format}=$_[1] ? 1 : 0; },
    'verbose-io|verboseio|vio!' => sub { $opts{load}{verboseIO}=$opts{save}{verboseIO}=$_[1]; },
+   'mmap!' => sub { $opts{load}{mmap}=$_[1]; },
 
    ##-- FileChurner options
    'recursive|recurse|R' => \$opts{fcNew}{recursive},

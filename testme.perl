@@ -3879,7 +3879,7 @@ sub test_file2dir {
   my $map;
 
   if ($op eq 'file2dir') {
-    $mapfile ||= 'dta-map.bin';
+    $mapfile ||= 'map.bin';
     $mapdir ||= 'map.d';
     $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1)
       or die("$0: failed to load file $mapfile: $!");
@@ -3887,12 +3887,15 @@ sub test_file2dir {
 
     $map->saveDir($mapdir)
       or die("$0: failed to save directory $mapdir: $!");
-    $Map->info("saved directory $mapdir");
+    $map->info("saved directory $mapdir");
   }
   else {
-    $map = DocClassify::Mapper->loadDir($mapdir, verboseIO=>1, mmap=>1)
+    $mapdir ||= 'map.d';
+    $mapfile ||= 'map.out';
+    $map = DocClassify::Mapper->loadDir($mapdir, verboseIO=>1, mmap=>0)
       or die("$0: failed to load directory $mapdir: $!");
     $map->info("loaded directory $mapdir");
+
     $map->saveBinFile($mapfile)
       or die("$0: failed to save file $mapfile: $!");
     $map->info("saved file $mapfile");

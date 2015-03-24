@@ -389,7 +389,17 @@ sub svdApply {
 sub saveDirData {
   my ($map,$dir) = @_;
 
+  ##-- save: inherited
   $map->SUPER::saveDirData($dir);
+
+  ##-- save: pdls
+  ## "xcm" : "PDL"
+  ## "xdm" : "PDL"
+  foreach (qw(xcm xdm)) { #tw0 tf0 tdf0
+    $map->writePdlFile($map->{$_}, "$dir/$_.pdl");
+  }
+
+  ##-- save: svd
   $map->{svd}->saveRawFiles("$dir/svd") if ($map->{svd});
 
   return 1;
@@ -401,7 +411,17 @@ sub saveDirData {
 sub loadDirData {
   my ($map,$dir,%opts) = @_;
 
+  ##-- load: inherited
   $map->SUPER::loadDirData($dir);
+
+  ##-- load: pdls
+  ## "xcm" : "PDL"
+  ## "xdm" : "PDL"
+  foreach (qw(xcm xdm)) {
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+  }
+
+  ##-- load: svd
   $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
     or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
 
