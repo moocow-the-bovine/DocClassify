@@ -555,9 +555,10 @@ sub writePdlFile {
     $pdl->writefraw($file)
       or $that->logconfess("writePdlFile(): writefraw() failed for '$file': $!");
   }
-  elsif (-e $file) {
-    unlink($file)
-      or $that->logconfess("writePdlFile(): failed to unlink '$file': $!");
+  else {
+    foreach (grep {-e "file$_"} ('','.hdr','.ix','.ix.hdr','.nz','.nz.hdr')) {
+      unlink("file$_") or $that->logconfess(__PACKAGE__, "::writePdlFile(): failed to unlink '$file$_': $!");
+    }
   }
   return 1;
 }
@@ -566,7 +567,7 @@ sub writePdlFile {
 sub readPdlFile {
   my ($that,$file,$class,$mmap) = @_;
   $that->debug("readPdlFile($file)");
-  return undef if (!-e $file);
+  return undef if (!-e "$file.hdr");
   $class //= 'PDL';
   local $, = '';
   my $pdl  = $mmap ? $class->mapfraw($file) : $class->readfraw($file);

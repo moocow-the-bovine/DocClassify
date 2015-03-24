@@ -70,6 +70,8 @@ sub banner2 {
 ## MAIN
 ##------------------------------------------------------------------------------
 
+my ($tmp); ##-- avoid annoying 'Can't return a temporary from lvalue subroutine' messages
+
 ##-- vars
 our $logger = 'DocClassify::Program';
 our $mapfile = shift(@ARGV);
@@ -86,7 +88,7 @@ $outfh->binmode(':encoding(utf8)');
 ##-- common vars
 my ($tenum,$denum,$lcenum,$gcenum) = @$map{qw(tenum denum lcenum gcenum)};
 my $gcids  = pdl(long, [@{$gcenum->{sym2id}}{@{$lcenum->{id2sym}}}]);             ##-- [$lci] -> $gci
-my $lcids  = zeroes(long,$gcids->max+1); $lcids->index($gcids) .= $gcids->xvals;  ##-- [$gci] -> $lci
+my $lcids  = zeroes(long,$gcids->max+1); ($tmp=$lcids->index($gcids)) .= $gcids->xvals;  ##-- [$gci] -> $lci
 my $NCg    = $gcids->max+1;
 
 ##--------------------------------------------------------------
