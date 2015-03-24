@@ -20,6 +20,8 @@ use PDL;
 use Storable;
 use PDL::IO::Storable;
 use PDL::IO::FastRaw;
+use PDL::IO::Misc;
+use PDL::Types;
 
 ##-- storable v2.18, v2.21 can't handle qr//-style Regexp regexes
 #use Regexp::Copy;     ##-- occasional segfaults with Regexp::Copy-0.06, Storable-2.21, perl-5.10.0 on SuSE x86-64
@@ -86,6 +88,7 @@ BEGIN {
      {name=>'csv',re=>qr/\.(?:csv)$/i,method=>'Csv'},
      {name=>'xml',re=>qr/\.(?:xml)$/i,method=>'Xml'},
      {name=>'perl',re=>qr/\.(?:perl|pl|plm)$/i,method=>'Perl'},
+     {name=>'textdir',re=>qr/\.txt\.d$/, method=>'TextDir'},
      {name=>'dir',re=>qr/\.d$/, method=>'Dir'},
     );
 }
@@ -101,6 +104,7 @@ BEGIN {
      'txt'=>'text',
      'native'=>'text',
      'directory'=>'dir',
+     (map {($_=>'textdir')} qw(import export txtdir)),
      'DEFAULT' => 'bin',
     );
   foreach (keys(%IO_ALIAS)) {
@@ -507,6 +511,62 @@ sub loadDirData {
   $obj->logconfess("loadDirData(): not implemented");
 }
 
+##==============================================================
+## Methods: I/O: textdir
+
+##--------------------------------------------------------------
+## Methods: I/O: textdir: save
+
+## $bool = $obj->saveTextDir($dirname)
+##  + abstract method loads header and calls saveTextDirData()
+sub saveTextDir {
+  my ($obj,$dir) = @_;
+  $dir =~ s{/$}{};
+  $obj->info("saveTextDir($dir)");
+  -d $dir || File::Path::make_path($dir)
+      or $obj->logconfess("saveTextDir(): failed to create directory $dir/: $!");
+
+  ##-- save: header
+  $obj->saveDirHeader($dir)
+    or $obj->logconfess("saveTextDir(): failed to save header to $dir/: $!");
+
+  ##-- save: data
+  return $obj->saveTextDirData($dir);
+}
+
+## $bool = $obj->saveTextDirData($dirname)
+##  + dummy method
+sub saveTextDirData {
+  my ($obj,$dir) = @_;
+  $obj->logconfess("saveTextDirData(): not implemented");
+}
+
+##--------------------------------------------------------------
+## Methods: I/O: textdir: load
+
+## $bool = $CLASS_OR_OBJECT->loadTextDir($dirname,%opts)
+##  + abstract method loads header and calls loadTextDirData()
+sub loadTextDir {
+  my $that = shift;
+  my $dir  = shift;
+  $dir =~ s{/$}{};
+  $that->logconfess("loadTextDir(): no such directory $dir") if (!-d $dir);
+
+  ##-- load: header
+  my $obj = $that->loadDirHeader($dir)
+    or $that->logconfess("loadTextDir(): failed to load header from $dir/: $!");
+
+  ##-- load: data
+  return $obj->loadTextDirData($dir,@_);
+}
+
+## $obj = $obj->loadTextDirData($dirname,%opts)
+##  + dummy method
+sub loadTextDirData {
+  my ($obj,$dir) = @_;
+  $obj->logconfess("loadTextDirData(): not implemented");
+}
+
 ##==============================================================================
 ## Methods: I/O: JSON utilities
 
@@ -544,7 +604,7 @@ sub readJsonFile {
 }
 
 ##==============================================================================
-## Methods: I/O: PDL utilities
+## Methods: I/O: PDL utilities: binary
 
 ## $bool = $CLASS_OR_OBJECT->writePdlFile($pdl, $filename)
 sub writePdlFile {
@@ -581,6 +641,71 @@ sub mmapPdlFile {
   return $_[0]->readPdlFile($_[1],$_[2],1);
 }
 
+##==============================================================================
+## Methods: I/O: PDL utilities: text
+
+## $bool = $CLASS_OR_OBJECT->writePdlTextFile($pdl, $filename)
+sub writePdlTextFile {
+  my ($that,$pdl,$file) = @_;
+  $that->debug("writePdlTextFile($file)");
+  if (defined($pdl)) {
+    local $,='';
+    open(my $fh, ">$file")
+      or $that->logconfess("writePdlTextFile(): open failed for '$file': $!");
+    binmode($fh,':raw');
+    $fh->print(join(' ', ref($pdl), $pdl->type->ioname, $pdl->dims), "\n");
+    if (UNIVERSAL::isa($pdl,'PDL::CCS::Nd')) {
+      ##-- write: ccs
+      $fh->print($pdl->flags,"\n");
+      $fh->close();
+      $pdl->make_physically_indexed;
+      return ($that->writePdlTextFile($pdl->_whichND, "$file.ix")
+	      && $that->writePdlTextFile($pdl->_vals, "$file.nz"));
+    }
+    ##-- write: pdl
+    $pdl->flat->wcols($fh);
+    $fh->close()
+      or $that->logconfess("writePdlTextFile(): failed to close '$file': $!")
+  }
+  else {
+    foreach (grep {-e "file$_"} ('','.ix','.nz')) {
+      unlink("file$_") or $that->logconfess(__PACKAGE__, "::writePdlFile(): failed to unlink '$file$_': $!");
+    }
+  }
+  return 1;
+}
+
+## $pdl = $CLASS_OR_OBJECT->readTextPdlFile($filename,$class='PDL')
+sub readPdlTextFile {
+  my ($that,$file,$class) = @_;
+  #$that->debug("readPdlFile($file)");
+  return undef if (!-e "$file.hdr");
+  local $, = '';
+  open(my $fh, "<$file")
+    or $that->logconfess("readPdlTextFile(): open failed for '$file': $!");
+  binmode($fh,':raw');
+  my $hdr  = <$fh>;
+  chomp($hdr);
+  my ($hclass,$type,@dims) = split(' ',$hdr);
+  $class   //= $hclass // 'PDL';
+  if ($class eq 'PDL::CCS::Nd') {
+    ##-- read: ccs
+    my $flags = <$fh>;
+    $fh->close();
+    chomp($flags);
+    my $ix = $that->readPdlTextFile("$file.ix");
+    my $nz = $that->readPdlTextFile("$file.nz");
+    my $ccs = PDL::CCS::Nd->newFromWhich($ix,$nz,pdims=>\@dims,flags=>$flags,sorted=>1,steal=>1);
+    return $ccs;
+  }
+  else {
+    ##-- read: dense pdl
+    my $pdl = rcols($fh, {TYPES=>[PDL->can($type)->()], CHUNKSIZE=>8192});
+    $fh->close();
+    $pdl->reshape(@dims);
+    return $pdl;
+  }
+}
 
 ##==============================================================================
 ## Methods: ...

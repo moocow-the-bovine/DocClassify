@@ -384,7 +384,6 @@ sub sigPdlRaw {
 ##==============================================================================
 ## Methods: API: I/O: Directory
 
-
 ##--------------------------------------------------------------
 ## Methods: I/O: Directory: save
 
@@ -395,17 +394,12 @@ sub dirHeaderKeys {
   return ($obj->SUPER::dirHeaderKeys(), qw(lzOpts));
 }
 
-## undef = $map->savePdl($pdl, $filebase)
-sub savePdl {
-  my ($map,$pdl,$file) = @_;
-}
-
 ## $bool = $map->saveDirData($dirname)
 sub saveDirData {
   my ($map,$dir) = @_;
 
   ##-- DEBUG: save reference map
-  $map->writeJsonFile({map {($_=>ref($map->{$_}))} grep {ref($map->{$_})} keys %$map}, "$dir/refs.json");
+  #$map->writeJsonFile({map {($_=>ref($map->{$_}))} grep {ref($map->{$_})} keys %$map}, "$dir/refs.json");
 
   ##-- save: enums
   # "denum" : "MUDL::Enum"
@@ -475,7 +469,107 @@ sub loadDirData {
   # "gcenum" : "MUDL::Enum"
   # "lcenum" : "MUDL::Enum"
   # "tenum" : "MUDL::Enum"
-  foreach my $ekey (qw(dcenum gcenum lcenum tenum)) {
+  foreach my $ekey (qw(denum gcenum lcenum tenum)) {
+    if (-e "$dir/$ekey.hdr") {
+      $map->{$ekey} = MUDL::Enum->loadRawFiles("$dir/$ekey", mmap=>$opts{mmap})
+	or $map->logconfess("failed to load enum file(s) $dir/$ekey.*: $!");
+    } else {
+      delete $map->{$ekey};
+    }
+  }
+
+  ##-- load: ccs
+  ## "dcm" : "PDL::CCS::Nd"
+  ## "tdm" : "PDL::CCS::Nd"
+  ## -"tdm0" : "PDL::CCS::Nd" : recoverable as ($tdm/$tw)->exp - $smoothf
+  foreach (qw(dcm tdm)) { #tdm0
+    $map->{$_} = $map->readPdlFile("$dir/$_.ccs",'PDL::CCS::Nd',$opts{mmap});
+  }
+
+  ##-- load: pdls
+  ## "tw" : "PDL"
+  ## -"tw0" : "PDL"
+  ## -?tf0
+  ## -?tdf0
+  ## -?dc_dist
+  foreach (qw(tw)) { #tw0 tf0 tdf0
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+  }
+
+  ##-- load: misc
+  ## "disto" : "MUDL::Cluster::Distance::Builtin"
+  ## "lz" : "DocClassify::Lemmatizer::Cab"
+  ## "lzOpts" : "HASH" -> in global header.json
+  ## "svd" : "MUDL::SVD" --> LSI.pm
+  $map->{lz} = DocClassify::Lemmatizer->loadDirHeader("$dir/lz.json")
+    or $map->logconfess("loadDir(): failed to load lemmatizer from $dir/lz.json: $!");
+  $map->{disto} = MUDL::Cluster::Distance->loadJsonFile("$dir/disto.json")
+    or $map->logconfess("loadDir(): failed to load distance object from $dir/disto.json: $!");
+
+  ##-- ?save: training temps
+  # -"df" : "HASH"
+  # -"doc_wt" : "ARRAY"
+  # -"docs" : "ARRAY"
+  # -"gf" : "HASH"
+  # -"sigs" : "ARRAY"
+
+  return $map;
+}
+
+##==============================================================================
+## Methods: API: I/O: textdir
+
+##--------------------------------------------------------------
+## Methods: I/O: textdir: save
+
+## $bool = $map->saveTextDirData($dirname)
+sub saveTextDirData {
+  my ($map,$dir) = @_;
+
+  ##-- save: enums
+  foreach my $ekey (qw(denum gcenum lcenum tenum)) {
+    if (!defined($map->{$ekey})) {
+      !-e "$dir/$map->{$ekey}.txt"
+	or unlink("$dir/$map->{$ekey}.txt")
+	  or $map->logconfess("failed to unlink enum file $_: $!");
+    } else {
+      $map->{$ekey}->saveNativeFile("$dir/$ekey.txt", invert=>1,utf8=>1)
+	or $map->logconfess("saveTextDirData(): failed to save enum file(s) $dir/$ekey.txt: $!")
+      }
+  }
+
+  ##-- save: ccs
+  foreach (qw(dcm tdm)) { #tdm0
+    $map->writePdlTextFile($map->{$_}, "$dir/$_.txt");
+  }
+
+  ##-- save: pdls
+  foreach (qw(tw)) { #tw0 tf0 tdf0
+    $map->writePdlTextFile($map->{$_}, "$dir/$_.txt");
+  }
+
+  ##-- save: misc
+  $map->{lz}->saveDirHeader("$dir/lz.json") if ($map->{lz});
+  $map->{disto}->saveJsonFile("$dir/disto.json") if ($map->{disto});
+
+  return 1;
+}
+
+##--------------------------------------------------------------
+## Methods: I/O: Directory: load
+
+## $obj = $obj->loadTextDirData($dirname,%opts)
+##  + %opts: none
+sub loadTextDirData {
+  my ($map,$dir,%opts) = @_;
+  $map->confess("TODO");
+
+  ##-- load: enums
+  # "denum" : "MUDL::Enum"
+  # "gcenum" : "MUDL::Enum"
+  # "lcenum" : "MUDL::Enum"
+  # "tenum" : "MUDL::Enum"
+  foreach my $ekey (qw(denum gcenum lcenum tenum)) {
     if (-e "$dir/$ekey.hdr") {
       $map->{$ekey} = MUDL::Enum->loadRawFiles("$dir/$ekey", mmap=>$opts{mmap})
 	or $map->logconfess("failed to load enum file(s) $dir/$ekey.*: $!");

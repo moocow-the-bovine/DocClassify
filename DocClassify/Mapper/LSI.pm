@@ -417,12 +417,15 @@ sub xtm_sigma {
 ## Methods: API: I/O
 ##  + see DocClassify::Object
 
+##==============================================================================
+## Methods: API: I/O: Directory
+
 ## $bool = $map->saveDirData($dirname)
 sub saveDirData {
-  my ($map,$dir) = @_;
+  my ($map,$dir,%opts) = @_;
 
   ##-- save: inherited
-  $map->SUPER::saveDirData($dir);
+  $map->SUPER::saveDirData($dir,%opts);
 
   ##-- save: pdls
   ## "xcm" : "PDL"
@@ -470,6 +473,62 @@ sub loadDirData {
   return $map;
 }
 
+##==============================================================================
+## Methods: API: I/O: textdir
+
+## $bool = $map->saveTextDirData($dirname)
+sub saveTextDirData {
+  my ($map,$dir,%opts) = @_;
+
+  ##-- save: inherited
+  $map->SUPER::saveTextDirData($dir,%opts);
+
+  ##-- save: pdls
+  foreach (qw(xcm xdm)) { #tw0 tf0 tdf0
+    $map->writePdlTextFile($map->{$_}, "$dir/$_.txt");
+  }
+
+  ##-- save: caches
+  $map->writePdlTextFile($map->xcm_sigma, "$dir/xcm_sigma.txt");
+  $map->writePdlTextFile($map->xdm_sigma, "$dir/xdm_sigma.txt");
+  $map->writePdlTextFile($map->xtm_sigma, "$dir/xtm_sigma.txt");
+
+  ##-- save: svd
+  if ($map->{svd}) {
+    $map->{svd}->saveJsonFile("$dir/svd.json");
+    foreach (qw(u sigma v)) {
+      $map->writePdlTextFile($map->{svd}{$_}, "$dir/svd.$_.txt");
+    }
+  }
+
+  return 1;
+}
+
+## $map = $map->loadTextDirData($dirname,%opts)
+##  + %opts: none
+sub loadTextDirData {
+  my ($map,$dir,%opts) = @_;
+  $map->logconfess("TODO");
+
+  ##-- load: inherited
+  $map->SUPER::loadTextDirData($dir,%opts);
+
+  ##-- load: pdls
+  foreach (qw(xcm xdm)) {
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+  }
+
+  ##-- load: caches
+  foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+  }
+
+  ##-- load: svd
+  $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
+    or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
+
+  return $map;
+}
 
 ##==============================================================================
 ## Footer
