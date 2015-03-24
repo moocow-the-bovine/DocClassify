@@ -100,6 +100,10 @@ our $verbose = 3;
 ##  tw  => $tw_pdl,                  ##-- term-weight pdl: dense:       ($NT)    : [$ti]     -> $wRaw + $wCooked*w($ti)
 ##  tdm => $tdm_pdl,                 ##-- term-doc matrix: PDL::CCS::Nd ($NT,$ND): [$ti,$di] -> log(f($ti,$di)+$f0)*w($ti)
 ##  tcm => $tcm_pdl,                 ##-- term-cat matrix: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] -> log(f($ti,$ci)+$f0)*w($ti)
+##  ##
+##  xcm_sigma => $xcm_sigma,         ##-- cached stddev $xcm:      dense ($NC) : [$ci] -> stddev($xcm->[$ci])
+##  xdm_sigma => $xdm_sigma,         ##-- cached stddev $xdm:      dense ($ND) : [$di] -> stddev($xdm->[$di])
+##  xtm_sigma => $xtm_sigma,         ##-- cached stddev $svd->{v}: dense ($NT) : [$ti] -> stddev($xtm->[$ti])
 sub new {
   my $that = shift;
   my $obj =  $that->SUPER::new(
@@ -274,11 +278,11 @@ sub mapQuery {
 
     if ($mapto =~ /^[dp]/i) {
       ##-- mapto=docs~pages: compute distance to each *document*
-      $qx_dist = $map->qdistance($q_xdm, $map->{xdm});
+      $qx_dist = $map->qdistance($q_xdm, $map->{xdm}, sigma2=>$map->xdm_sigma);
       $qx_enum = $map->{denum};
     } else {
       ##-- mapto=cats~books~volumne: compute distance to each *centroid*
-      $qx_dist = $map->qdistance($q_xdm, $map->{xcm});
+      $qx_dist = $map->qdistance($q_xdm, $map->{xcm}, sigma2=>$map->xcm_sigma);
       $qx_enum = $map->{lcenum};
     }
   }
@@ -297,8 +301,9 @@ sub mapQuery {
     $xqm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
     $xqm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
 
-    ##-- distance guts
-    $qx_dist = $map->qdistance($xqm,$xtm);
+    ##-- distance guts :: EXPENSIVE (esp. sigma computation)
+    #$map->debug("mapQuery(): distance guts");
+    $qx_dist = $map->qdistance($xqm, $xtm, sigma2=>$map->xtm_sigma);
     $qx_enum = $map->{tenum};
     $q_sig->{drange_} //= [$qx_dist->minmax];
 
@@ -381,6 +386,33 @@ sub svdApply {
 ##  + $fpdl is dense or CCS::Nd pdl($NT): [$tid,1]=>f($tid,$sig)
 ##  + inherited from Mapper::ByLemma
 
+## $key_sigma = $map->pdl_sigma($key)
+##  + wrapper for stddev computation or cache access
+sub pdl_sigma {
+  my ($map,$key,$pdl) = @_;
+  return $map->{"${key}_sigma"} if (defined($map->{"${key}_sigma"}));
+  (my $sigma = ($pdl//$map->{$key})->pow(2)->average)->inplace->sqrt;
+  return $map->{"${key}_sigma"} = $sigma;
+}
+
+## $xcm_sigma = $map->xcm_sigma()
+##  + compute or get cached stddev for $map->{xcm}
+sub xcm_sigma {
+  return $_[0]->pdl_sigma('xcm');
+}
+
+## $xdm_sigma = $map->xdm_sigma()
+##  + compute or get cached stddev for $map->{xdm}
+sub xdm_sigma {
+  return $_[0]->pdl_sigma('xdm');
+}
+
+## $xtm_sigma = $map->xtm_sigma()
+##  + compute or get cached stddev for $map->{xtm} --> $map->{svd}{v}
+sub xtm_sigma {
+  return $_[0]->pdl_sigma('xtm',$_[0]{svd}{v});
+}
+
 ##==============================================================================
 ## Methods: API: I/O
 ##  + see DocClassify::Object
@@ -399,6 +431,11 @@ sub saveDirData {
     $map->writePdlFile($map->{$_}, "$dir/$_.pdl");
   }
 
+  ##-- save: caches
+  $map->writePdlFile($map->xcm_sigma, "$dir/xcm_sigma.pdl");
+  $map->writePdlFile($map->xdm_sigma, "$dir/xdm_sigma.pdl");
+  $map->writePdlFile($map->xtm_sigma, "$dir/xtm_sigma.pdl");
+
   ##-- save: svd
   $map->{svd}->saveRawFiles("$dir/svd") if ($map->{svd});
 
@@ -412,12 +449,17 @@ sub loadDirData {
   my ($map,$dir,%opts) = @_;
 
   ##-- load: inherited
-  $map->SUPER::loadDirData($dir);
+  $map->SUPER::loadDirData($dir,%opts);
 
   ##-- load: pdls
   ## "xcm" : "PDL"
   ## "xdm" : "PDL"
   foreach (qw(xcm xdm)) {
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+  }
+
+  ##-- load: caches
+  foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
     $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
   }
 

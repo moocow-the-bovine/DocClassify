@@ -401,14 +401,17 @@ sub _gausswidth {
   return wantarray ? ($mu-$w,$mu+$w) : $w;
 }
 
-## $dist = _vcos($data, $cdata)
+## $dist = _vcos($data, $cdata, %opts)
 ##  + args:
 ##       data    # pdl($d,$nR)  : $d=N_features, $nR=N_rows
 ##       cdata   # pdl($d,$nC)  : $d=N_features, $nC=N_centers
-##    [o]dist    # pdl($nC,$nR) : output distances
+##    #[o]dist    # pdl($nC,$nR) : output distances
 ##  + local implementation with no mask, weight, etc: ca 2x faster than MUDL::Cluster::Distance::Builtin
+##  + %opts:
+##     sigma1  => $sigma1,   # stddev for $data  ($nR)
+##     sigma2  => $sigma2,   # stddev for $cdata ($nC)
 sub _vcos {
-  my ($dr1,$dr2,$norm) = @_;
+  my ($dr1,$dr2,%opts) = @_;
 
   ##-- dist(x,y) = 1 - 1/d * (\sum_{i=1}^d (x[i]-mean(x))/stddev(x) * (y[i]-mean(y))/stddev(y))
   ##             = 1 - 1/d * 1/stddev(x) * 1/stddev(y) * (\sum_{i=1}^d (x[i]-mean(x)) * (y[i]-mean(y)))
@@ -416,9 +419,10 @@ sub _vcos {
   ## + where:
   ##     mean(x)   := 0
   ##     stddev(x) := sqrt( E(X^2) )
-  my $d      = $dr1->dim(0);
-  my $sigma1 = $dr1->pow(2)->average; $sigma1->inplace->sqrt;
-  my $sigma2 = $dr2->pow(2)->average; $sigma2->inplace->sqrt;
+  my $d = $dr1->dim(0);
+  my ($sigma1,$sigma2) = @opts{qw(sigma1 sigma2)};
+  if (!defined($sigma1)) { $sigma1 = $dr1->pow(2)->average; $sigma1->inplace->sqrt; } ##-- expensive!
+  if (!defined($sigma2)) { $sigma2 = $dr2->pow(2)->average; $sigma2->inplace->sqrt; } ##-- epensive!
 
   my $dist = ($dr1*$dr2)->sumover;
   ($dist

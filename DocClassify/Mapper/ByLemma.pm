@@ -323,13 +323,13 @@ sub kBestItems {
 ##  + like $map->{disto}->clusterDistanceMatrix(data=>$data, cdata=>$cdata, %opts)
 ##    but uses DocClassify::Utils::_vcos() if appropriate (faster)
 sub qdistance {
-  my $map = shift;
-  return _vcos($_[0],$_[1])
-    if (@_==2
+  my ($map,$data,$cdata,%opts) = @_;
+  return _vcos($data,$cdata,%opts)
+    if (!defined($opts{mask}) && !defined($opts{weight})
 	&& ((UNIVERSAL::isa($map->{disto},'MUDL::Cluster::Distance::Builtin') && ($map->{disto}{distFlag}//'') eq 'u')
 	    || UNIVERSAL::isa($map->{disto},'MUDL::Cluster::Distance::Cosine')
 	   ));
-  return $map->{disto}->clusterDistanceMatrix(data=>$_[0], cdata=>$_[1], @_[2..$#_]);
+  return $map->{disto}->clusterDistanceMatrix(data=>$data, cdata=>$cdata, %opts);
 }
 
 ## $lz = $map->lemmatizer()
@@ -414,10 +414,12 @@ sub saveDirData {
   # "tenum" : "MUDL::Enum"
   foreach my $ekey (qw(denum gcenum lcenum tenum)) {
     if (!defined($map->{$ekey})) {
-      unlink(map {"$dir/$ekey.$_"} qw(hdr es eix esx))
-	or $map->logconfess("failed to unlink enum file(s) $dir/$ekey.*: $!");
+      foreach (grep {-e $_} map {"$dir/$ekey.$_"} qw(hdr es eix esx)) {
+	unlink($_)
+	  or $map->logconfess("failed to unlink enum file $_: $!");
+      }
     } else {
-      $map->debug("saveEnum $dir/$ekey");
+      #$map->debug("saveEnum $dir/$ekey");
       $map->{$ekey}->saveRawFiles("$dir/$ekey")
 	or $map->logconfess("failed to save enum file(s) $dir/$ekey.*: $!")
       }

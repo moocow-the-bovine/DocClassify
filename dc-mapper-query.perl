@@ -195,6 +195,7 @@ sub xlate_dta {
   return if ($qopts{mapto} !~ /^[dpcbv]/i);
   (my $lab = basename($_->{label})) =~ s/\.\D.*$//;
   $lab =~ s/\.(\d+)$/?p=$1/;
+  utf8::decode($lab) if (!utf8::is_utf8($lab));
   $_->{label} = $lab;
 }
 
