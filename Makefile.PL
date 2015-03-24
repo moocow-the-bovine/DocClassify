@@ -16,6 +16,7 @@ WriteMakefile
 		    'PDL::CCS' => undef,
 		    #'PDL::Ngrams' => undef,
 		    'PDL::VectorValued' => undef,
+		    #'DiaColloDB' => undef, ##-- '0.05.001' - for MUDL::Enum directory I/O
 		    ##
 		    'Cwd' => undef,
 		    'File::Basename' => undef,
