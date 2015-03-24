@@ -549,7 +549,7 @@ sub readJsonFile {
 ## $bool = $CLASS_OR_OBJECT->writePdlFile($pdl, $filename)
 sub writePdlFile {
   my ($that,$pdl,$file) = @_;
-  $that->debug("writePdlFile($file)");
+  #$that->debug("writePdlFile($file)");
   if (defined($pdl)) {
     local $,='';
     $pdl->writefraw($file)
@@ -566,7 +566,7 @@ sub writePdlFile {
 ## $pdl = $CLASS_OR_OBJECT->readPdlFile($filename,$class='PDL',$mmap=0)
 sub readPdlFile {
   my ($that,$file,$class,$mmap) = @_;
-  $that->debug("readPdlFile($file)");
+  #$that->debug("readPdlFile($file)");
   return undef if (!-e "$file.hdr");
   $class //= 'PDL';
   local $, = '';

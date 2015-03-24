@@ -17,6 +17,7 @@ use Pod::Usage;
 use Benchmark qw(timethese :hireswallclock);
 
 use strict;
+use open qw(:std :utf8);
 BEGIN { select(STDERR); $|=1; select(STDOUT); }
 
 ##------------------------------------------------------------------------------
@@ -229,6 +230,7 @@ our $map = DocClassify::Mapper->loadFile($mapfile, optsLoad('map') )
   or die("$0: Mapper->load() failed for '$mapfile': $!");
 $map->{verbose} = $verbose;
 @$map{keys %$mapUser} = values %$mapUser; ##-- user overrides
+$map->info("loaded $mapfile") if ($verbose);
 
 ##-- defaults
 $qopts{mapto} //= $map->{lcenum}->size() > 1 ? 'cat' : 'doc';
