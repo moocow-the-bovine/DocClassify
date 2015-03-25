@@ -21,6 +21,7 @@ use Storable;
 use PDL::IO::Storable;
 use PDL::IO::FastRaw;
 use PDL::IO::Misc;
+use PDL::IO::FITS;
 use PDL::Types;
 
 ##-- storable v2.18, v2.21 can't handle qr//-style Regexp regexes
@@ -610,7 +611,8 @@ sub readJsonFile {
 ## Methods: I/O: PDL utilities: binary
 
 ## $bool = $CLASS_OR_OBJECT->writePdlFile($pdl, $filename, %opts)
-##  + %opts: verboseIO
+##  + %opts:
+##     verboseIO => $bool,
 sub writePdlFile {
   my ($that,$pdl,$file,%opts) = @_;
   if (defined($pdl)) {
@@ -621,7 +623,7 @@ sub writePdlFile {
   }
   else {
     $that->trace("writePdlFile($file): unlink") if ($opts{verboseIO});
-    foreach (grep {-e "file$_"} ('','.hdr','.ix','.ix.hdr','.nz','.nz.hdr')) {
+    foreach (grep {-e "file$_"} ('','.hdr','.ix','.ix.hdr','.nz','.nz.hdr','.fits')) {
       unlink("file$_") or $that->logconfess(__PACKAGE__, "::writePdlFile(): failed to unlink '$file$_': $!");
     }
   }
@@ -632,16 +634,16 @@ sub writePdlFile {
 ##  + %opts:
 ##     class=>$class,
 ##     mmap =>$bool,
-##     verboseIO=>$booll
+##     verboseIO=>$bool,
 sub readPdlFile {
   my ($that,$file,%opts) = @_;
-  $that->trace("readPdlFile($file) [mmap=".($opts{mmap}//0)."]") if ($opts{verboseIO});
+  $opts{mmap} //= 0;
+  $that->trace("readPdlFile($file) [mmap=$opts{mmap}]") if ($opts{verboseIO});
   return undef if (!-e "$file.hdr");
   my $class = $opts{class} // 'PDL';
-  my $mmap  = $opts{mmap};
   local $, = '';
-  my $pdl  = $mmap ? $class->mapfraw($file) : $class->readfraw($file);
-  $that->logconfess("readPdlFile(): failed to ".($mmap ? 'mmap' : 'read')." pdl file '$file' via class '$class'") if (!defined($pdl));
+  my $pdl = $opts{mmap} ? $class->mapfraw($file) : $class->readfraw($file);
+  $that->logconfess("readPdlFile(): failed to ".($opts{mmap} ? 'mmap' : 'read')." pdl file '$file' via class '$class'") if (!defined($pdl));
   return $pdl;
 }
 
