@@ -428,18 +428,17 @@ sub saveDirData {
   $map->SUPER::saveDirData($dir,%opts);
 
   ##-- save: pdls
-  ## "xcm" : "PDL"
-  ## "xdm" : "PDL"
   foreach (qw(xcm xdm)) { #tw0 tf0 tdf0
-    $map->writePdlFile($map->{$_}, "$dir/$_.pdl");
+    $map->writePdlFile($map->{$_}, "$dir/$_.pdl", %opts);
   }
 
   ##-- save: caches
   foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
-    $map->writePdlFile($map->can($_)->($map), "$dir/$_.pdl");
+    $map->writePdlFile($map->can($_)->($map), "$dir/$_.pdl", %opts);
   }
 
   ##-- save: svd
+  $map->trace("save SVD $dir/svd.*") if ($opts{verboseIO});
   $map->{svd}->saveRawFiles("$dir/svd") if ($map->{svd});
 
   return 1;
@@ -458,15 +457,16 @@ sub loadDirData {
   ## "xcm" : "PDL"
   ## "xdm" : "PDL"
   foreach (qw(xcm xdm)) {
-    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",%opts,class=>'PDL');
   }
 
   ##-- load: caches
   foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
-    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",%opts,class=>'PDL');
   }
 
   ##-- load: svd
+  $map->trace("load SVD $dir/svd.* [mmap=".($opts{mmap}//0)."]") if ($opts{verboseIO});
   $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
     or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
 
@@ -485,19 +485,20 @@ sub saveTextDirData {
 
   ##-- save: pdls
   foreach (qw(xcm xdm)) { #tw0 tf0 tdf0
-    $map->writePdlTextFile($map->{$_}, "$dir/$_.txt");
+    $map->writePdlTextFile($map->{$_}, "$dir/$_.txt", %opts);
   }
 
   ##-- save: caches
   foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
-    $map->writePdlTextFile($map->can($_)->($map), "$dir/$_.txt");
+    $map->writePdlTextFile($map->can($_)->($map), "$dir/$_.txt", %opts);
   }
 
   ##-- save: svd
   if ($map->{svd}) {
+    $map->trace("save SVD $dir/svd.*") if ($opts{verboseIO});
     $map->{svd}->saveJsonFile("$dir/svd.json");
     foreach (qw(u sigma v)) {
-      $map->writePdlTextFile($map->{svd}{$_}, "$dir/svd.$_.txt");
+      $map->writePdlTextFile($map->{svd}{$_}, "$dir/svd.$_.txt", %opts);
     }
   }
 
@@ -514,18 +515,19 @@ sub loadTextDirData {
 
   ##-- load: pdls
   foreach (qw(xcm xdm)) {
-    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt");
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt", %opts);
   }
 
   ##-- load: caches
   foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
-    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt");
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt", %opts);
   }
 
   ##-- load: svd
+  $map->trace("load SVD $dir/svd.*") if ($opts{verboseIO});
   $map->{svd} = MUDL::SVD->loadJsonFile("$dir/svd.json");
   foreach (qw(u sigma v)) {
-    $map->{svd}{$_} = $map->readPdlTextFile("$dir/svd.$_.txt");
+    $map->{svd}{$_} = $map->readPdlTextFile("$dir/svd.$_.txt", %opts);
   }
 
   return $map;

@@ -437,43 +437,45 @@ sub dirHeaderData {
 ## $bool = $obj->saveDirHeader($dirname_or_filename)
 ##  + save "$dir/header.json"
 sub saveDirHeader {
-  my ($obj,$dir) = @_;
+  my ($obj,$dir,%opts) = @_;
   my $file = (-d $dir ? "$dir/header.json" : $dir);
+  $obj->trace("saveDirHeader(): $file") if ($opts{verboseIO});
   return $obj->writeJsonFile($obj->dirHeaderData(), $file);
 }
 
-## $bool = $obj->saveDir($dirname)
+## $bool = $obj->saveDir($dirname,%opts)
 ##  + abstract method loads header and calls saveDirData()
 sub saveDir {
-  my ($obj,$dir) = @_;
+  my ($obj,$dir,%opts) = @_;
   $dir =~ s{/$}{};
-  $obj->info("saveDir($dir)");
+  $obj->trace("saveDir($dir)") if ($opts{verboseIO});
   -d $dir || File::Path::make_path($dir)
       or $obj->logconfess("saveDir(): failed to create directory $dir/: $!");
 
   ##-- save: header
-  $obj->saveDirHeader($dir)
+  $obj->saveDirHeader($dir,%opts)
     or $obj->logconfess("saveDir(): failed to save header to $dir/: $!");
 
   ##-- save: data
-  return $obj->saveDirData($dir);
+  return $obj->saveDirData($dir,%opts);
 }
 
 ## $bool = $obj->saveDirData($dirname)
 ##  + dummy method
 sub saveDirData {
-  my ($obj,$dir) = @_;
+  my ($obj,$dir,%opts) = @_;
   $obj->logconfess("saveDirData(): not implemented");
 }
 
 ##--------------------------------------------------------------
 ## Methods: I/O: Directory: load
 
-## $obj = $CLASS_OR_OBJECT->loadDirHeader($dirname_or_filename)
+## $obj = $CLASS_OR_OBJECT->loadDirHeader($dirname_or_filename,%opts)
 ##  + loads "$dir/header.json"
 sub loadDirHeader {
-  my ($that,$dir) = @_;
+  my ($that,$dir,%opts) = @_;
   my $file = -d $dir ? "$dir/header.json" : $dir;
+  $that->trace("loadDirHeader($file)") if ($opts{verboseIO});
   my $hdr = $that->readJsonFile($file)
     or $that->logconfess("loadDirHeader(): failed to load $file: $!");
   my $class = $hdr->{__CLASS__} || $hdr->{class} || ref($that) || $that || __PACKAGE__;
@@ -491,13 +493,14 @@ sub loadDirHeader {
 ## $bool = $CLASS_OR_OBJECT->loadDir($dirname,%opts)
 ##  + abstract method loads header and calls loadDirData()
 sub loadDir {
-  my $that = shift;
-  my $dir  = shift;
+  my ($that,$dir,%opts) = @_;
   $dir =~ s{/$}{};
+
+  $that->trace("loadDir($dir)") if ($opts{verboseIO});
   $that->logconfess("loadDir(): no such directory $dir") if (!-d $dir);
 
   ##-- load: header
-  my $obj = $that->loadDirHeader($dir)
+  my $obj = $that->loadDirHeader($dir,@_)
     or $that->logconfess("loadDir(): failed to load header from $dir/: $!");
 
   ##-- load: data
@@ -507,7 +510,7 @@ sub loadDir {
 ## $obj = $obj->loadDirData($dirname,%opts)
 ##  + dummy method
 sub loadDirData {
-  my ($obj,$dir) = @_;
+  my ($obj,$dir,%opts) = @_;
   $obj->logconfess("loadDirData(): not implemented");
 }
 
@@ -520,24 +523,24 @@ sub loadDirData {
 ## $bool = $obj->saveTextDir($dirname)
 ##  + abstract method loads header and calls saveTextDirData()
 sub saveTextDir {
-  my ($obj,$dir) = @_;
+  my ($obj,$dir,%opts) = @_;
   $dir =~ s{/$}{};
-  $obj->info("saveTextDir($dir)");
+  $obj->trace("saveTextDir($dir)") if ($opts{verboseIO});
   -d $dir || File::Path::make_path($dir)
       or $obj->logconfess("saveTextDir(): failed to create directory $dir/: $!");
 
   ##-- save: header
-  $obj->saveDirHeader($dir)
+  $obj->saveDirHeader($dir,%opts)
     or $obj->logconfess("saveTextDir(): failed to save header to $dir/: $!");
 
   ##-- save: data
-  return $obj->saveTextDirData($dir);
+  return $obj->saveTextDirData($dir,%opts);
 }
 
 ## $bool = $obj->saveTextDirData($dirname)
 ##  + dummy method
 sub saveTextDirData {
-  my ($obj,$dir) = @_;
+  my ($obj,$dir,%opts) = @_;
   $obj->logconfess("saveTextDirData(): not implemented");
 }
 
@@ -547,23 +550,23 @@ sub saveTextDirData {
 ## $bool = $CLASS_OR_OBJECT->loadTextDir($dirname,%opts)
 ##  + abstract method loads header and calls loadTextDirData()
 sub loadTextDir {
-  my $that = shift;
-  my $dir  = shift;
+  my ($that,$dir,%opts) = @_;
   $dir =~ s{/$}{};
+  $that->trace("loadTextDir($dir)") if ($opts{verboseIO});
   $that->logconfess("loadTextDir(): no such directory $dir") if (!-d $dir);
 
   ##-- load: header
-  my $obj = $that->loadDirHeader($dir)
+  my $obj = $that->loadDirHeader($dir,%opts)
     or $that->logconfess("loadTextDir(): failed to load header from $dir/: $!");
 
   ##-- load: data
-  return $obj->loadTextDirData($dir,@_);
+  return $obj->loadTextDirData($dir,%opts);
 }
 
 ## $obj = $obj->loadTextDirData($dirname,%opts)
 ##  + dummy method
 sub loadTextDirData {
-  my ($obj,$dir) = @_;
+  my ($obj,$dir,%opts) = @_;
   $obj->logconfess("loadTextDirData(): not implemented");
 }
 
@@ -606,16 +609,18 @@ sub readJsonFile {
 ##==============================================================================
 ## Methods: I/O: PDL utilities: binary
 
-## $bool = $CLASS_OR_OBJECT->writePdlFile($pdl, $filename)
+## $bool = $CLASS_OR_OBJECT->writePdlFile($pdl, $filename, %opts)
+##  + %opts: verboseIO
 sub writePdlFile {
-  my ($that,$pdl,$file) = @_;
-  #$that->debug("writePdlFile($file)");
+  my ($that,$pdl,$file,%opts) = @_;
   if (defined($pdl)) {
+    $that->trace("writePdlFile($file)") if ($opts{verboseIO});
     local $,='';
     $pdl->writefraw($file)
       or $that->logconfess("writePdlFile(): writefraw() failed for '$file': $!");
   }
   else {
+    $that->trace("writePdlFile($file): unlink") if ($opts{verboseIO});
     foreach (grep {-e "file$_"} ('','.hdr','.ix','.ix.hdr','.nz','.nz.hdr')) {
       unlink("file$_") or $that->logconfess(__PACKAGE__, "::writePdlFile(): failed to unlink '$file$_': $!");
     }
@@ -623,31 +628,37 @@ sub writePdlFile {
   return 1;
 }
 
-## $pdl = $CLASS_OR_OBJECT->readPdlFile($filename,$class='PDL',$mmap=0)
+## $pdl = $CLASS_OR_OBJECT->readPdlFile($filename,%opts)
+##  + %opts:
+##     class=>$class,
+##     mmap =>$bool,
+##     verboseIO=>$booll
 sub readPdlFile {
-  my ($that,$file,$class,$mmap) = @_;
-  #$that->debug("readPdlFile($file)");
+  my ($that,$file,%opts) = @_;
+  $that->trace("readPdlFile($file) [mmap=".($opts{mmap}//0)."]") if ($opts{verboseIO});
   return undef if (!-e "$file.hdr");
-  $class //= 'PDL';
+  my $class = $opts{class} // 'PDL';
+  my $mmap  = $opts{mmap};
   local $, = '';
   my $pdl  = $mmap ? $class->mapfraw($file) : $class->readfraw($file);
   $that->logconfess("readPdlFile(): failed to ".($mmap ? 'mmap' : 'read')." pdl file '$file' via class '$class'") if (!defined($pdl));
   return $pdl;
 }
 
-## $pdl = $CLASS_OR_OBJECT->mmapPdlFile($filename)
-## $pdl = $CLASS_OR_OBJECT->mmapPdlFile($filename,$class='PDL')
+## $pdl = $CLASS_OR_OBJECT->mmapPdlFile($filename,%opts)
 sub mmapPdlFile {
-  return $_[0]->readPdlFile($_[1],$_[2],1);
+  return $_[0]->readPdlFile($_[1],$_[2],1,@_[3..$#_]);
 }
 
 ##==============================================================================
 ## Methods: I/O: PDL utilities: text
 
-## $bool = $CLASS_OR_OBJECT->writePdlTextFile($pdl, $filename)
+## $bool = $CLASS_OR_OBJECT->writePdlTextFile($pdl, $filename,%opts)
+##  + %opts:
+##     verboseIO=>$booll
 sub writePdlTextFile {
-  my ($that,$pdl,$file) = @_;
-  #$that->debug("writePdlTextFile($file)");
+  my ($that,$pdl,$file,%opts) = @_;
+  $that->trace("writePdlTextFile($file)") if ($opts{verboseIO});
   if (defined($pdl)) {
     local $,='';
     open(my $fh, ">$file")
@@ -675,10 +686,13 @@ sub writePdlTextFile {
   return 1;
 }
 
-## $pdl = $CLASS_OR_OBJECT->readTextPdlFile($filename,$class='PDL')
+## $pdl = $CLASS_OR_OBJECT->readTextPdlFile($filename,%opts)
+##  + %opts:
+##     class=>$class,
+##     verboseIO=>$booll
 sub readPdlTextFile {
-  my ($that,$file,$class) = @_;
-  #$that->debug("readPdlTextFile($file)");
+  my ($that,$file,%opts) = @_;
+  $that->trace("readPdlTextFile($file)") if ($opts{verboseIO});
   return undef if (!-e $file);
   local $, = '';
   open(my $fh, "<$file")
@@ -687,14 +701,14 @@ sub readPdlTextFile {
   my $hdr  = <$fh>;
   chomp($hdr);
   my ($hclass,$type,@dims) = split(' ',$hdr);
-  $class   //= $hclass // 'PDL';
+  my $class = $hclass // $opts{class} // 'PDL';
   if ($class eq 'PDL::CCS::Nd') {
     ##-- read: ccs
     my $flags = <$fh>;
     $fh->close();
     chomp($flags);
-    my $ix = $that->readPdlTextFile("$file.ix");
-    my $nz = $that->readPdlTextFile("$file.nz");
+    my $ix = $that->readPdlTextFile("$file.ix",%opts,class=>'PDL');
+    my $nz = $that->readPdlTextFile("$file.nz",%opts,class=>'PDL');
     my $ccs = PDL::CCS::Nd->newFromWhich($ix,$nz,pdims=>\@dims,flags=>$flags,sorted=>1,steal=>1);
     return $ccs;
   }

@@ -41,6 +41,9 @@ GetOptions(%dcOpts,
 $verbose = $opts{verbose};
 our $outfile = $opts{outputFile};
 
+delete @{$opts{mapLoad}}{grep {!defined $opts{mapLoad}{$_}} keys %{$opts{mapLoad}}};
+delete @{$opts{mapSave}}{grep {!defined $opts{mapSave}{$_}} keys %{$opts{mapSave}}};
+
 pod2usage({-exitval=>0, -verbose=>0}) if ($opts{help});
 pod2usage({-exitval=>1, -verbose=>0, -msg=>'No Mapper file specified!'}) if (!@ARGV);
 
@@ -93,10 +96,13 @@ dc-mapper-tweak.perl - tweak DocClassify::Mapper options
   -help                  # this help message
   -verbose LEVEL         # verbosity level
   -map-option OPT=VALUE  # override stored mapper option
-  -map-input-mode MODE   # I/O mode for input mapfile (default=guess)
+  -input-mode MODE       # I/O mode for input mapfile (default=guess)
+  -input-option OPT=VAL  # set load option
   -eval CODE             # evaluate CODE (default=none)
   -[no]clear-cache       # do/don't clear training cache (default=do)
   -output-file FILE      # set mapper output file (default=-)
+  -ouput-mode MODE       # set output mode (default=guess)
+  -output-option OPT=VAL # set output option
   -no-output             # disable output
 
 =cut

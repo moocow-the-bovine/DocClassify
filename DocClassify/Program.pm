@@ -162,7 +162,9 @@ sub dcOptions {
    #'output-dir|outdir|odir|od|d=s'=> \$opts{outputDir},
    'output-file|outfile|out|of|o=s'=> \$opts{outputFile},
    'input-mode|im=s' => \$opts{load}{mode},
+   'input-option|io=s%' => \$opts{load},
    'output-mode|om=s' => \$opts{save}{mode},
+   'output-option|oo=s%' => $opts{save},
    'format-xml|format|fx|f!' => sub { $opts{save}{format}=$_[1] ? 1 : 0; },
    'verbose-io|verboseio|vio!' => sub { $opts{load}{verboseIO}=$opts{save}{verboseIO}=$_[1]; },
    'mmap!' => sub { $opts{load}{mmap}=$_[1]; },
@@ -209,8 +211,8 @@ sub dcOptions {
    'null-cat|nullcat|null|nc=s' => \$opts{mapNew}{nullCat},
    'no-null-cat|no-nullcat|nonullcat|nonull' => sub { $opts{mapNew}{nullCat}=undef; },
    #'compile|c!' => \$compileMap,
-   'mapper-input-mode|mim=s' => \$opts{mapLoad}{mode},
-   'mapper-output-mode|mom=s' => \$opts{mapSave}{mode},
+   'mapper-input-mode|map-input-mode|mim=s' => \$opts{mapLoad}{mode},
+   'mapper-output-mode|map-output-mode|mom=s' => \$opts{mapSave}{mode},
 
    ##-- cutoff options
    'cut-negative-p|cnp|cut0p|c0p|c0=f' => \$opts{cutoffNew}{cut0p},
