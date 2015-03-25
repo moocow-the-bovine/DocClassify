@@ -92,7 +92,7 @@ log4perl.PatternLayout.cspec.G = sub { return File::Basename::basename(\"$::0\")
 ";
 
   ##-- appender: stderr
-  my $stderr_date = ($opts{logdate} ? '%d{yyyy-MM-dd HH:mm:ss} '
+  my $stderr_date = (($opts{logdate} && $opts{logtime}) ? '%d{yyyy-MM-dd HH:mm:ss} '
 		     : ($opts{logtime} ? '%d{HH:mm:ss} ' : ''));
   $cfg .= "
 ##-- Appender: AppStderr

@@ -33,7 +33,7 @@ our $doProfile = 1;
 ##-- hack: set only local overrides with '-map-option OPT=VALUE'
 our $mapUser = {};
 my %dcOpts = dcOptions();
-delete @dcOpts{grep {$_ !~ /help|verbose|map-input-mode|map-option|verbose-io|mmap/} keys %dcOpts};
+delete @dcOpts{grep {$_ !~ /help|verbose|map-input-mode|map-option|verbose-io|mmap|log/} keys %dcOpts};
 $_ = $mapUser foreach (grep {$_ eq $opts{mapNew}} values %dcOpts);
 
 ##-- local options

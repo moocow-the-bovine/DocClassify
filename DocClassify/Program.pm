@@ -243,6 +243,8 @@ sub dcLogOptions {
      'log-watch|logwatch|watch|lw=i' => \$opts{log}{watch},
      'nolog-watch|nologwatch|nowatch|nolw|now' => sub { $opts{log}{watch}=undef; },
      'log-stderr|stderr|le!' => \$opts{log}{stderr},
+     'log-date|logdate|ld!' => \$opts{log}{logdate},
+     'log-time|logtime|lt!' => sub { $opts{log}{logtime}=$_[1]; }, #$opts{log}{logdate}=0 if (!$_[1]);
      'log-file|lf=s' => \$opts{log}{file},
      'nolog-file|nolf' => sub { $opts{log}{file}=undef; },
      'log-rotate|rotate|lr!' => \$opts{log}{rotate},
