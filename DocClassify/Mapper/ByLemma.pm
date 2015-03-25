@@ -410,12 +410,12 @@ sub saveDirData {
     if (!defined($map->{$ekey})) {
       foreach (grep {-e $_} map {"$dir/$ekey.$_"} qw(hdr es eix esx)) {
 	unlink($_)
-	  or $map->logconfess("failed to unlink enum file $_: $!");
+	  or $map->logconfess("saveDirData(): failed to unlink enum file $_: $!");
       }
     } else {
       #$map->debug("saveEnum $dir/$ekey");
       $map->{$ekey}->saveRawFiles("$dir/$ekey")
-	or $map->logconfess("failed to save enum file(s) $dir/$ekey.*: $!")
+	or $map->logconfess("saveDirData(): failed to save enum file(s) $dir/$ekey.*: $!")
       }
   }
 
@@ -472,7 +472,7 @@ sub loadDirData {
   foreach my $ekey (qw(denum gcenum lcenum tenum)) {
     if (-e "$dir/$ekey.hdr") {
       $map->{$ekey} = MUDL::Enum->loadRawFiles("$dir/$ekey", mmap=>$opts{mmap})
-	or $map->logconfess("failed to load enum file(s) $dir/$ekey.*: $!");
+	or $map->logconfess("loadDirData(): failed to load enum file(s) $dir/$ekey.*: $!");
     } else {
       delete $map->{$ekey};
     }
@@ -502,9 +502,9 @@ sub loadDirData {
   ## "lzOpts" : "HASH" -> in global header.json
   ## "svd" : "MUDL::SVD" --> LSI.pm
   $map->{lz} = DocClassify::Lemmatizer->loadDirHeader("$dir/lz.json")
-    or $map->logconfess("loadDir(): failed to load lemmatizer from $dir/lz.json: $!");
+    or $map->logconfess("loadDirData(): failed to load lemmatizer from $dir/lz.json: $!");
   $map->{disto} = MUDL::Cluster::Distance->loadJsonFile("$dir/disto.json")
-    or $map->logconfess("loadDir(): failed to load distance object from $dir/disto.json: $!");
+    or $map->logconfess("loadDirData(): failed to load distance object from $dir/disto.json: $!");
 
   ##-- ?save: training temps
   # -"df" : "HASH"
@@ -529,9 +529,9 @@ sub saveTextDirData {
   ##-- save: enums
   foreach my $ekey (qw(denum gcenum lcenum tenum)) {
     if (!defined($map->{$ekey})) {
-      !-e "$dir/$map->{$ekey}.txt"
-	or unlink("$dir/$map->{$ekey}.txt")
-	  or $map->logconfess("failed to unlink enum file $_: $!");
+      !-e "$dir/$ekey.txt"
+	or unlink("$dir/$ekey.txt")
+	  or $map->logconfess("saveTextDirData(): failed to unlink enum file $dir/$ekey.txt: $!");
     } else {
       $map->{$ekey}->saveNativeFile("$dir/$ekey.txt", invert=>1,utf8=>1)
 	or $map->logconfess("saveTextDirData(): failed to save enum file(s) $dir/$ekey.txt: $!")
@@ -562,56 +562,32 @@ sub saveTextDirData {
 ##  + %opts: none
 sub loadTextDirData {
   my ($map,$dir,%opts) = @_;
-  $map->confess("TODO");
 
   ##-- load: enums
-  # "denum" : "MUDL::Enum"
-  # "gcenum" : "MUDL::Enum"
-  # "lcenum" : "MUDL::Enum"
-  # "tenum" : "MUDL::Enum"
   foreach my $ekey (qw(denum gcenum lcenum tenum)) {
-    if (-e "$dir/$ekey.hdr") {
-      $map->{$ekey} = MUDL::Enum->loadRawFiles("$dir/$ekey", mmap=>$opts{mmap})
-	or $map->logconfess("failed to load enum file(s) $dir/$ekey.*: $!");
+    if (-e "$dir/$ekey.txt") {
+      $map->{$ekey} = MUDL::Enum->loadNativeFile("$dir/$ekey.txt", invert=>1,utf8=>1)
+	or $map->logconfess("loadTextDirData(): failed to load enum file $dir/$ekey.txt: $!");
     } else {
       delete $map->{$ekey};
     }
   }
 
-  ##-- load: ccs:
-  ## "dcm" : "PDL::CCS::Nd"
-  ## "tdm" : "PDL::CCS::Nd"
-  ## -"tdm0" : "PDL::CCS::Nd" : recoverable as ($tdm/$tw)->exp - $smoothf
+  ##-- load: ccs
   foreach (qw(dcm tdm)) { #tdm0
-    $map->{$_} = $map->readPdlFile("$dir/$_.ccs",'PDL::CCS::Nd',$opts{mmap});
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt");
   }
 
   ##-- load: pdls
-  ## "tw" : "PDL"
-  ## -"tw0" : "PDL"
-  ## -?tf0
-  ## -?tdf0
-  ## -?dc_dist
   foreach (qw(tw)) { #tw0 tf0 tdf0
-    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt");
   }
 
   ##-- load: misc
-  ## "disto" : "MUDL::Cluster::Distance::Builtin"
-  ## "lz" : "DocClassify::Lemmatizer::Cab"
-  ## "lzOpts" : "HASH" -> in global header.json
-  ## "svd" : "MUDL::SVD" --> LSI.pm
   $map->{lz} = DocClassify::Lemmatizer->loadDirHeader("$dir/lz.json")
-    or $map->logconfess("loadDir(): failed to load lemmatizer from $dir/lz.json: $!");
+    or $map->logconfess("loadTextDirData(): failed to load lemmatizer from $dir/lz.json: $!");
   $map->{disto} = MUDL::Cluster::Distance->loadJsonFile("$dir/disto.json")
-    or $map->logconfess("loadDir(): failed to load distance object from $dir/disto.json: $!");
-
-  ##-- ?save: training temps
-  # -"df" : "HASH"
-  # -"doc_wt" : "ARRAY"
-  # -"docs" : "ARRAY"
-  # -"gf" : "HASH"
-  # -"sigs" : "ARRAY"
+    or $map->logconfess("loadTextDirData(): failed to load distance object from $dir/disto.json: $!");
 
   return $map;
 }

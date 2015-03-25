@@ -435,9 +435,9 @@ sub saveDirData {
   }
 
   ##-- save: caches
-  $map->writePdlFile($map->xcm_sigma, "$dir/xcm_sigma.pdl");
-  $map->writePdlFile($map->xdm_sigma, "$dir/xdm_sigma.pdl");
-  $map->writePdlFile($map->xtm_sigma, "$dir/xtm_sigma.pdl");
+  foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
+    $map->writePdlFile($map->can($_)->($map), "$dir/$_.pdl");
+  }
 
   ##-- save: svd
   $map->{svd}->saveRawFiles("$dir/svd") if ($map->{svd});
@@ -489,9 +489,9 @@ sub saveTextDirData {
   }
 
   ##-- save: caches
-  $map->writePdlTextFile($map->xcm_sigma, "$dir/xcm_sigma.txt");
-  $map->writePdlTextFile($map->xdm_sigma, "$dir/xdm_sigma.txt");
-  $map->writePdlTextFile($map->xtm_sigma, "$dir/xtm_sigma.txt");
+  foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
+    $map->writePdlTextFile($map->can($_)->($map), "$dir/$_.txt");
+  }
 
   ##-- save: svd
   if ($map->{svd}) {
@@ -508,24 +508,25 @@ sub saveTextDirData {
 ##  + %opts: none
 sub loadTextDirData {
   my ($map,$dir,%opts) = @_;
-  $map->logconfess("TODO");
 
   ##-- load: inherited
   $map->SUPER::loadTextDirData($dir,%opts);
 
   ##-- load: pdls
   foreach (qw(xcm xdm)) {
-    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt");
   }
 
   ##-- load: caches
   foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
-    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",'PDL',$opts{mmap});
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt");
   }
 
   ##-- load: svd
-  $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
-    or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
+  $map->{svd} = MUDL::SVD->loadJsonFile("$dir/svd.json");
+  foreach (qw(u sigma v)) {
+    $map->{svd}{$_} = $map->readPdlTextFile("$dir/svd.$_.txt");
+  }
 
   return $map;
 }

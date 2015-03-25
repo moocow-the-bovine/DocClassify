@@ -88,7 +88,7 @@ BEGIN {
      {name=>'csv',re=>qr/\.(?:csv)$/i,method=>'Csv'},
      {name=>'xml',re=>qr/\.(?:xml)$/i,method=>'Xml'},
      {name=>'perl',re=>qr/\.(?:perl|pl|plm)$/i,method=>'Perl'},
-     {name=>'textdir',re=>qr/\.txt\.d$/, method=>'TextDir'},
+     {name=>'textdir',re=>qr/\.t(?:e?xt)?\.?d$/, method=>'TextDir'},
      {name=>'dir',re=>qr/\.d$/, method=>'Dir'},
     );
 }
@@ -647,7 +647,7 @@ sub mmapPdlFile {
 ## $bool = $CLASS_OR_OBJECT->writePdlTextFile($pdl, $filename)
 sub writePdlTextFile {
   my ($that,$pdl,$file) = @_;
-  $that->debug("writePdlTextFile($file)");
+  #$that->debug("writePdlTextFile($file)");
   if (defined($pdl)) {
     local $,='';
     open(my $fh, ">$file")
@@ -678,8 +678,8 @@ sub writePdlTextFile {
 ## $pdl = $CLASS_OR_OBJECT->readTextPdlFile($filename,$class='PDL')
 sub readPdlTextFile {
   my ($that,$file,$class) = @_;
-  #$that->debug("readPdlFile($file)");
-  return undef if (!-e "$file.hdr");
+  #$that->debug("readPdlTextFile($file)");
+  return undef if (!-e $file);
   local $, = '';
   open(my $fh, "<$file")
     or $that->logconfess("readPdlTextFile(): open failed for '$file': $!");
