@@ -284,7 +284,7 @@ sub querySignature {
 ##  + suitable for use by mapQuery()
 ##  + %opts:
 ##     k    => $k,                 ##-- get $k best items (default=1)
-##     norm => $normHow,           ##-- normalization method qw(linear|cosine|vcosine|2 gaussian|normal none); default=none
+##     norm => $normHow,           ##-- normalization method qw((linear|cosine|vcosine)|(gaussian|normal)|none); default=none
 ##  + returns @kbest = ({id=>$id,dist=>$dist,label=>$label},...)
 sub kBestItems {
   my ($map,$dist,$enum,%opts) = @_;
@@ -576,12 +576,12 @@ sub loadTextDirData {
 
   ##-- load: ccs
   foreach (qw(dcm tdm)) { #tdm0
-    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt",%opts);
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt",%opts,class=>'PDL::CCS::Nd');
   }
 
   ##-- load: pdls
   foreach (qw(tw)) { #tw0 tf0 tdf0
-    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt",%opts);
+    $map->{$_} = $map->readPdlTextFile("$dir/$_.txt",%opts,class=>'PDL');
   }
 
   ##-- load: misc

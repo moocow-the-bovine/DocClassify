@@ -90,6 +90,8 @@ BEGIN {
      {name=>'xml',re=>qr/\.(?:xml)$/i,method=>'Xml'},
      {name=>'perl',re=>qr/\.(?:perl|pl|plm)$/i,method=>'Perl'},
      {name=>'textdir',re=>qr/\.t(?:e?xt)?\.?d$/, method=>'TextDir'},
+     {name=>'textfitsdir',re=>qr/\.t(?:e?xt)?\.?f(?:its)?\.?d$/, method=>'TextDir', opts=>{pdlio=>'fits'}},
+     {name=>'fitsdir',re=>qr/\.f(?:its)?\.?d$/, method=>'Dir', opts=>{pdlio=>'fits'}},
      {name=>'dir',re=>qr/\.d$/, method=>'Dir'},
     );
 }
@@ -105,7 +107,9 @@ BEGIN {
      'txt'=>'text',
      'native'=>'text',
      'directory'=>'dir',
-     (map {($_=>'textdir')} qw(import export txtdir)),
+     (map {($_=>'textdir')} qw(import export txtdir td)),
+     (map {($_=>'fitsdir')} qw(fits fitsd fd)),
+     (map {($_=>'textfitsdir')} qw(textfits tfitsdir tfdir tfd)),
      'DEFAULT' => 'bin',
     );
   foreach (keys(%IO_ALIAS)) {
@@ -151,7 +155,7 @@ sub saveFile {
   my $sub = $obj->can($method) || $obj->can("${method}File");
   $obj->logconfess("saveFile(): no method for output mode '$mode->{name}'") if (!$sub);
   $obj->vlog('info', "saveFile($file) [mode=$mode->{name}]") if ($opts{verboseIO});
-  return $sub->($obj,$file,%opts);
+  return $sub->($obj,$file,%{$mode->{opts}//{}},%opts);
 }
 
 ## $obj = $CLASS_OR_OBJ->loadFile($filename_or_fh,%opts)
@@ -166,7 +170,7 @@ sub loadFile {
   my $sub = $that->can($method) || $that->can("${method}File");
   $that->logconfess("loadFile(): no method for input mode '$mode->{name}'") if (!$sub);
   $that->vlog('info',"loadFile($file) [mode=$mode->{name}]") if ($opts{verboseIO});
-  return $sub->($that,$file,%opts);
+  return $sub->($that,$file,%{$mode->{opts}//{}},%opts);
 }
 
 ## $str = $obj->saveString(%opts)
@@ -613,13 +617,37 @@ sub readJsonFile {
 ## $bool = $CLASS_OR_OBJECT->writePdlFile($pdl, $filename, %opts)
 ##  + %opts:
 ##     verboseIO => $bool,
+##     pdlio     => $how,   ##-- one of qw(raw fits); default='fits'
 sub writePdlFile {
   my ($that,$pdl,$file,%opts) = @_;
+  $opts{pdlio} //= 'raw';
   if (defined($pdl)) {
-    $that->trace("writePdlFile($file)") if ($opts{verboseIO});
+    $that->trace("writePdlFile($file) [pdlio=$opts{pdlio}]") if ($opts{verboseIO});
     local $,='';
-    $pdl->writefraw($file)
-      or $that->logconfess("writePdlFile(): writefraw() failed for '$file': $!");
+    if ($opts{pdlio} eq 'fits') {
+      ##-- write: fits
+      if (!$pdl->can('wfits') && UNIVERSAL::isa($pdl,'PDL::CCS::Nd')) {
+	##-- write: fits: ccs (hack)
+	PDL::CCS::IO::FastRaw::_ccsio_write_header({magic=>(ref($pdl)." $PDL::CCS::Nd::VERSION"),
+						    pdims=>$pdl->pdims, vdims=>$pdl->vdims, flags=>$pdl->flags},
+						   "$file.hdr")
+	    or $that->logconfess("writePdlFile(): failed to save header to $file.hdr: $!");
+	my $ix = $pdl->_whichND;
+	$ix = $ix->long if ($ix->type->ioname eq 'indx'); ##-- hack: treat 'indx' as 'long' for PDL::IO::FITS in PDL v2.006_90
+	$ix->wfits("$file.ix.fits")
+	    or $that->logconfess("writePdlFile(): failed to save indices to $file.ix.fits: $!");
+	$pdl->_vals->wfits("$file.nz.fits")
+	    or $that->logconfess("writePdlFile(): failed to save values to $file.ix.fits: $!");
+      } else {
+	##-- write: fits: pdl
+	$pdl->wfits("$file.fits")
+	  or $that->logconfess("writePdlFile(): wfits() failed for '$file': $!");
+      }
+    } else {
+      ##-- write: raw
+      $pdl->writefraw($file)
+	or $that->logconfess("writePdlFile(): writefraw() failed for '$file': $!");
+    }
   }
   else {
     $that->trace("writePdlFile($file): unlink") if ($opts{verboseIO});
@@ -635,15 +663,41 @@ sub writePdlFile {
 ##     class=>$class,
 ##     mmap =>$bool,
 ##     verboseIO=>$bool,
+##     pdlio =>$how, ##-- one of qw(raw fits); default='raw'
 sub readPdlFile {
   my ($that,$file,%opts) = @_;
   $opts{mmap} //= 0;
-  $that->trace("readPdlFile($file) [mmap=$opts{mmap}]") if ($opts{verboseIO});
-  return undef if (!-e "$file.hdr");
+  $opts{pdlio} //= 'raw';
+  $that->trace("readPdlFile($file) [pdlio=$opts{pdlio},mmap=$opts{mmap}]") if ($opts{verboseIO});
   my $class = $opts{class} // 'PDL';
-  local $, = '';
-  my $pdl = $opts{mmap} ? $class->mapfraw($file) : $class->readfraw($file);
-  $that->logconfess("readPdlFile(): failed to ".($opts{mmap} ? 'mmap' : 'read')." pdl file '$file' via class '$class'") if (!defined($pdl));
+  my $pdl;
+  if ($opts{pdlio} eq 'fits') {
+    ##-- read: fits
+    $that->logwarn("readPdlFile(): mmap not supported for FITS file $file") if ($opts{mmap});
+    if (!$class->can('rfits') && UNIVERSAL::isa($class,'PDL::CCS::Nd')) {
+      ##-- read: fits: ccs
+      return undef if (!-e "$file.hdr");
+      my $hdr = PDL::CCS::IO::FastRaw::_ccsio_read_header("$file.hdr")
+	or $that->logconfess("readPdlFile(): failed to read header from $file.hdr: $!");
+      defined(my $ix = PDL->rfits("$file.ix.fits"))
+	or $that->logconfess("readPdlFile(): failed for $file.ix.fits: $!");
+      defined(my $nz = PDL->rfits("$file.nz.fits"))
+	or $that->logconfess("readPdlFile(): failed for $file.nz.fits: $!");
+      $pdl = $class->newFromWhich($ix,$nz, pdims=>$hdr->{pdims}, vdims=>$hdr->{vdims}, sorted=>1, steal=>1);
+    }
+    else {
+      ##-- read: fits: pdl
+      return undef if (!-e "$file.fits");
+      defined($pdl = $class->rfits("$file.fits"))
+	or $that->logconfess("readPdlFile(): rfits() failed for '$file' via class '$class': $!");
+    }
+  } else {
+    ##-- read or map: raw
+    return undef if (!-e "$file.hdr");
+    local $, = '';
+    defined($pdl = $opts{mmap} ? $class->mapfraw($file) : $class->readfraw($file))
+      or $that->logconfess("readPdlFile(): failed to ".($opts{mmap} ? 'mmap' : 'read')." pdl file '$file' via class '$class'");
+  }
   return $pdl;
 }
 
@@ -657,9 +711,11 @@ sub mmapPdlFile {
 
 ## $bool = $CLASS_OR_OBJECT->writePdlTextFile($pdl, $filename,%opts)
 ##  + %opts:
-##     verboseIO=>$booll
+##     verboseIO=>$bool,
+##     pdlio =>$how, ##-- one of qw(txt fits); default='txt'
 sub writePdlTextFile {
   my ($that,$pdl,$file,%opts) = @_;
+  return $that->writePdlFile($pdl,$file,%opts) if (($opts{pdlio}//'') eq 'fits');
   $that->trace("writePdlTextFile($file)") if ($opts{verboseIO});
   if (defined($pdl)) {
     local $,='';
@@ -692,8 +748,10 @@ sub writePdlTextFile {
 ##  + %opts:
 ##     class=>$class,
 ##     verboseIO=>$booll
+##     pdlio =>$how, ##-- one of qw(txt fits); default='txt'
 sub readPdlTextFile {
   my ($that,$file,%opts) = @_;
+  return $that->readPdlFile($file,%opts) if (($opts{pdlio}//'') eq 'fits');
   $that->trace("readPdlTextFile($file)") if ($opts{verboseIO});
   return undef if (!-e $file);
   local $, = '';

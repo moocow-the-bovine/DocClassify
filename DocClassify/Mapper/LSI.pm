@@ -217,23 +217,14 @@ sub mapDocument {
 ##==============================================================================
 ## Methods: API: Query
 
-## \@kbest = $map->mapQuery($querySignatureOrString,%opts)
-## + %opts
-##    mapto => $mapto,		  ##-- one of qw(cats docs terms)
-##    kbest => $k,		  ##-- get $k nearest neighbors
-##    minFreq => $minFreq,	  ##-- [mapto=>'terms'] post-filter; default=0
-##    minDocFreq => $minDocFreq,  ##-- [mapto=>'terms'] post-filter; default=0
-##    norm => $normHow,           ##-- normalization method qw(linear|cosine|vcosine|2 gaussian|normal none); default=none
-## + returns @kbest = ([$id,$dist,$label],...)
-## + side-effects:
-##   - sets $q_sig->{drange_} = [$min,$max] if $querySigatureOrString is passed as a DocClassify::Signature and it's not already set
-sub mapQuery {
+## $xqm = $map->queryVector($querySignatureOrString,%opts)
+##  + guts for mapQuery(); returns a dense pdl $xqm ($svdr,1) representing $querySignatureOrString
+##  + %opts : see mapQuery()
+sub queryVector {
   my ($map,$query,%opts) = @_;
 
-  ##-- parse options
+  ##-- parse options & query
   my $mapto = $opts{mapto} || ($map->{lcenum}->size > 1 ? 'cats' : 'docs');
-
-  ##-- parse query
   my $q_sig = UNIVERSAL::isa($query,'DocClassify::Signature') ? $query : $map->querySignature($query);
   my $q_str = $q_sig->{qstr_} // "$q_sig";
 
@@ -242,7 +233,7 @@ sub mapQuery {
   my $n_tdm0 = $q_tdm0->sum;
   my $qdocs  = pdl(long,$q_sig->{qdocs_}//[]);
   my $qcats  = pdl(long,$q_sig->{qcats_}//[]);
-  $map->logwarn("mapQuery(): null vector for query-string '$q_str'")
+  $map->logwarn("queryVector(): null vector for query-string '$q_str'")
     if ($map->{verbose}
 	&& $map->{warnOnNullDoc}
 	&& $n_tdm0==0
@@ -256,37 +247,25 @@ sub mapQuery {
   my $qq_xcm = $map->{xcm}->dice_axis(1,$qcats);
 
   ##-- target object dispatch
-  my ($qx_dist,$qx_enum);
+  my $xqm;
   if ($mapto =~ /^[dpcbv]/) {
     ##~~~~~~ mapto=(docs~pages|cats~books~volume): merge in qdocs_, qcats_ sub-queries
-    my ($q_xdm);
-
     if (0) {
       ##-- treat query as a document: old DocClassify/VZ classification method
-      $q_xdm = $map->svdApply($q_tdm0->pdl);
-      if ($n_tdm0 > 0) { $q_xdm /= $n_qsrc; }
-      else             { $q_xdm .= 0; }
+      $xqm = $map->svdApply($q_tdm0->pdl);
+      if ($n_tdm0 > 0) { $xqm /= $n_qsrc; }
+      else             { $xqm .= 0; }
     } else {
       ##-- treat query as weighted terms: term->term method (group-average query terms)
       my $xtm = $map->{svd}{v};
       my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
-      $q_xdm  = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
-      if (!$n_tdm0) { $q_xdm .= 0; }
+      $xqm  = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
+      if (!$n_tdm0) { $xqm .= 0; }
     }
-    $q_xdm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
-    $q_xdm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
-
-    if ($mapto =~ /^[dp]/i) {
-      ##-- mapto=docs~pages: compute distance to each *document*
-      $qx_dist = $map->qdistance($q_xdm, $map->{xdm}, sigma2=>$map->xdm_sigma);
-      $qx_enum = $map->{denum};
-    } else {
-      ##-- mapto=cats~books~volumne: compute distance to each *centroid*
-      $qx_dist = $map->qdistance($q_xdm, $map->{xcm}, sigma2=>$map->xcm_sigma);
-      $qx_enum = $map->{lcenum};
-    }
+    $xqm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
+    $xqm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
   }
-  elsif ($mapto =~ /^[t]/i) {
+  else { #if ($mapto =~ /^[t]/i)
     ##~~~~~~ mapto=terms
 
     ##-- get reduced (term x R) matrix
@@ -294,19 +273,54 @@ sub mapQuery {
 
     ##-- group-average query terms
     my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
-    my $xqm = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
+    $xqm    = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
     if (!$n_tdm0) { $xqm .= 0; }
 
     ##-- merge in qdocs_, qcats_ sub-queries
     $xqm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
     $xqm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
+  }
 
+  return $xqm;
+}
+
+## \@kbest = $map->mapQuery($querySignatureOrString,%opts)
+## + %opts
+##    mapto => $mapto,		  ##-- one of qw(cats docs terms)
+##    kbest => $k,		  ##-- get $k nearest neighbors
+##    minFreq => $minFreq,	  ##-- [mapto=>'terms'] post-filter; default=0
+##    minDocFreq => $minDocFreq,  ##-- [mapto=>'terms'] post-filter; default=0
+##    norm => $normHow,           ##-- normalization method qw(linear|cosine|vcosine|2 gaussian|normal none); default=none
+## + returns @kbest = ([$id,$dist,$label],...)
+## + side-effects:
+##   - sets $q_sig->{drange_} = [$min,$max] if $querySigatureOrString is passed as a DocClassify::Signature and it's not already set
+sub mapQuery {
+  my ($map,$query,%opts) = @_;
+
+  ##-- parse options & query
+  my $mapto = $opts{mapto} || ($map->{lcenum}->size > 1 ? 'cats' : 'docs');
+  my $q_sig = UNIVERSAL::isa($query,'DocClassify::Signature') ? $query : $map->querySignature($query);
+  my $xqm   = $map->queryVector($q_sig,%opts);
+
+  ##-- target object dispatch
+  my ($qx_dist,$qx_enum);
+  if ($mapto =~ /^[dp]/i) {
+    ##-- mapto=docs~pages: compute distance to each *document*
+    $qx_dist = $map->qdistance($xqm, $map->{xdm}, sigma2=>$map->xdm_sigma);
+    $qx_enum = $map->{denum};
+  }
+  elsif ($mapto =~ /^[cbv]/i) {
+    ##-- mapto=cats~books~volumne: compute distance to each *centroid*
+    $qx_dist = $map->qdistance($xqm, $map->{xcm}, sigma2=>$map->xcm_sigma);
+    $qx_enum = $map->{lcenum};
+  }
+  else { #if ($mapto =~ /^[t]/i)
+    ##~~~~~~ mapto=terms~words
     ##-- distance guts :: EXPENSIVE (esp. sigma computation)
     #$map->debug("mapQuery(): distance guts");
-    $qx_dist = $map->qdistance($xqm, $xtm, sigma2=>$map->xtm_sigma);
+    $qx_dist = $map->qdistance($xqm, $map->{svd}{v}, sigma2=>$map->xtm_sigma);
     $qx_enum = $map->{tenum};
-    $q_sig->{drange_} //= [$qx_dist->minmax];
-
+    ##
     ##-- apply result-filter mask
     if (($opts{minFreq}//0) > $map->{minFreq} || ($opts{minDocFreq}//0) > $map->{minDocFreq}) {
       my $mask = $map->get_tf0  < $opts{minFreq};
