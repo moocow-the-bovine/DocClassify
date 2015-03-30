@@ -224,7 +224,6 @@ sub queryVector {
   my ($map,$query,%opts) = @_;
 
   ##-- parse options & query
-  my $mapto = $opts{mapto} || ($map->{lcenum}->size > 1 ? 'cats' : 'docs');
   my $q_sig = UNIVERSAL::isa($query,'DocClassify::Signature') ? $query : $map->querySignature($query);
   my $q_str = $q_sig->{qstr_} // "$q_sig";
 
@@ -248,38 +247,22 @@ sub queryVector {
 
   ##-- target object dispatch
   my $xqm;
-  if ($mapto =~ /^[dpcbv]/) {
-    ##~~~~~~ mapto=(docs~pages|cats~books~volume): merge in qdocs_, qcats_ sub-queries
-    if (0) {
-      ##-- treat query as a document: old DocClassify/VZ classification method
-      $xqm = $map->svdApply($q_tdm0->pdl);
-      if ($n_tdm0 > 0) { $xqm /= $n_qsrc; }
-      else             { $xqm .= 0; }
-    } else {
-      ##-- treat query as weighted terms: term->term method (group-average query terms)
-      my $xtm = $map->{svd}{v};
-      my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
-      $xqm  = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
-      if (!$n_tdm0) { $xqm .= 0; }
-    }
-    $xqm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
-    $xqm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
-  }
-  else { #if ($mapto =~ /^[t]/i)
-    ##~~~~~~ mapto=terms
-
-    ##-- get reduced (term x R) matrix
+  if (0) {
+    ##-- treat query as a document: old DocClassify/VZ classification method
+    $xqm = $map->svdApply($q_tdm0->pdl);
+    if ($n_tdm0 > 0) { $xqm /= $n_qsrc; }
+    else             { $xqm .= 0; }
+  } else {
+    ##-- treat query as weighted terms: term->term method (group-average query terms)
     my $xtm = $map->{svd}{v};
-
-    ##-- group-average query terms
     my $q_w = $q_tdm0->_nzvals / $q_tdm0->_nzvals->sumover;
-    $xqm    = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
+    $xqm  = ($xtm->dice_axis(1, ($q_tdm0->allmissing ? null : $q_tdm0->_whichND->slice("(0),"))) * $q_w->dummy(0,1))->xchg(0,1)->sumover->dummy(1,1);
     if (!$n_tdm0) { $xqm .= 0; }
-
-    ##-- merge in qdocs_, qcats_ sub-queries
-    $xqm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
-    $xqm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
   }
+
+  ##-- merge in qdocs_, qcats_ sub-queries
+  $xqm += ($qq_xdm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xdm->isempty);
+  $xqm += ($qq_xcm / $n_qsrc)->xchg(0,1)->sumover->dummy(1,1) if (!$qq_xcm->isempty);
 
   return $xqm;
 }
