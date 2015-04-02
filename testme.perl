@@ -25,7 +25,11 @@ use File::Basename qw(basename dirname);
 use Getopt::Long qw(:config no_ignore_case);
 use Benchmark qw(cmpthese timethese);
 
-BEGIN { $,=' '; }
+BEGIN {
+  $,=' ';
+  binmode(STDOUT,':utf8');
+  binmode(STDERR,':utf8');
+}
 
 ##======================================================================
 ## utils
@@ -3903,8 +3907,789 @@ sub test_file2dir {
 
   exit 0;
 }
-test_file2dir(@ARGV);
+#test_file2dir(@ARGV);
 
+##--------------------------------------------------------------
+## test reflect
+
+## sum of squared errors
+sub errsum { return ($_[0]-$_[1])->pow(2)->dsum; }
+BEGIN { *PDL::errsum = \&errsum; }
+
+## relative sum of squared errors rerrsum($a,$b) = errsum($a,$b) / variance($a)
+sub rerrsum { return errsum(@_) / $_[0]->variance; }
+BEGIN { *PDL::rerrsum = \&rerrsum; }
+
+sub log2 {
+  my ($x,$eps) = @_;
+  $eps //= 1e-38;
+  return $x->log->inplace->setnantobad->inplace->setbadtoval(log($eps)) / log(2);
+}
+
+sub dist_kl {
+  my ($p,$q,$eps) = @_;
+  return ($p * (log2($p,$eps) - log2($q,$eps)))->sumover;
+}
+sub dist_js {
+  my ($p,$q,$eps) = @_;
+  my $m    = ($p+$q)/2;
+  #return (dist_kl($p,$m,$eps) + dist_kl($q,$m,$eps))/2;
+  my $logm = log2($m,$eps);
+  return (($p*(log2($p,$eps)-$logm))->sumover + ($q*(log2($q,$eps)-$logm))->sumover)/2;
+}
+sub dist_l2 {
+  my ($p,$q) = @_;
+  my $dist = ($p-$q)->inplace->pow(2)->sumover->inplace->sqrt;
+  $dist->inplace->setnantobad->inplace->setbadtoval('inf');
+  return $dist;
+}
+
+## dump_kbest($map,$qv,$k=10,$label='kbest',$xdm=$map->{svd}{v},%opts)
+##  + %opts:
+##     dist=>\&distsub,
+sub dump_kbest {
+  my ($map,$qv,$k,$label,$xtm,%opts) = @_;
+  my $dsub = $opts{dist} // sub { $map->qdistance($_[0],$_[1]) };
+  $k     //= 10;
+  $label //= 'kbest';
+  $xtm   //= $map->{svd}{v};
+
+  my $dist  = $dsub->($qv, $xtm);
+  my $kbest = $map->kBestItems($dist, $map->{tenum}, k=>$k);
+  foreach (0..$#$kbest) {
+    $kbest->[$_]{i} = $_;
+    utf8::decode($kbest->[$_]{label}) if (!utf8::is_utf8($kbest->[$_]{label}));
+  }
+  my @drange = $dist->minmax;
+  print
+    (($label//'QUERY')." [".join(":",@drange)."]\n",
+     (map {" [$_->{i}]\t$_->{dist}\t$_->{id}\t".($_->{label}//'')."\n"} @$kbest),
+    );
+}
+
+sub test_reflect {
+  my $mapfile = shift || 'dta-dc-xpages-map.64.d';
+  $map = DocClassify::Mapper->loadFile($mapfile, verboseIO=>1, mmap=>1)
+    or die("$0: failed to load file $mapfile: $!");
+  $map->info("loaded file $mapfile");
+
+  ##-- debug: doc
+  # rerror(svd.u, apply0 : doc=marx_kapital0301_1894.0347.csv.1g ) = [2.6988193e-28]
+  # rdist (svd.u, apply0 : doc=marx_kapital0301_1894.0347.csv.1g ) = [0]
+  # rerror(tdm,   tdm1   : doc=marx_kapital0301_1894.0347.csv.1g ) = 1.35205828774224e-27
+  if (0) {
+    my $dsym  = 'dta-pages.d/marx_kapital0301_1894.d/marx_kapital0301_1894.0347.csv.1g';
+    my $dlab  = basename($dsym);
+    $map->info("test: doc=$dlab");
+    my $di    = $map->{denum}{sym2id}{$dsym};
+    my $tdm   = $map->{tdm};
+    my $d_tdm = $tdm->dice_axis(1,$di);
+    my $d_xdm  = $map->{svd}->apply0($d_tdm->todense);
+    print "rerror(svd.u, apply0 : doc=$dlab ) = ".rerrsum($map->{svd}{u}->slice(",$di"), $d_xdm)."\n";
+    print "rdist (svd.u, apply0 : doc=$dlab ) = ".$map->qdistance($d_xdm, $map->{svd}{u}->slice(",$di"))."\n";
+    ##
+    my $d_tdm0 = (($d_tdm/$map->{tw})->exp - $map->{smoothf})->_missing(0);
+    $d_tdm0->_vals->inplace->rint;
+    my $d_tdm1 = ($d_tdm0 + $map->{smoothf});
+    $d_tdm1->inplace->log;
+    $d_tdm1 *= $map->{tw};
+    $d_tdm1->_missing(0);
+    print "rerror(tdm,   tdm1   : doc=$dlab ) = ".errsum($d_tdm->_nzvals, $d_tdm1->_nzvals)."\n";
+    #exit 0;
+  }
+
+  ##-- debug: term: ok
+  # rerror(svd.v, apply1 : term=Produktion ) = [3.6163335e-21]
+  # rdist (svd.v, apply1 : term=Produktion ) = [0]
+  # rerror(tdm,   tdm1   : term=Produktion ) = 7.99365081212095e-27
+  if (0) {
+    my $tsym  = 'Produktion';
+    $map->info("test: term=$tsym");
+    my $ti    = $map->{tenum}{sym2id}{$tsym};
+    my $tdm   = $map->{tdm};
+    my $t_tdm = $tdm->dice_axis(0,$ti);
+    my $t_xdm  = $map->{svd}->apply1($t_tdm->todense)->xchg(0,1);
+    print "rerror(svd.v, apply1 : term=$tsym ) = ".rerrsum($map->{svd}{v}->slice(",$ti"), $t_xdm)."\n";
+    print "rdist (svd.v, apply1 : term=$tsym ) = ".$map->qdistance($map->{svd}{v}->slice(",$ti"), $t_xdm)."\n";
+    ##
+    my $t_tdm0 = (($t_tdm/$map->{tw}->slice("($ti)"))->exp - $map->{smoothf})->_missing(0);
+    $t_tdm0->_vals->inplace->rint;
+    my $t_tdm1 = ($t_tdm0 + $map->{smoothf});
+    $t_tdm1->inplace->log;
+    $t_tdm1 *= $map->{tw}->slice("($ti)");
+    $t_tdm1->_missing(0);
+    print "rerror(tdm,   tdm1   : term=$tsym ) = ".errsum($t_tdm->_nzvals, $t_tdm1->_nzvals)."\n";
+    #exit 0;
+  }
+
+  ##-- test: approximate term as by averaging over k-best docs (k==0 --> all docs)
+  if (1) {
+    my $tsym  = 'Produktion';
+    $map->info("test/approx: term=$tsym");
+    my $ti    = $map->{tenum}{sym2id}{$tsym};
+
+    ##-- common
+    my $svd   = $map->{svd};
+    my $tdm   = $map->{tdm};
+    my $xdm   = $svd->{u};
+    my ($how);
+
+    ##-- raw svd.v
+    # Produktion:svd.v [0:1.47134703592471]
+    #   [0]	0	77231	Produktion
+    #   [1]	0.0185670031345129	56722	Rohstoff
+    #   [2]	0.019787124129197	19431	produzieren
+    #   [3]	0.0260195556111262	1289	industriell
+    #   [4]	0.0272619341872566	151136	Überproduktion
+    #   [5]	0.0338075293462893	27006	Produzent
+    #   [6]	0.0347882276209674	81227	Arbeitslohn
+    #   [7]	0.0359281409715821	159765	Konsumtion
+    #   [8]	0.0373910179575001	156536	Verkaufspreis
+    #   [9]	0.0381823960712526	100014	Kapital
+    print "-- ".($how='svd.v')."\n";
+    my $t_x1  = $svd->{v}->slice(",$ti");
+    dump_kbest($map, $t_x1,  10, "$tsym:$how");
+
+    ##-- get distances
+    my $ddist = $map->qdistance($t_x1, $xdm);
+    my $ddisti= $ddist->qsorti;
+    my $k = 100;
+    my $dik    = ($k<=0 ? $ddisti->xvals : $ddisti->slice("0:".($k-1)));
+    my $ddistk = $ddist->index($dik);
+    $dik->sever;
+    $ddistk->sever;
+    undef($ddist);
+    undef($ddisti);
+
+    if (0) {
+      ##-- svd.vp- : row-normalized svd.vp (sums to 1 for each t) : GOOD: pretty much identical to svd.v (NOT P --> includes negative values!)
+      # Produktion:svd.vp- [1.11022302462516e-16:1.92240125065685]
+      #   [0]	1.11022302462516e-16	77231	Produktion
+      #   [1]	0.0185670031345131	56722	Rohstoff
+      #   [2]	0.0197871241291971	19431	produzieren
+      #   [3]	0.0260195556111266	1289	industriell
+      #   [4]	0.0272619341872568	151136	Überproduktion
+      #   [5]	0.0338075293462893	27006	Produzent
+      #   [6]	0.0347882276209673	81227	Arbeitslohn
+      #   [7]	0.0359281409715823	159765	Konsumtion
+      #   [8]	0.0373910179575001	156536	Verkaufspreis
+      #   [9]	0.0381823960712526	100014	Kapital
+      print "-- ".($how='svd.vp-')."\n";
+      my $vp    = $svd->{v} / $svd->{v}->sumover->slice("*1,");
+      my $t_p1  = $vp->slice(",$ti");
+      dump_kbest($map, $t_p1,  10, "$tsym:$how", $vp);
+    }
+
+    if (0) {
+      ##-- svd.vp+ : row-normalized svd.vp (sums to 1 for each t, global-positive): ok
+      # Produktion:svd.vp+ [0:0.0178217411001815]
+      #   [0]	0	77231	Produktion
+      #   [1]	8.80492678634326e-06	115471	Kapitalist
+      #   [2]	1.15977541089718e-05	69130	Mehrwert
+      #   [3]	1.58567623866901e-05	148705	Arbeitskraft
+      #   [4]	2.29300948351163e-05	9734	Profit
+      #   [5]	2.58138900672833e-05	149004	kapitalistisch
+      #   [6]	2.72690675240383e-05	81227	Arbeitslohn
+      #   [7]	2.84411370307103e-05	152541	Arbeiter
+      #   [8]	2.90657302141062e-05	129291	Produktionsmittel
+      #   [9]	2.92795355021358e-05	19431	produzieren
+      print "-- ".($how='svd.vp+')."\n";
+      my $vp    = ($svd->{v}-$svd->{v}->min); $vp /= $vp->sumover->slice("*1,");
+      my $t_p1  = $vp->slice(",$ti");
+      dump_kbest($map, $t_p1,  10, "$tsym:$how", $vp);
+    }
+
+    if (0) {
+      ##-- svd.vpr+ : row-normalized svd.vp (sums to 1 for each t, row-positive): GOOD (~svd.v)
+      # Produktion:svd.v [0:0.264042797194421]
+      #   [0]	0	77231	Produktion
+      #   [1]	0.00173636246891218	56722	Rohstoff
+      #   [2]	0.00180276862733897	19431	produzieren
+      #   [3]	0.0024463300871812	151136	Überproduktion
+      #   [4]	0.00245948615733804	1289	industriell
+      #   [5]	0.00310889913335155	27006	Produzent
+      #   [6]	0.00317209864135559	81227	Arbeitslohn
+      #   [7]	0.003194959826053	159765	Konsumtion
+      #   [8]	0.00328181959821261	156536	Verkaufspreis
+      #   [9]	0.00338841121159972	100014	Kapital
+      print "-- ".($how='svd.vpr+')."\n";
+      my $vmin  = $svd->{v}->minimum->slice("*1,");
+      my $vp    = $svd->{v}-$vmin; $vp /= $vp->sumover->slice("*1,");
+      my $t_p1  = $vp->slice(",$ti");
+      dump_kbest($map, $t_p1,  10, "$tsym:$how", $vp);
+    }
+
+    if (0) {
+      ##-- svd.vpr+.js : row-normalized svd.vp, dist via jensen-shannon divergence D_{JS} = .5*D(P||M) + .5*D(Q||M) with M=.5(P+Q)
+      ## + not too bad: -{Produzent,Verkaufspreis,Kapital} ; +{Arbeitskraft,Produktionszweig,Exploitation}
+      # Produktion:svd.vpr+.js [0:0.144952201209124]
+      #   [0]	0	77231	Produktion
+      #   [1]	0.000798724427789069	56722	Rohstoff
+      #   [2]	0.00130882038091908	1289	industriell
+      #   [3]	0.00137934542935164	81227	Arbeitslohn
+      #   [4]	0.00143272089381112	19431	produzieren
+      #   [5]	0.00146633847645853	148705	Arbeitskraft
+      #   [6]	0.00148706790278635	13108	Produktionszweig
+      #   [7]	0.00150903871324483	151136	Überproduktion
+      #   [8]	0.00157296827766291	159765	Konsumtion
+      #   [9]	0.00159901073762117	11315	Exploitation
+      print "-- ".($how='svd.vpr+.js')."\n";
+      my $vmin  = $svd->{v}->minimum->slice("*1,");
+      my $vp    = $svd->{v}-$vmin; $vp /= $vp->sumover->slice("*1,");
+      my $t_p1  = $vp->slice(",$ti");
+      ##
+      dump_kbest($map, $t_p1,  10, "$tsym:$how", $vp, dist=>\&dist_js);
+    }
+
+    if (0) {
+      ##-- svd.v2 : row-unit-length svd.v (l2-length = 1 foreach t): GOOD (==svd.v)
+      # Produktion:svd.v2 [0:1.47134703592471]
+      #   [0]	0	77231	Produktion
+      #   [1]	0.0185670031345129	56722	Rohstoff
+      #   [2]	0.0197871241291971	19431	produzieren
+      #   [3]	0.0260195556111262	1289	industriell
+      #   [4]	0.0272619341872566	151136	Überproduktion
+      #   [5]	0.0338075293462892	27006	Produzent
+      #   [6]	0.0347882276209672	81227	Arbeitslohn
+      #   [7]	0.0359281409715821	159765	Konsumtion
+      #   [8]	0.0373910179575001	156536	Verkaufspreis
+      #   [9]	0.0381823960712526	100014	Kapital
+      print "-- ".($how='svd.v2')."\n";
+      my $v2    = $svd->{v} / $svd->{v}->pow(2)->sumover->sqrt->slice("*1,");
+      my $t_x2  = $v2->slice(",$ti");
+      dump_kbest($map, $t_x2,  10, "$tsym:$how", $v2);
+    }
+
+    if (0) {
+      ##-- kbest-l2-avg: group-average of k-best l2-row-normalized doc-vectors in svd.u (via l2-normalized svd.v) : OK (~ kbest-avg)
+      # rerror(svd.v2, kbest-l2-avg(100) : term=Produktion ) = [ 5.1654862]
+      # rdist (svd.v2, kbest-l2-avg(100) : term=Produktion ) = [0.040097239]
+      # Produktion:kbest-l2-avg(100) [0.0117268986850964:1.4759828913358]
+      #   [0]	0.0117268986850964	40587	Verausgabung
+      #   [1]	0.0119158123141767	116890	Produktionsprozeß
+      #   [2]	0.0121966842165488	115471	Kapitalist
+      #   [3]	0.0122318431419975	129291	Produktionsmittel
+      #   [4]	0.0128862266735164	60592	Warenproduktion
+      #   [5]	0.0130077618486985	149004	kapitalistisch
+      #   [6]	0.0130912015116419	148705	Arbeitskraft
+      #   [7]	0.0130987559841615	123833	Produktionselement
+      #   [8]	0.0133941328145437	146525	Wertsumme
+      #   [9]	0.0141278196906331	98013	produktiv
+      print "--".($how="kbest-l2-avg($k)")."\n";
+      my $u2    = $svd->{u} / $svd->{u}->pow(2)->sumover->sqrt->slice("*1,");
+      my $v2    = $svd->{v} / $svd->{v}->pow(2)->sumover->sqrt->slice("*1,");
+      my $t_x2  = $v2->slice(",$ti");
+      my $ddist2  = $map->qdistance($t_x2, $u2);
+      my $ddisti2 = $ddist2->qsorti;
+      my $dik2    = ($k<=0 ? $ddisti2->xvals : $ddisti2->slice("0:".($k-1)));
+      my $ddistk2 = $ddist2->index($dik2);
+      ##
+      my $t_xk2   = $u2->dice_axis(1,$dik2)->xchg(0,1)->average->slice(",*1");
+      $t_xk2    /=  $t_xk2->pow(2)->sumover->inplace->sqrt->slice("*1,");
+      ##
+      print "rerror(svd.v2, $how : term=$tsym ) = ".rerrsum($t_x2, $t_xk2)."\n";
+      print "rdist (svd.v2, $how : term=$tsym ) = ".$map->qdistance($t_x2, $t_xk2)."\n";
+      dump_kbest($map, $t_xk2, 10, "$tsym:$how", $v2);
+    }
+
+    if (0) {
+      ##-- kbest-l2-bavg : boltzmann-average of k-best l2-row-normalized doc-vectors in svd.u (via l2-normalized svd.v) ~ ok (~bavg)
+      ##
+      # --kbest-l2-bavg(k=100,b=2,beta=-1)
+      # rerror(svd.v2, kbest-l2-bavg(k=100,b=2,beta=-1) : term=Produktion ) = [ 62.716522]
+      # rdist (svd.v2, kbest-l2-bavg(k=100,b=2,beta=-1) : term=Produktion ) = [0.040735215]
+      # Produktion:kbest-l2-bavg(k=100,b=2,beta=-1) [0.0114082501564637:1.47475029498996]
+      #   [0]	0.0114082501564637	116890	Produktionsprozeß
+      #   [1]	0.0118299379829657	129291	Produktionsmittel
+      #   [2]	0.01191843839326	115471	Kapitalist
+      #   [3]	0.0122205767975829	40587	Verausgabung
+      #   [4]	0.0126338960221017	123833	Produktionselement
+      #   [5]	0.0127172705041801	60592	Warenproduktion
+      #   [6]	0.0130559368587654	149004	kapitalistisch
+      #   [7]	0.0133846135177287	146525	Wertsumme
+      #   [8]	0.013648280935277	98013	produktiv
+      #   [9]	0.0137983337603055	148705	Arbeitskraft
+      ##
+      # --kbest-l2-bavg(k=0,b=2,beta=-100)
+      # rerror(svd.v2, kbest-l2-bavg(k=0,b=2,beta=-100) : term=Produktion ) = [ 62.928751]
+      # rdist (svd.v2, kbest-l2-bavg(k=0,b=2,beta=-100) : term=Produktion ) = [0.039261567]
+      # Produktion:kbest-l2-bavg(k=0,b=2,beta=-100) [0.0157172190421844:1.47814329052672]
+      #   [0]	0.0157172190421844	60592	Warenproduktion
+      #   [1]	0.0160573297647488	148705	Arbeitskraft
+      #   [2]	0.0177617821685755	40587	Verausgabung
+      #   [3]	0.0179849754443903	114859	Produktionsbedingung
+      #   [4]	0.0180683769966997	149004	kapitalistisch
+      #   [5]	0.0183035122358343	123833	Produktionselement
+      #   [6]	0.0192859647037391	146525	Wertsumme
+      #   [7]	0.0193623336513081	116890	Produktionsprozeß
+      #   [8]	0.0196963445378234	52421	vergegenständlicht
+      #   [9]	0.0198621571648722	129291	Produktionsmittel
+      ##
+      my ($b,$beta) = (2,-100);
+      print "--".($how="kbest-l2-bavg(k=$k,b=$b,beta=$beta)")."\n";
+      my $u2    = $svd->{u} / $svd->{u}->pow(2)->sumover->sqrt->slice("*1,");
+      my $v2    = $svd->{v} / $svd->{v}->pow(2)->sumover->sqrt->slice("*1,");
+      my $t_x2  = $v2->slice(",$ti");
+      my $ddist2  = $map->qdistance($t_x2, $u2);
+      my $ddisti2 = $ddist2->qsorti;
+      my $dik2    = ($k<=0 ? $ddisti2->xvals : $ddisti2->slice("0:".($k-1)));
+      my $ddistk2 = $ddist2->index($dik2);
+      ##
+      my $dsim = pdl($b)->pow($beta * $ddistk2);
+      $dsim   /= $dsim->sumover;
+      my $t_xk2b = ($xdm->dice_axis(1,$dik2)->xchg(0,1) * $dsim)->sumover;
+      ##
+      print "rerror(svd.v2, $how : term=$tsym ) = ".rerrsum($t_x2, $t_xk2b)."\n";
+      print "rdist (svd.v2, $how : term=$tsym ) = ".$map->qdistance($t_x2, $t_xk2b)."\n";
+      dump_kbest($map, $t_xk2b, 10, "$tsym:$how", $v2);
+    }
+    #exit 0;
+
+    if (0) {
+      ##-- kbest-2avg : l2-distance weighted average of k-best (l2) doc-vectors in svd.u : so-so
+      # --kbest-2avg(k=100,beta=-1)
+      # rerror(svd.v2, kbest-2avg(k=100,beta=-1) : term=Produktion ) = [ 39.735048]
+      # rdist (svd.v2, kbest-2avg(k=100,beta=-1) : term=Produktion ) = [0.049791168]
+      # Produktion:kbest-2avg(k=100,beta=-1) [0.0108282852056867:1.46074752835697]
+      #   [0]	0.0108282852056867	115471	Kapitalist
+      #   [1]	0.0109064173155509	129291	Produktionsmittel
+      #   [2]	0.012200192626966	116890	Produktionsprozeß
+      #   [3]	0.0124558008467881	98013	produktiv
+      #   [4]	0.0128778783053302	54397	Warenwert
+      #   [5]	0.0130848809960051	69130	Mehrwert
+      #   [6]	0.0134480336063074	70124	Zirkulation
+      #   [7]	0.0137110082912136	148366	produziert
+      #   [8]	0.0137177167330791	153018	Mehrprodukt
+      #   [9]	0.0139232253535294	155105	Kapitalwert
+      ##
+      # --kbest-2avg(k=0,beta=-1)
+      # rerror(svd.v2, kbest-2avg(k=0,beta=-1) : term=Produktion ) = [ 64.226939]
+      # rdist (svd.v2, kbest-2avg(k=0,beta=-1) : term=Produktion ) = [0.91048616]
+      # Produktion:kbest-2avg(k=0,beta=-1) [0.50995566728076:1.07216023245732]
+      #   [0]	0.50995566728076	94065	fügen
+      #   [1]	0.53549658025045	9183	abgeben
+      #   [2]	0.545092393389295	154007	schließen
+      #   [3]	0.603070629440469	154863	aufnehmen
+      #   [4]	0.615285173187793	66178	kommend
+      #   [5]	0.615326163656242	101471	aufhören
+      #   [6]	0.618147450618196	122641	haben
+      #   [7]	0.620910132396963	45303	gefallen
+      #   [8]	0.623354767117017	67129	vergessen
+      #   [9]	0.62364595623985	71157	einzig
+      ##
+      # --kbest-2avg(k=0,beta=-100)
+      # rerror(svd.v2, kbest-2avg(k=0,beta=-100) : term=Produktion ) = [ 35.740615]
+      # rdist (svd.v2, kbest-2avg(k=0,beta=-100) : term=Produktion ) = [0.097080886]
+      # Produktion:kbest-2avg(k=0,beta=-100) [0.0365309863558141:1.42125382510814]
+      #   [0]	0.0365309863558141	129432	Goldproduktion
+      #   [1]	0.0401575026212001	40277	Wertteil
+      #   [2]	0.0411393886696994	50409	Zirkulationskapital
+      #   [3]	0.0415757018623155	42003	Schatzbildung
+      #   [4]	0.0420358743997047	158184	Goldproduzent
+      #   [5]	0.0424644336281436	153018	Mehrprodukt
+      #   [6]	0.0435088940933253	16376	Rückzuverwandeln
+      #   [7]	0.0444105545882917	58585	rückverwandelt
+      #   [8]	0.0444698574078793	36807	Naturalform
+      #   [9]	0.0448591648024118	142553	Revenue
+      my $beta = -10;
+      print "--".($how="kbest-2avg(k=$k,beta=$beta)")."\n";
+      my $ddist2  = dist_l2($t_x1, $xdm);
+      my $ddisti2 = $ddist2->qsorti;
+      my $dik2    = ($k<=0 ? $ddisti2->xvals : $ddisti2->slice("0:".($k-1)));
+      my $ddistk2 = $ddist2->index($dik2);
+      ##
+      my $dsim   = $ddistk2->pow($beta); $dsim /= $dsim->sumover;
+      my $t_xk2 = ($xdm->dice_axis(1,$dik2)->xchg(0,1) * $dsim)->sumover;
+      ##
+      print "rerror(svd.v2, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xk2)."\n";
+      print "rdist (svd.v2, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xk2)."\n";
+      dump_kbest($map, $t_xk2, 10, "$tsym:$how");
+    }
+    #exit 0;
+
+    if (0) {
+      ##-- kbest-avg: group-average of k-best doc-vectors in svd.u ; crappy for k=0
+      # rerror(svd.v, kbest-avg(100) : term=Produktion ) = [ 42.296226]
+      # rdist (svd.v, kbest-avg(100) : term=Produktion ) = [0.040787276]
+      # Produktion:kbest-avg(100) [0.0113999018334485:1.47476003527591]
+      #   [0]	0.0113999018334485	116890	Produktionsprozeß
+      #   [1]	0.0118339310130481	129291	Produktionsmittel
+      #   [2]	0.0119070398281698	115471	Kapitalist
+      #   [3]	0.0122209921656428	40587	Verausgabung
+      #   [4]	0.0126411596660747	123833	Produktionselement
+      #   [5]	0.0127142086788566	60592	Warenproduktion
+      #   [6]	0.0130523132675067	149004	kapitalistisch
+      #   [7]	0.013389542514514	146525	Wertsumme
+      #   [8]	0.01362754654162	98013	produktiv
+      #   [9]	0.0138245208056922	148705	Arbeitskraft
+      print "--".($how="kbest-avg($k)")."\n";
+      my $t_x1k = $xdm->dice_axis(1,$dik)->xchg(0,1)->average->slice(",*1");
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1k)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1k)."\n";
+      dump_kbest($map, $t_x1k, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- kbest-bavg: boltzmann-weighting of k-best doc vectors from svd.u (not very different, even for k=10000; crappy for k=0)
+      # --kbest-bavg(k=0,b=2,beta=-1)
+      # rerror(svd.v, kbest-bavg(k=100,b=2,beta=-1) : term=Produktion ) = [ 42.300564]
+      # rdist (svd.v, kbest-bavg(k=100,b=2,beta=-1) : term=Produktion ) = [0.040735215]
+      # Produktion:kbest-bavg(k=100,b=2,beta=-1) [0.0114082501564636:1.47475029498996]
+      #   [0]	0.0114082501564636	116890	Produktionsprozeß
+      #   [1]	0.0118299379829657	129291	Produktionsmittel
+      #   [2]	0.0119184383932601	115471	Kapitalist
+      #   [3]	0.0122205767975828	40587	Verausgabung
+      #   [4]	0.0126338960221016	123833	Produktionselement
+      #   [5]	0.01271727050418	60592	Warenproduktion
+      #   [6]	0.0130559368587655	149004	kapitalistisch
+      #   [7]	0.0133846135177287	146525	Wertsumme
+      #   [8]	0.0136482809352771	98013	produktiv
+      #   [9]	0.0137983337603055	148705	Arbeitskraft
+      ##
+      # --kbest-bavg(k=0,b=2,beta=-100)
+      # rerror(svd.v, kbest-bavg(k=0,b=2,beta=-100) : term=Produktion ) = [ 44.797449]
+      # rdist (svd.v, kbest-bavg(k=0,b=2,beta=-100) : term=Produktion ) = [0.039261567]
+      # Produktion:kbest-bavg(k=0,b=2,beta=-100) [0.0157172190421841:1.47814329052672]
+      #   [0]	0.0157172190421841	60592	Warenproduktion
+      #   [1]	0.0160573297647487	148705	Arbeitskraft
+      #   [2]	0.0177617821685753	40587	Verausgabung
+      #   [3]	0.0179849754443901	114859	Produktionsbedingung
+      #   [4]	0.0180683769966995	149004	kapitalistisch
+      #   [5]	0.0183035122358342	123833	Produktionselement
+      #   [6]	0.019285964703739	146525	Wertsumme
+      #   [7]	0.0193623336513081	116890	Produktionsprozeß
+      #   [8]	0.0196963445378233	52421	vergegenständlicht
+      #   [9]	0.0198621571648722	129291	Produktionsmittel
+      my ($b,$beta) = (2,-100);
+      print "--".($how="kbest-bavg(k=$k,b=$b,beta=$beta)")."\n";
+      my $dsim = pdl($b)->pow($beta * $ddistk);
+      $dsim   /= $dsim->sumover;
+      my $t_x1kb = ($xdm->dice_axis(1,$dik)->xchg(0,1) * $dsim)->sumover;
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1kb)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1kb)."\n";
+      dump_kbest($map, $t_x1kb, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- kbest-gavg: gaussian-weighting of k-best doc vectors from svd.u ~ tavg,bavg , crappy for k=0
+      # --kbest-gavg(k=100)
+      # rerror(svd.v, kbest-gavg(k=100) : term=Produktion ) = [ 42.389441]
+      # rdist (svd.v, kbest-gavg(k=100) : term=Produktion ) = [0.039020867]
+      # Produktion:kbest-gavg(k=100) [0.0119692620628209:1.47395068789919]
+      #   [0]	0.0119692620628209	129291	Produktionsmittel
+      #   [1]	0.0121482275255931	116890	Produktionsprozeß
+      #   [2]	0.0125920127802549	40587	Verausgabung
+      #   [3]	0.0126742193126104	115471	Kapitalist
+      #   [4]	0.0128049526674902	123833	Produktionselement
+      #   [5]	0.0131313571758523	148705	Arbeitskraft
+      #   [6]	0.013459151408022	60592	Warenproduktion
+      #   [7]	0.0135848741298209	146525	Wertsumme
+      #   [8]	0.0136723671900842	149004	kapitalistisch
+      #   [9]	0.0148040911292477	98013	produktiv
+      print "--".($how="kbest-gavg(k=$k)")."\n";
+      my $dsim = _gausscdf($ddistk, $ddistk->average, $ddistk->stddev);
+      $dsim->minus(1,$dsim,1);
+      $dsim /= $dsim->sumover;
+      my $t_x1kg = ($xdm->dice_axis(1,$dik)->xchg(0,1) * $dsim)->sumover;
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1kg)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1kg)."\n";
+      dump_kbest($map, $t_x1kg, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- kbest-tavg: tdm-weighting of k-best doc vectors from svd.u : pretty good for $k=0
+      # -- kbest-tavg(100)
+      # rerror(svd.v, kbest-tavg(100) : term=Produktion ) = [ 50.667737]
+      # rdist (svd.v, kbest-tavg(100) : term=Produktion ) = [0.040108406]
+      # Produktion:kbest-tavg(100) [0.0371659356496629:1.44638669196081]
+      #   [0]	0.0371659356496629	159765	Konsumtion
+      #   [1]	0.0375371189774607	27006	Produzent
+      #   [2]	0.0401084059802561	77231	Produktion
+      #   [3]	0.042055690131776	114859	Produktionsbedingung
+      #   [4]	0.0422924259160886	76441	produktions-
+      #   [5]	0.0424957478171955	19431	produzieren
+      #   [6]	0.0426125832558132	13108	Produktionszweig
+      #   [7]	0.0437180534433687	11315	Exploitation
+      #   [8]	0.0440532107869019	98013	produktiv
+      #   [9]	0.0443085578832868	119000	Produktivkraft
+      # -- kbest-tavg(0)
+      # rerror(svd.v, kbest-tavg(0) : term=Produktion ) = [ 55.228536]
+      # rdist (svd.v, kbest-tavg(0) : term=Produktion ) = [0.046454206]
+      # Produktion:kbest-tavg(0) [0.0464542057507583:1.38476997115507]
+      #   [0]	0.0464542057507583	77231	Produktion
+      #   [1]	0.0680245881865382	56722	Rohstoff
+      #   [2]	0.0690173737806131	40035	Verwertung
+      #   [3]	0.0750803418624154	1289	industriell
+      #   [4]	0.0759822670883686	19431	produzieren
+      #   [5]	0.0797753344818528	111535	Industriezweig
+      #   [6]	0.0872513911197084	4260	Smith
+      #   [7]	0.0888970063856764	32900	Konsument
+      #   [8]	0.0895056379633526	103654	funktionierend
+      #   [9]	0.08952439768719	4245	disponibel
+      print "-- ".($how="kbest-tavg($k)")."\n";
+      my $pd   = $tdm->dice_axis(0,$ti);
+      $pd     /= $pd->_nzvals->sumover;
+      my $pd_nzi  = $pd->_nzvals->qsorti->slice("-1:0");
+      my $pd_nzik = $pd_nzi->slice("0:".($k-1));
+      my $pik    = $pd->_whichND->slice("(1),")->index($pd_nzik);
+      my $ppk    = $pd->_nzvals->index($pd_nzik);
+      my $t_x1kt = ($xdm->dice_axis(1,$pik)->xchg(0,1) * ($ppk/$ppk->sumover))->sumover->slice(",*1");
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1kt)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1kt)."\n";
+      dump_kbest($map, $t_x1kt, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- tdm-apply : apply1 of term-vector from tdm : GOOD (universal only)
+      # rerror(svd.v, tdm-apply : term=Produktion ) = [3.6167841e-21]
+      # rdist (svd.v, tdm-apply : term=Produktion ) = [0]
+      # Produktion:tdm-apply [0:1.47134703592439]
+      #   [0]	0	77231	Produktion
+      #   [1]	0.0185670031344831	56722	Rohstoff
+      #   [2]	0.0197871241291993	19431	produzieren
+      #   [3]	0.0260195556112294	1289	industriell
+      #   [4]	0.0272619341871018	151136	Überproduktion
+      #   [5]	0.0338075293463966	27006	Produzent
+      #   [6]	0.0347882276209726	81227	Arbeitslohn
+      #   [7]	0.0359281409711207	159765	Konsumtion
+      #   [8]	0.0373910179576675	156536	Verkaufspreis
+      #   [9]	0.0381823960712092	100014	Kapital
+      print "-- ".($how="tdm-apply")."\n";
+      my $t_tdm = $tdm->dice_axis(0,$ti);
+      my $t_x1a = $svd->apply1($t_tdm)->xchg(0,1);
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1a)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1a)."\n";
+      dump_kbest($map, $t_x1a, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- kbest-avg-apply : apply1 of group-average over k-best doc-vectors from tdm --> ~ kbest-avg (but much more expensive)
+      # rerror(svd.v, kbest-avg-apply(100) : term=Produktion ) = [ 42.296226]
+      # rdist (svd.v, kbest-avg-apply(100) : term=Produktion ) = [0.040787276]
+      # Produktion:kbest-avg-apply(100) [0.0113999018334485:1.47476003527591]
+      #   [0]	0.0113999018334485	116890	Produktionsprozeß
+      #   [1]	0.0118339310130481	129291	Produktionsmittel
+      #   [2]	0.0119070398281698	115471	Kapitalist
+      #   [3]	0.0122209921656428	40587	Verausgabung
+      #   [4]	0.0126411596660747	123833	Produktionselement
+      #   [5]	0.0127142086788566	60592	Warenproduktion
+      #   [6]	0.0130523132675067	149004	kapitalistisch
+      #   [7]	0.0133895425145141	146525	Wertsumme
+      #   [8]	0.0136275465416201	98013	produktiv
+      #   [9]	0.0138245208056922	148705	Arbeitskraft
+      print "-- ".($how="kbest-avg-apply($k)")."\n";
+      my $t_tdm = $tdm->dice_axis(1,$dik)->xchg(0,1)->average->dummy(1,1);
+      my $t_x1aa = $svd->apply0($t_tdm);
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1aa)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1aa)."\n";
+      dump_kbest($map, $t_x1aa, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- tdm0-apply-ksum : WEIRD, expensive
+      # rerror(svd.v, tdm0-apply-ksum(100) : term=Produktion ) = [ 171.36049]
+      # rdist (svd.v, tdm0-apply-ksum(100) : term=Produktion ) = [0.07869679]
+      # Produktion:tdm0-apply-ksum(100) [0.0497729096585258:1.44059066019192]
+      #   [0]	0.0497729096585258	1678	Äquivalent
+      #   [1]	0.058785606258818	64024	unterstellen
+      #   [2]	0.0607827590603948	117410	Wertbildung
+      #   [3]	0.0611397859818161	143070	Arbeitsbedingung
+      #   [4]	0.0623912393391791	148705	Arbeitskraft
+      #   [5]	0.0627086161689305	147010	verwertend
+      #   [6]	0.0636987003632646	47293	Gebrauchswert
+      #   [7]	0.0637253361978216	19431	produzieren
+      #   [8]	0.0647278467415294	40587	Verausgabung
+      #   [9]	0.064958286138542	69582	potentiell
+      print "-- ".($how="tdm0-apply-ksum($k)")."\n";
+      my $t_tdm0k = $tdm->dice_axis(1,$dik);
+      $t_tdm0k /= $map->{tw};
+      $t_tdm0k->inplace->exp;
+      $t_tdm0k -= $map->{smoothf};
+      $t_tdm0k->_vals->inplace->rint;
+      $t_tdm0k->_missing(0);
+      my $t_x1ak  = $map->svdApply($t_tdm0k->xchg(0,1)->sumover->dummy(1,1));
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1ak)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1ak)."\n";
+      dump_kbest($map, $t_x1ak, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- tdm0-apply-kavg : apply1 of group-average over k-best doc-vectors from tdm0 --> ~ kbest-avg (but much more expensive)
+      # rerror(svd.v, tdm0-apply-kavg(100) : term=Produktion ) = [ 35.608157]
+      # rdist (svd.v, tdm0-apply-kavg(100) : term=Produktion ) = [0.041259831]
+      # Produktion:tdm0-apply-kavg(100) [0.0129851255977779:1.47374399647646]
+      #   [0]	0.0129851255977779	116890	Produktionsprozeß
+      #   [1]	0.0133013001091843	40587	Verausgabung
+      #   [2]	0.0139899026914477	129291	Produktionsmittel
+      #   [3]	0.0140100164545256	60592	Warenproduktion
+      #   [4]	0.0142486997813975	149004	kapitalistisch
+      #   [5]	0.0142641539017214	123833	Produktionselement
+      #   [6]	0.0144312401711492	115471	Kapitalist
+      #   [7]	0.0147504704512738	148705	Arbeitskraft
+      #   [8]	0.0149098272976049	146525	Wertsumme
+      #   [9]	0.0153913127332446	98013	produktiv
+      print "-- ".($how="tdm0-apply-kavg($k)")."\n";
+      my $t_tdm0k = $tdm->dice_axis(1,$dik);
+      $t_tdm0k /= $map->{tw};
+      $t_tdm0k->inplace->exp;
+      $t_tdm0k -= $map->{smoothf};
+      $t_tdm0k->_vals->inplace->rint;
+      $t_tdm0k->_missing(0);
+      my $t_x1ak = $map->svdApply($t_tdm0k->xchg(0,1)->average->dummy(1,1)); ##-- copy since svdApply alters values in-place
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_x1ak)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_x1ak)."\n";
+      dump_kbest($map, $t_x1ak, 10, "$tsym:$how");
+    }
+
+    if (1) {
+      ##-- docre-apply : apply1 of tdm over all regex-selected docs : looks VERY REASONABLE
+      ## + problems arise if selected term doesn't actually occur in any doc matching the regex (null vector)
+      ##   - maybe fall back to group-average over doc vectors in this case?
+      #
+      # -- docre-apply(re=/\bmarx_/)
+      # rerror(svd.v, docre-apply(re=/\bmarx_/) : term=Produktion ) = [ 10.487007]
+      # rdist (svd.v, docre-apply(re=/\bmarx_/) : term=Produktion ) = [0.041779172]
+      # Produktion:docre-apply(re=/\bmarx_/) [0.00326961800753545:1.50347557656497]
+      #   [0]	0.00326961800753545	129291	Produktionsmittel
+      #   [1]	0.00342129026690896	149004	kapitalistisch
+      #   [2]	0.00477166762638459	115471	Kapitalist
+      #   [3]	0.00482928181555564	116890	Produktionsprozeß
+      #   [4]	0.00598627542477803	69130	Mehrwert
+      #   [5]	0.00822093306043403	98013	produktiv
+      #   [6]	0.00857306770851585	100014	Kapital
+      #   [7]	0.00873209619127735	148705	Arbeitskraft
+      #   [8]	0.00882926153357166	162009	Akkumulation
+      #   [9]	0.00901116404815061	13108	Produktionszweig
+      ##
+      # -- docre-apply(re=/\bsimmel_geld_1900/)
+      # rerror(svd.v, docre-apply(re=/\bsimmel_geld_1900/) : term=Produktion ) = [ 62.247039]
+      # rdist (svd.v, docre-apply(re=/\bsimmel_geld_1900/) : term=Produktion ) = [0.24870116]
+      # Produktion:docre-apply(re=/\bsimmel_geld_1900/) [0.0663281523504333:1.56354595938608]
+      #   [0]	0.0663281523504333	142495	Geldbesitz
+      #   [1]	0.0914691581358091	142858	Zweckreihe
+      #   [2]	0.100378799696184	55443	Wertgefühl
+      #   [3]	0.101263236297754	62919	geldwirtschaftlich
+      #   [4]	0.103182936273932	133067	Entgegengesetztheit
+      #   [5]	0.112283746424405	63301	Geldstoff
+      #   [6]	0.114340863167315	70191	Wertung
+      #   [7]	0.124375588656746	70091	Formung
+      #   [8]	0.132919423532695	134566	Differenziertheit
+      #   [9]	0.132973655319544	35653	Eigenwert
+      ##
+      # -- docre-apply(re=/\bmenger_volkswirtschaftslehre/)
+      # rerror(svd.v, docre-apply(re=/\bmenger_volkswirtschaftslehre/) : term=Produktion ) = [ 63.311839]
+      # rdist (svd.v, docre-apply(re=/\bmenger_volkswirtschaftslehre/) : term=Produktion ) = [0.34515962]
+      # Produktion:docre-apply(re=/\bmenger_volkswirtschaftslehre/) [0.0895739234677774:1.44060374512241]
+      #   [0]	0.0895739234677774	159227	Bodenbenützung
+      #   [1]	0.0909001105566937	158114	Unternehmertätigkeit
+      #   [2]	0.110942410122433	83889	Kapitalnutzung
+      #   [3]	0.112288959302766	101490	Bodennutzung
+      #   [4]	0.126824869692736	144804	Productes
+      #   [5]	0.136210017443832	29212	wirtschaftend
+      #   [6]	0.160225838491399	155907	verfügbar
+      #   [7]	0.167049727874011	48223	Bedürfnisbefriedigung
+      #   [8]	0.193323797575237	51605	Konkurrenzverhältnis
+      #   [9]	0.201701112098627	160999	Preisbildung
+      ##
+      # -- docre-apply(re=/\bmangoldt_unternehmergewinn/)
+      # rerror(svd.v, docre-apply(re=/\bmangoldt_unternehmergewinn/) : term=Produktion ) = [ 61.911685]
+      # rdist (svd.v, docre-apply(re=/\bmangoldt_unternehmergewinn/) : term=Produktion ) = [0.16776621]
+      # Produktion:docre-apply(re=/\bmangoldt_unternehmergewinn/) [0.106508863099801:1.46757942362968]
+      #   [0]	0.106508863099801	119830	Kapitalkraft
+      #   [1]	0.111554947595897	23980	Unternehmerrente
+      #   [2]	0.111850416762876	31844	Unternehmergewinn
+      #   [3]	0.112731035067973	111997	unternehmungsweise
+      #   [4]	0.112871984455021	3982	Arbeitsrente
+      #   [5]	0.113334237158507	65148	entwerten
+      #   [6]	0.115077260598618	86905	Produktionsfaktor
+      #   [7]	0.116422495800068	47211	Ausnutzer
+      #   [8]	0.116528806065549	87384	Eigengeschäft
+      #   [9]	0.117941383880686	65880	Zinsrente
+      my $docre = '\bmangoldt_unternehmergewinn';
+      print "-- ".($how="docre-apply(re=/$docre/)")."\n";
+      my $docre_di;
+      if (defined(my $dtied=tied(@{$map->{denum}{id2sym}}))) {
+	$docre_di = pdl(long, $$dtied->re2i(qr{$docre}));
+      } else {
+	$docre_di = pdl(long, @{$map->{denum}{sym2id}}[grep {$_ =~ m{qr{$docre}}} @{$map->{denum}{id2sym}}]);
+      }
+      my $t_wnd  = pdl(long,[$ti])->slice(",*".($docre_di->nelem))->glue(0,$docre_di->slice("*1,"));
+      my $t_vals = $tdm->indexND($t_wnd)->append($tdm->missing);
+      my $t_tdm  = PDL::CCS::Nd->newFromWhich($t_wnd, $t_vals, sorted=>1,steal=>1, dims=>[1,$tdm->dim(1)])->recode;  #- recode() should be optional
+      (my $tmp = $t_wnd->slice("(0),")) .= 0;
+      ##
+      my $t_xdocre = $svd->apply1($t_tdm)->xchg(0,1);
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xdocre)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xdocre)."\n";
+      dump_kbest($map, $t_xdocre, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- nodocre-apply : apply1 of tdm over all except regex-matching docs : looks QUITE GOOD (== svd.v)
+      # -- nodocre-apply(re=/\bmarx_/)
+      # rerror(svd.v, nodocre-apply(re=/\bmarx_/) : term=Produktion ) = [7.6684803e-07]
+      # rdist (svd.v, nodocre-apply(re=/\bmarx_/) : term=Produktion ) = [5.9524482e-09]
+      # Produktion:nodocre-apply(re=/\bmarx_/) [5.9524480899853e-09:1.47136365975534]
+      #   [0]	5.9524480899853e-09	77231	Produktion
+      #   [1]	0.0185670456237266	56722	Rohstoff
+      #   [2]	0.0197835120256553	19431	produzieren
+      #   [3]	0.026019693455971	1289	industriell
+      #   [4]	0.0272573849144648	151136	Überproduktion
+      #   [5]	0.0338051585913129	27006	Produzent
+      #   [6]	0.0347821707402035	81227	Arbeitslohn
+      #   [7]	0.0359238360458716	159765	Konsumtion
+      #   [8]	0.0373877748013933	156536	Verkaufspreis
+      #   [9]	0.0381755585914764	100014	Kapital
+      my $docre = '\bmarx_';
+      print "-- ".($how="nodocre-apply(re=/$docre/)")."\n";
+      my $docre_di;
+      if (defined(my $dtied=tied(@{$map->{denum}{id2sym}}))) {
+	$docre_di = pdl(long, $$dtied->re2i(qr{$docre}));
+      } else {
+	$docre_di = pdl(long, @{$map->{denum}{sym2id}}[grep {$_ =~ m{qr{$docre}}} @{$map->{denum}{id2sym}}]);
+      }
+      my $t_tdm       = $tdm->dice_axis(0,$ti);
+      my $t_wnd_docre = pdl(long,[$ti])->slice(",*".($docre_di->nelem))->glue(0,$docre_di->slice("*1,"));
+      my $t_nzi_docre = $t_tdm->indexNDi($t_wnd_docre);
+      (my $tmp=$t_tdm->_vals->index($t_nzi_docre)) .= $t_tdm->missing;
+      $t_tdm->recode();
+      ##
+      my $t_xnodocre = $svd->apply1($t_tdm)->xchg(0,1);
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xnodocre)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xnodocre)."\n";
+      dump_kbest($map, $t_xnodocre, 10, "$tsym:$how");
+    }
+
+    exit 0;
+  }
+
+  ##-- test: k-best via queryVector() vs svdApply() : WONKY!
+  foreach my $term (@_ ? @_ : 'Produktion') {
+    my $q_sig   = $map->querySignature($term);
+    my $q_v     = $map->queryVector($q_sig);
+    my $q_tdm0  = $map->sigPdlRaw($q_sig, $map->{mapccs});
+    my $q_tdm0d = $map->sigPdlRaw($q_sig, 0);
+    my $q_xv0   = $map->svdApply($q_tdm0->pdl,0); ##-- copy since svdApply modifies values in-place
+
+    #my $svd    = $map->{svd};
+    #my $q_xv1  = $q_tdm0d x $svd->{v} x $svd->isigma;
+    #my $q_xv2  = $q_tdm0->matmult2d_zdd($svd->{v}->matmult($svd->isigma));
+    #my $q_xv3  = $q_tdm0->matmult2d_sdd($svd->{v}->matmult($svd->isigma),undef,$map->ccsSvdNil);
+    #my $q_xv4  = $q_tdm0->matmult2d_sdd($svd->{v}->matmult($svd->isigma),undef,0);
+
+    ##-- BUG: even after changing SVD code, we get q_xv0 != q_xv1 : why? --> contribution of ccsSvdNil (now honors $map->{applynil})
+    dump_kbest($map, $q_v, 10, "$term:V");
+    dump_kbest($map, $q_xv0, 10, "$term:XV0");
+    #dump_kbest($map, $q_xv1, 10, "$term:XV1");
+    #dump_kbest($map, $q_xv2, 10, "$term:XV2");
+    #dump_kbest($map, $q_xv3, 10, "$term:XV3");
+    #dump_kbest($map, $q_xv4, 10, "$term:XV4");
+  }
+
+  print STDERR "test_reflect(): done\n";
+  exit 0;
+}
+test_reflect(@ARGV);
 
 ##======================================================================
 ## MAIN (dummy)

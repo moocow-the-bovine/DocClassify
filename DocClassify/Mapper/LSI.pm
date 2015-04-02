@@ -47,6 +47,7 @@ our $verbose = 3;
 ##  #conf_nofp => $conf,              ##-- confidence level for negative-evidence parameter fitting (.95)
 ##  #conf_nofn => $conf,              ##-- confidence level for positive-evidence parameter fitting (.95)
 ##  mapccs => $bool,                 ##-- if true, map documents using sparse PDL::CCS::Nd (default=false)
+##  applynil => $bool,               ##-- if true, svdApply uses $map->ccsSvdNil() (default=true)
 ##  ##
 ##  ##-- data: post-compile()
 ##  svd => $svd,                     ##-- a MUDL::SVD object
@@ -116,6 +117,7 @@ sub new {
 			       xn => 0,
 			       nullCat => '(auto)',
 			       mapccs => 0,
+			       applynil => 1,
 
 			       ##-- data: post-compile
 			       svd=>undef,
@@ -219,7 +221,7 @@ sub mapDocument {
 
 ## $xqm = $map->queryVector($querySignatureOrString,%opts)
 ##  + guts for mapQuery(); returns a dense pdl $xqm ($svdr,1) representing $querySignatureOrString
-##  + %opts : see mapQuery()
+##  + %opts : none
 sub queryVector {
   my ($map,$query,%opts) = @_;
 
@@ -270,7 +272,7 @@ sub queryVector {
 ## \@kbest = $map->mapQuery($querySignatureOrString,%opts)
 ## + %opts
 ##    mapto => $mapto,		  ##-- one of qw(cats docs terms)
-##    kbest => $k,		  ##-- get $k nearest neighbors
+##    k     => $k,		  ##-- get $k nearest neighbors (alias: kbest)
 ##    minFreq => $minFreq,	  ##-- [mapto=>'terms'] post-filter; default=0
 ##    minDocFreq => $minDocFreq,  ##-- [mapto=>'terms'] post-filter; default=0
 ##    norm => $normHow,           ##-- normalization method qw(linear|cosine|vcosine|2 gaussian|normal none); default=none
@@ -284,6 +286,7 @@ sub mapQuery {
   my $mapto = $opts{mapto} || ($map->{lcenum}->size > 1 ? 'cats' : 'docs');
   my $q_sig = UNIVERSAL::isa($query,'DocClassify::Signature') ? $query : $map->querySignature($query);
   my $xqm   = $map->queryVector($q_sig,%opts);
+  $opts{k} //= $opts{kbest};
 
   ##-- target object dispatch
   my ($qx_dist,$qx_enum);
@@ -335,21 +338,24 @@ sub ccsDocMissing {
 ##   + returns cached $map->{ccsSvdNil} if available
 ##   + otherwise computes & caches $map->{ccsSvdNil} from $map->{svd}, $map->ccsDocMissing()
 sub ccsSvdNil {
+  return 0 if (!$_[0]{applynil});
   return $_[0]{ccsSvdNil} if (defined($_[0]{ccsSvdNil}));
   return $_[0]{ccsSvdNil} = $_[0]{svd}->apply0($_[0]->ccsDocMissing->squeeze->slice('*'.($_[0]{tw}->nelem).',*1'))->flat;
 }
 
-## $dxpdl = $map->svdApply($fpdl)
+## $dxpdl = $map->svdApply($fpdl,[$how=0])
 ##  + input $fpdl is dense pdl($NT,1):     [$tid,0]     => f($tid,$doc)
-##  + output $dxpdl is dense pdl(1,$svdr): [$svd_dim,0] => $svd_val
+##  + output $dxpdl is dense pdl($svdr,1): [$svd_dim,0] => $svd_val
 sub svdApply {
-  my ($map,$fpdl) = @_;
+  my ($map,$fpdl,$how) = @_;
+  $how //= 0;
+  my $sub = $map->{svd}->can("apply${how}");
 
   if ($map->{mapccs}) {
     ##-- ccs document-mapping mode
     $fpdl = $fpdl->toccs if (UNIVERSAL::isa($fpdl,'PDL') && !UNIVERSAL::isa($fpdl,'PDL::CCS::Nd'));  ##-- $fpdl passed as dense PDL?
     $fpdl = $map->sigPdlRaw($fpdl,1) if (!UNIVERSAL::isa($fpdl,'PDL::CCS::Nd')); ##-- $fpdl passed as doc?
-    $fpdl = $fpdl->dummy(0,1) if ($fpdl->ndims != 2);
+    $fpdl = $fpdl->dummy(1,1) if ($fpdl->ndims != 2);
     $fpdl = $fpdl->make_physically_indexed();
     my $wnd  = $fpdl->_whichND;
     my $vals = $fpdl->_vals;
@@ -359,7 +365,7 @@ sub svdApply {
       (my $tmp=$vals->slice("0:-2")) *= $map->{tw}->index($wnd->slice("(0),")) ##-- apply term weights
     }
     $fpdl->missing($map->ccsDocMissing);                             ##-- approximate "missing" value
-    return $map->{svd}->apply0($fpdl,$map->ccsSvdNil);               ##-- apply SVD
+    return $sub->($map->{svd},$fpdl,$map->ccsSvdNil);                ##-- apply SVD
   }
 
   ##-- dense document-mapping mode
@@ -368,7 +374,7 @@ sub svdApply {
   $fpdl = ($fpdl+$map->{smoothf})->log;
   $fpdl = $fpdl->slice(":,*1") if ($fpdl->ndims != 2);              ##-- ... someone passed in a flat term pdl...
   $fpdl *= $map->{tw} if (defined($map->{tw}));                     ##-- apply term-weights if available
-  return $map->{svd}->apply0($fpdl);                                ##-- apply SVD
+  return $sub->($map->{svd},$fpdl);                                 ##-- apply SVD
 }
 
 ## $sig = $map->lemmaSignature($doc_or_sig)
@@ -425,13 +431,17 @@ sub saveDirData {
   $map->SUPER::saveDirData($dir,%opts);
 
   ##-- save: pdls
-  foreach (qw(xcm xdm)) { #tw0 tf0 tdf0
+  foreach (qw(xcm)) { #tw0 tf0 tdf0  xdm==$map->{svd}{u}
     $map->writePdlFile($map->{$_}, "$dir/$_.pdl", %opts);
   }
 
-  ##-- save: caches
+  ##-- save: caches (+mmap)
   foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
     $map->writePdlFile($map->can($_)->($map), "$dir/$_.pdl", %opts);
+  }
+  ##-- save: caches (-mmap)
+  foreach (qw(ccsSvdNil ccsDocMissing)) {
+    $map->writePdlFile($map->can($_)->($map), "$dir/$_.pdl", %opts,mmap=>0);
   }
 
   ##-- save: svd
@@ -451,21 +461,27 @@ sub loadDirData {
   $map->SUPER::loadDirData($dir,%opts);
 
   ##-- load: pdls
-  ## "xcm" : "PDL"
+  ## "xcm" : "PDL" == $map->{svd}{u}
   ## "xdm" : "PDL"
-  foreach (qw(xcm xdm)) {
+  foreach (qw(xcm)) { #xdm
     $map->{$_} = $map->readPdlFile("$dir/$_.pdl",%opts,class=>'PDL');
   }
 
-  ##-- load: caches
+  ##-- load: caches (+mmap)
   foreach (qw(xcm_sigma xdm_sigma xtm_sigma)) {
     $map->{$_} = $map->readPdlFile("$dir/$_.pdl",%opts,class=>'PDL');
   }
+  ##-- load: caches (-mmap)
+  foreach (qw(ccsSvdNil ccsDocMissing)) {
+    $map->{$_} = $map->readPdlFile("$dir/$_.pdl",%opts,class=>'PDL',mmap=>0);
+  }
+
 
   ##-- load: svd
   $map->trace("load SVD $dir/svd.* [mmap=".($opts{mmap}//0)."]") if ($opts{verboseIO});
   $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
     or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
+  $map->{xdm} = $map->{svd}{u};
 
   return $map;
 }
@@ -481,7 +497,7 @@ sub saveTextDirData {
   $map->SUPER::saveTextDirData($dir,%opts);
 
   ##-- save: pdls
-  foreach (qw(xcm xdm)) { #tw0 tf0 tdf0
+  foreach (qw(xcm)) { #tw0 tf0 tdf0 xdm==$map->{svd}{u}
     $map->writePdlTextFile($map->{$_}, "$dir/$_.txt", %opts);
   }
 
@@ -511,7 +527,7 @@ sub loadTextDirData {
   $map->SUPER::loadTextDirData($dir,%opts);
 
   ##-- load: pdls
-  foreach (qw(xcm xdm)) {
+  foreach (qw(xcm)) { #xdm==$map->{svd}{u}
     $map->{$_} = $map->readPdlTextFile("$dir/$_.txt", %opts);
   }
 
@@ -526,6 +542,7 @@ sub loadTextDirData {
   foreach (qw(u sigma v)) {
     $map->{svd}{$_} = $map->readPdlTextFile("$dir/svd.$_.txt", %opts);
   }
+  $map->{xdm} = $map->{svd}{u};
 
   return $map;
 }
