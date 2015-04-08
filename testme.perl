@@ -4541,7 +4541,7 @@ sub test_reflect {
       dump_kbest($map, $t_x1ak, 10, "$tsym:$how");
     }
 
-    if (1) {
+    if (0) {
       ##-- docre-apply : apply1 of tdm over all regex-selected docs : looks VERY REASONABLE
       ## + problems arise if selected term doesn't actually occur in any doc matching the regex (null vector)
       ##   - maybe fall back to group-average over doc vectors in this case?
@@ -4605,7 +4605,7 @@ sub test_reflect {
       #   [7]	0.116422495800068	47211	Ausnutzer
       #   [8]	0.116528806065549	87384	Eigengeschäft
       #   [9]	0.117941383880686	65880	Zinsrente
-      my $docre = '\bmangoldt_unternehmergewinn';
+      my $docre = '\bmarx_';
       print "-- ".($how="docre-apply(re=/$docre/)")."\n";
       my $docre_di;
       if (defined(my $dtied=tied(@{$map->{denum}{id2sym}}))) {
@@ -4621,6 +4621,144 @@ sub test_reflect {
       my $t_xdocre = $svd->apply1($t_tdm)->xchg(0,1);
       print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xdocre)."\n";
       print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xdocre)."\n";
+      dump_kbest($map, $t_xdocre, 10, "$tsym:$how");
+    }
+
+    if (1) {
+      ##-- docre-apply3 : apply1 of tdm over all regex-selected docs : ==docre-apply
+      my $docre = '\bmarx_'; #'_18[0-9][0-9]\.'; 
+      print "-- ".($how="docre-apply3(re=/$docre/)")."\n";
+      my $trace = sub { 0 || print STDERR "TRACE:", @_, "\n"; };
+      my $docre_di;
+      $trace->('re2i');
+      if (defined(my $dtied=tied(@{$map->{denum}{id2sym}}))) {
+	$docre_di = pdl($tdm->_whichND->type, $$dtied->re2i(qr{$docre}));
+      } else {
+	$docre_di = pdl($tdm->_whichND->type, @{$map->{denum}{sym2id}}[grep {$_ =~ m{qr{$docre}}} @{$map->{denum}{id2sym}}]);
+      }
+
+      $trace->('wnd');
+      #my $t_wnd = pdl(long,[$ti])->slice(",*".($docre_di->nelem))->glue(0,$docre_di->slice("*1,"));
+      #my $t_wnd = pdl($tdm->_whichND->type,[$ti])->slice("*1,")->cat($docre_di)->clump(2)->xchg(0,1);
+      #my $t_nzi = $t_wnd->vsearchvec($tdm->_whichND);
+      #my $t_nzi_mask = ($t_wnd==$tdm->_whichND->dice_axis(1,$t_nzi))->andover;
+      #$t_nzi         = $t_nzi->where($t_nzi_mask);
+      #my $t_vals     = $tdm->_vals->index($t_nzi);
+      #my $t_tdm  = PDL::CCS::Nd->newFromWhich($tdm->_whichND->dice_axis(1,$t_nzi), $t_vals->append($tdm->missing), sorted=>1,steal=>1, dims=>[1,$tdm->dim(1)]);
+      #$t_tdm->sever;
+      #(my $tmp=$t_tdm->_whichND->slice("(0),")) .= 0;
+      ##
+      #$trace->('xindex2d');
+      #my $t_nzi1 = $tdm->_whichND->ccs_xindex2d(pdl($tdm->_whichND->type,[$ti]), $docre_di);
+      #my $t_vals1 = $tdm->_vals->index($t_nzi1);
+      #my $t_tdm  = PDL::CCS::Nd->newFromWhich($tdm->_whichND->dice_axis(1,$t_nzi1), $t_vals1->append($tdm->missing), sorted=>1,steal=>1, dims=>[1,$tdm->dim(1)]);
+      ##
+      $trace->('t_tdm');
+      my $t_tdm = $tdm->xsubset2d(pdl($tdm->_whichND->type,[$ti]), $docre_di);
+      $t_tdm->_whichND->sever;
+      (my $tmp=$t_tdm->_whichND->slice("(0),")) .= 0;
+      $t_tdm->setdims_p(1,$t_tdm->dim(1));
+
+      $trace->('apply');
+      my $t_xdocre = $svd->apply1($t_tdm)->xchg(0,1);
+      $trace->('results');
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xdocre)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xdocre)."\n";
+      dump_kbest($map, $t_xdocre, 10, "$tsym:$how");
+    }
+
+    if (0) {
+      ##-- docre-apply2 : apply1 of tdm over all regex-selected docs : ==docre-apply but SLOW (b/c of slow qsort on nzi for doc-subset)
+      # -- docre-apply2(re=/\bmarx_/)
+      # rerror(svd.v, docre-apply2(re=/\bmarx_/) : term=Produktion ) = [ 10.487007]
+      # rdist (svd.v, docre-apply2(re=/\bmarx_/) : term=Produktion ) = [0.041779172]
+      # Produktion:docre-apply2(re=/\bmarx_/) [0.00326961800753545:1.50347557656497]
+      #   [0]	0.00326961800753545	129291	Produktionsmittel
+      #   [1]	0.00342129026690896	149004	kapitalistisch
+      #   [2]	0.00477166762638459	115471	Kapitalist
+      #   [3]	0.00482928181555564	116890	Produktionsprozeß
+      #   [4]	0.00598627542477803	69130	Mehrwert
+      #   [5]	0.00822093306043403	98013	produktiv
+      #   [6]	0.00857306770851585	100014	Kapital
+      #   [7]	0.00873209619127735	148705	Arbeitskraft
+      #   [8]	0.00882926153357166	162009	Akkumulation
+      #   [9]	0.00901116404815061	13108	Produktionszweig
+      my $docre = '\bmarx_'; # '_18[0-4][0-9]\.';
+      print "-- ".($how="docre-apply2(re=/$docre/)")."\n";
+      my $docre_di;
+      my $trace = sub { 0 || print STDERR "TRACE:", @_, "\n"; };
+      $trace->('re2i');
+      if (defined(my $dtied=tied(@{$map->{denum}{id2sym}}))) {
+	$docre_di = pdl(long, $$dtied->re2i(qr{$docre}));
+      } else {
+	$docre_di = pdl(long, @{$map->{denum}{sym2id}}[grep {$_ =~ m{qr{$docre}}} @{$map->{denum}{id2sym}}]);
+      }
+
+      if (0) {
+	my $cmp_intersect = sub {
+		    my ($ptr0,$pix0)  = $tdm->ptr(0);
+		    my ($ptr1,$pix1)  = $tdm->ptr(1);
+		    my $t_nzi         = $pix0->index([$ptr0->ccs_decode_pointer($ti)]->[1]);
+		    my $d_nzi         = $pix1->index([$ptr1->ccs_decode_pointer($docre_di)]->[1])->qsort;
+		    my $td_nzi        = $t_nzi->v_intersect($d_nzi);
+		  };
+	my $cmp_indexnd = sub {
+		    my $t_wnd = pdl(long,[$ti])->slice(",*".($docre_di->nelem))->glue(0,$docre_di->slice("*1,"));
+		    my $t_ndi = $t_wnd->vsearchvec($tdm->_whichND);
+		    my $t_ndi_mask = ($t_wnd==$tdm->_whichND->dice_axis(1,$t_ndi))->andover;
+		    $t_ndi    = $t_ndi->where($t_ndi_mask);
+		  };
+	#             Rate intersect   indexnd
+	# intersect 27.4/s        --      -98%
+	# indexnd   1110/s     3957%        --
+	#cmpthese(-1, {'intersect'=>$cmp_intersect, 'indexnd'=>$cmp_indexnd});
+	##
+	##
+	my ($ptr0,$pix0)  = $tdm->ptr(0);
+	my ($ptr1,$pix1)  = $tdm->ptr(1);
+	my $t_nzi         = $pix0->index([$ptr0->ccs_decode_pointer($ti)]->[1]);
+	my $d_nzi         = $pix1->index([$ptr1->ccs_decode_pointer($docre_di)]->[1]);
+	my ($na,$nb)      = ($t_nzi->nelem, $d_nzi->nelem);
+	print "na=$na , nb=$nb\n";
+	# na=2973 , nb=221013
+	#
+	##-- v_intersect vs setops: with implicit qsort() on 1 argument
+	# Rate           setops qsort+v_intersec
+	# setops           15.5/s               --             -52%
+	# qsort+v_intersec 32.1/s             108%               --
+	cmpthese(-1, {"qsort+v_intersect"=>sub { my $td_nzi=$t_nzi->v_intersect($d_nzi->qsort) }, "setops"=>sub { my $td_nzi=$t_nzi->setops('AND',$d_nzi) }});
+	##
+	##-- v_intersect vs setops: pre-sorted
+	#               Rate      setops v_intersect
+	# setops      22.2/s          --        -98%
+	# v_intersect  948/s       4165%          --
+	$d_nzi->inplace->qsort;
+	cmpthese(-1, {"v_intersect"=>sub { my $td_nzi=$t_nzi->v_intersect($d_nzi) }, "setops"=>sub { my $td_nzi=$t_nzi->setops('AND',$d_nzi) }});
+      }
+      $trace->("ptrs (nt=1,nd=".($docre_di->nelem).")");
+      my ($ptr0,$pix0)  = $tdm->ptr(0);
+      my ($ptr1,$pix1)  = $tdm->ptr(1);
+      ##
+      $trace->("nzi (intersect)");
+      my $t_nzi         = $pix0->index([$ptr0->ccs_decode_pointer($ti)]->[1]);
+      my $d_nzi         = $pix1->index([$ptr1->ccs_decode_pointer($docre_di)]->[1]);
+      #my $td_nzi = $t_nzi->intersect($d_nzi);  ##-- "out of memory" for regex=/_18[0-9][0-9]\./, nd=238507 ; MUCH slower than vv_intersect or v_intersect
+      #my $td_nzi = $t_nzi->slice("*1,")->vv_intersect($d_nzi->qsort->slice("*1,"))->flat; ##-- intersect is fast; qsort() is slow!
+      my $td_nzi = $t_nzi->slice("*1,")->vv_intersect($d_nzi->qsort->slice("*1,"))->flat;  ##-- intersect is fast; qsort() is slow!
+      ##
+      $trace->("t_tdm");
+      my $t_tdm  = PDL::CCS::Nd->newFromWhich($tdm->_whichND->dice_axis(1,$td_nzi),
+					      $tdm->_vals->index($td_nzi)->append($tdm->missing),
+					      sorted=>1, steal=>1, dims=>[1,$tdm->dim(1)]);
+      ##
+      $trace->('uisigma');
+      $svd->uisigma;
+      $trace->('apply');
+      my $t_xdocre = $svd->apply1($t_tdm)->xchg(0,1);
+      $trace->('error');
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xdocre)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xdocre)."\n";
+      $trace->('kbest');
       dump_kbest($map, $t_xdocre, 10, "$tsym:$how");
     }
 

@@ -423,7 +423,10 @@ sub xtm_sigma {
 ##==============================================================================
 ## Methods: API: I/O: Directory
 
-## $bool = $map->saveDirData($dirname)
+## $bool = $map->saveDirData($dirname,%opts)
+##  + %opts:
+##      saveSvdUS => $bool,   ##-- save svd uisigma (default=0)
+##      saveSvdVS => $bool,   ##-- save svd visigma (default=0)
 sub saveDirData {
   my ($map,$dir,%opts) = @_;
 
@@ -441,12 +444,16 @@ sub saveDirData {
   }
   ##-- save: caches (-mmap)
   foreach (qw(ccsSvdNil ccsDocMissing)) {
-    $map->writePdlFile($map->can($_)->($map), "$dir/$_.pdl", %opts,mmap=>0);
+    $map->writePdlFile($map->can($_)->($map), "$dir/$_.pdl", %opts);
   }
 
   ##-- save: svd
-  $map->trace("save SVD $dir/svd.*") if ($opts{verboseIO});
-  $map->{svd}->saveRawFiles("$dir/svd") if ($map->{svd});
+  if ($map->{svd}) {
+    $map->trace("save SVD $dir/svd.*") if ($opts{verboseIO});
+    $map->{svd}->saveRawFiles("$dir/svd");
+    $map->writePdlFile($map->{svd}->visigma, "$dir/svd.visigma.pdl", %opts) if ($opts{saveSvdVS});
+    $map->writePdlFile($map->{svd}->uisigma, "$dir/svd.uisigma.pdl", %opts) if ($opts{saveSvdUS});
+  }
 
   return 1;
 }
@@ -476,12 +483,13 @@ sub loadDirData {
     $map->{$_} = $map->readPdlFile("$dir/$_.pdl",%opts,class=>'PDL',mmap=>0);
   }
 
-
   ##-- load: svd
   $map->trace("load SVD $dir/svd.* [mmap=".($opts{mmap}//0)."]") if ($opts{verboseIO});
   $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
     or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
   $map->{xdm} = $map->{svd}{u};
+  $map->{svd}{visigma_} = $map->readPdlFile("$dir/svd.visigma.pdl", %opts,class=>'PDL');
+  $map->{svd}{uisigma_} = $map->readPdlFile("$dir/svd.uisigma.pdl", %opts,class=>'PDL');
 
   return $map;
 }

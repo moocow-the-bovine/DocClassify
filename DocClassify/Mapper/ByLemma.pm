@@ -395,6 +395,10 @@ sub dirHeaderKeys {
 }
 
 ## $bool = $map->saveDirData($dirname,%opts)
+##  + %opts:
+##      saveEnums => $bool,   ##-- save enums? (default=1)
+##      saveTdmPtr0 => $bool, ##-- save tdm ptr0? (default=0)
+##      saveTdmPtr1 => $bool, ##-- save tdm ptr0? (default=0)
 sub saveDirData {
   my ($map,$dir,%opts) = @_;
 
@@ -406,18 +410,20 @@ sub saveDirData {
   # "gcenum" : "MUDL::Enum"
   # "lcenum" : "MUDL::Enum"
   # "tenum" : "MUDL::Enum"
-  foreach my $ekey (qw(denum gcenum lcenum tenum)) {
-    if (!defined($map->{$ekey})) {
-      foreach (grep {-e $_} map {"$dir/$ekey.$_"} qw(hdr es eix esx)) {
-	$map->trace("unlinking enum file(s) $dir/$ekey.*") if ($opts{verboseIO});
-	unlink($_)
-	  or $map->logconfess("saveDirData(): failed to unlink enum file $_: $!");
-      }
-    } else {
-      $map->trace("saving enum file(s) $dir/$ekey.*") if ($opts{verboseIO});
-      $map->{$ekey}->saveRawFiles("$dir/$ekey")
-	or $map->logconfess("saveDirData(): failed to save enum file(s) $dir/$ekey.*: $!")
-      }
+  if (!exists($opts{saveEnums}) || $opts{saveEnums}) {
+    foreach my $ekey (qw(denum gcenum lcenum tenum)) {
+      if (!defined($map->{$ekey})) {
+	foreach (grep {-e $_} map {"$dir/$ekey.$_"} qw(hdr es eix esx)) {
+	  $map->trace("unlinking enum file(s) $dir/$ekey.*") if ($opts{verboseIO});
+	  unlink($_)
+	    or $map->logconfess("saveDirData(): failed to unlink enum file $_: $!");
+	}
+      } else {
+	$map->trace("saving enum file(s) $dir/$ekey.*") if ($opts{verboseIO});
+	$map->{$ekey}->saveRawFiles("$dir/$ekey")
+	  or $map->logconfess("saveDirData(): failed to save enum file(s) $dir/$ekey.*: $!")
+	}
+    }
   }
 
   ##-- save: ccs
@@ -436,6 +442,16 @@ sub saveDirData {
   ## -?dc_dist
   foreach (qw(tw)) { #tw0 tf0 tdf0
     $map->writePdlFile($map->{$_}, "$dir/$_.pdl", %opts);
+  }
+  if ($map->{tdm} && $opts{saveTdmPtr0}) {
+    my ($p,$pix) = $map->{tdm}->getptr(0);
+    $map->writePdlFile($p,   "$dir/tdm.ptr0.pdl", %opts);
+    $map->writePdlFile($pix, "$dir/tdm.pix0.pdl", %opts);
+  }
+  if ($map->{tdm} && $opts{saveTdmPtr1}) {
+    my ($p,$pix) = $map->{tdm}->getptr(1);
+    $map->writePdlFile($p,   "$dir/tdm.ptr1.pdl", %opts);
+    $map->writePdlFile($pix, "$dir/tdm.pix1.pdl", %opts);
   }
 
   ##-- save: misc
@@ -461,7 +477,7 @@ sub saveDirData {
 
 ## $obj = $obj->loadDirData($dirname,%opts)
 ##  + %opts:
-##     mmap => $bool,  ##-- mmap pdls (default=0)
+##     mmap => $bool,       ##-- mmap pdls (default=0)
 sub loadDirData {
   my ($map,$dir,%opts) = @_;
 
@@ -482,6 +498,16 @@ sub loadDirData {
   ## -"tdm0" : "PDL::CCS::Nd" : recoverable as ($tdm/$tw)->exp - $smoothf
   foreach (qw(dcm tdm)) { #tdm0
     $map->{$_} = $map->readPdlFile("$dir/$_.ccs", %opts, class=>'PDL::CCS::Nd');
+  }
+  if (defined($map->{tdm}) && -e "$dir/tdm.ptr0.pdl") {
+    my $p   = $map->readPdlFile("$dir/tdm.ptr0.pdl", %opts);
+    my $pix = $map->readPdlFile("$dir/tdm.pix0.pdl", %opts);
+    $map->{tdm}->setptr(0,[$p,$pix]);
+  }
+  if (defined($map->{tdm}) && -e "$dir/tdm.ptr1.pdl") {
+    my $p   = $map->readPdlFile("$dir/tdm.ptr1.pdl", %opts);
+    my $pix = $map->readPdlFile("$dir/tdm.pix1.pdl", %opts);
+    $map->{tdm}->setptr(1,[$p,$pix]);
   }
 
   ##-- load: pdls
