@@ -4624,8 +4624,8 @@ sub test_reflect {
       dump_kbest($map, $t_xdocre, 10, "$tsym:$how");
     }
 
-    if (1) {
-      ##-- docre-apply3 : apply1 of tdm over all regex-selected docs : ==docre-apply
+    if (0) {
+      ##-- docre-apply3 : apply1 of tdm over all regex-selected docs : ==docre-apply : CURRENT
       my $docre = '\bmarx_'; #'_18[0-9][0-9]\.'; 
       print "-- ".($how="docre-apply3(re=/$docre/)")."\n";
       my $trace = sub { 0 || print STDERR "TRACE:", @_, "\n"; };
@@ -4637,7 +4637,7 @@ sub test_reflect {
 	$docre_di = pdl($tdm->_whichND->type, @{$map->{denum}{sym2id}}[grep {$_ =~ m{qr{$docre}}} @{$map->{denum}{id2sym}}]);
       }
 
-      $trace->('wnd');
+      #$trace->('wnd');
       #my $t_wnd = pdl(long,[$ti])->slice(",*".($docre_di->nelem))->glue(0,$docre_di->slice("*1,"));
       #my $t_wnd = pdl($tdm->_whichND->type,[$ti])->slice("*1,")->cat($docre_di)->clump(2)->xchg(0,1);
       #my $t_nzi = $t_wnd->vsearchvec($tdm->_whichND);
@@ -4661,10 +4661,56 @@ sub test_reflect {
 
       $trace->('apply');
       my $t_xdocre = $svd->apply1($t_tdm)->xchg(0,1);
+
       $trace->('results');
       print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xdocre)."\n";
       print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xdocre)."\n";
       dump_kbest($map, $t_xdocre, 10, "$tsym:$how");
+    }
+
+    if (1) {
+      ##-- catre-apply : apply1 of tdm over all regex-selected cats : GOOD ==docre-apply (~CURRENT)
+      # -- catre-apply(re=/\bmarx_/)
+      # rerror(svd.v, catre-apply(re=/\bmarx_/) : term=Produktion ) = [ 10.487007]
+      # rdist (svd.v, catre-apply(re=/\bmarx_/) : term=Produktion ) = [0.041779172]
+      # Produktion:catre-apply(re=/\bmarx_/) [0.00326961800753545:1.50347557656497]
+      #   [0]	0.00326961800753545	129291	Produktionsmittel
+      #   [1]	0.00342129026690896	149004	kapitalistisch
+      #   [2]	0.00477166762638459	115471	Kapitalist
+      #   [3]	0.00482928181555564	116890	Produktionsprozeß
+      #   [4]	0.00598627542477803	69130	Mehrwert
+      #   [5]	0.00822093306043403	98013	produktiv
+      #   [6]	0.00857306770851585	100014	Kapital
+      #   [7]	0.00873209619127735	148705	Arbeitskraft
+      #   [8]	0.00882926153357166	162009	Akkumulation
+      #   [9]	0.00901116404815061	13108	Produktionszweig
+      my $catre = '\bmarx_'; #'_18[0-9][0-9]\.'; 
+      print "-- ".($how="catre-apply(re=/$catre/)")."\n";
+      my $trace = sub { 0 || print STDERR "TRACE:", @_, "\n"; };
+      my $catre_ci;
+      $trace->('re2i');
+      if (defined(my $dtied=tied(@{$map->{lcenum}{id2sym}}))) {
+	$catre_ci = pdl($tdm->_whichND->type, $$dtied->re2i(qr{$catre}));
+      } else {
+	$catre_ci = pdl($tdm->_whichND->type, @{$map->{lcenum}{sym2id}}[grep {$_ =~ m{qr{$catre}}} @{$map->{lcenum}{id2sym}}]);
+      }
+
+      $trace->('cati->doci');
+      my $catre_di = $map->{dcm}->dice_axis(1,$catre_ci)->_whichND->slice("(0),");
+
+      $trace->('t_tdm');
+      my $t_tdm = $tdm->xsubset2d(pdl($tdm->_whichND->type,[$ti]), $catre_di);
+      $t_tdm->_whichND->sever;
+      (my $tmp=$t_tdm->_whichND->slice("(0),")) .= 0;
+      $t_tdm->setdims_p(1,$t_tdm->dim(1));
+
+      $trace->('apply');
+      my $t_xcatre = $svd->apply1($t_tdm)->xchg(0,1);
+
+      $trace->('results');
+      print "rerror(svd.v, $how : term=$tsym ) = ".rerrsum($t_x1, $t_xcatre)."\n";
+      print "rdist (svd.v, $how : term=$tsym ) = ".$map->qdistance($t_x1, $t_xcatre)."\n";
+      dump_kbest($map, $t_xcatre, 10, "$tsym:$how");
     }
 
     if (0) {
