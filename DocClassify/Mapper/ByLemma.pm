@@ -443,12 +443,12 @@ sub saveDirData {
   foreach (qw(tw)) { #tw0 tf0 tdf0
     $map->writePdlFile($map->{$_}, "$dir/$_.pdl", %opts);
   }
-  if ($map->{tdm} && $opts{saveTdmPtr0}) {
+  if (defined($map->{tdm}) && $opts{saveTdmPtr0}) {
     my ($p,$pix) = $map->{tdm}->getptr(0);
     $map->writePdlFile($p,   "$dir/tdm.ptr0.pdl", %opts);
     $map->writePdlFile($pix, "$dir/tdm.pix0.pdl", %opts);
   }
-  if ($map->{tdm} && $opts{saveTdmPtr1}) {
+  if (defined($map->{tdm}) && $opts{saveTdmPtr1}) {
     my ($p,$pix) = $map->{tdm}->getptr(1);
     $map->writePdlFile($p,   "$dir/tdm.ptr1.pdl", %opts);
     $map->writePdlFile($pix, "$dir/tdm.pix1.pdl", %opts);
