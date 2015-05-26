@@ -694,9 +694,10 @@ sub readPdlFile {
   } else {
     ##-- read or map: raw
     return undef if (!-e "$file.hdr");
+    my $ro   = (!$opts{mmap} || ($opts{ReadOnly} // (!-w "$file.hdr"))) || 0;
     local $, = '';
-    defined($pdl = $opts{mmap} ? $class->mapfraw($file) : $class->readfraw($file))
-      or $that->logconfess("readPdlFile(): failed to ".($opts{mmap} ? 'mmap' : 'read')." pdl file '$file' via class '$class'");
+    defined($pdl = $opts{mmap} ? $class->mapfraw($file,{ReadOnly=>$ro}) : $class->readfraw($file))
+      or $that->logconfess("readPdlFile(): failed to ".($opts{mmap} ? 'mmap' : 'read')." pdl file '$file' via class '$class' (readonly=$ro)");
   }
   return $pdl;
 }
