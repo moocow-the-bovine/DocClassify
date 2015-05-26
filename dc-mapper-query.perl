@@ -257,6 +257,7 @@ dc-mapper-query.perl - query DocClassify::Mapper objects
   -verbose LEVEL         # verbosity level
   -map-option OPT=VALUE  # override stored mapper option
   -map-input-mode MODE   # I/O mode for input mapfile (default=guess)
+  -[no]mmap              # do/don't mmap directories (default=-nommap)
   -shell , -noshell      # do/don't run as interactive shell (default=-noshell)
 
  Mapping Target Options:
