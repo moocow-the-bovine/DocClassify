@@ -40,6 +40,11 @@ BEGIN {
      cab => 'Cab',
      dta => 'Cab',
      ##
+     raw => 'Raw',
+     null => 'Raw',
+     none => 'Raw',
+     text => 'Raw',
+     ##
      #Default => 'VzContent',
      #Default => 'VzSep',
      Default => 'VzSem',
