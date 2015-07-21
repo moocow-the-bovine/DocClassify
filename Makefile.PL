@@ -60,16 +60,16 @@ sub MY::depend {
   my $inherited = shift->SUPER::depend(@_);
   $inherited .= (
 		 ###-- depends -> README.txt
-		 "\n\n"
-		 ."dist: README.txt\n"
-		 ."\n"
-		 ."create_distdir: README.txt\n"
-		 #."distdir_am: README.txt\n"
-		 ."\n"
-		 ."distcheck: README.txt\n"
-		 ."\n"
-		 ."manicheck: README.txt\n"
-		 ."\n"
+		 #"\n\n"
+		 #."dist: README.txt\n"
+		 #."\n"
+		 #."create_distdir: README.txt\n"
+		 ##."distdir_am: README.txt\n"
+		 #."\n"
+		 #."distcheck: README.txt\n"
+		 #."\n"
+		 #."manicheck: README.txt\n"
+		 #."\n"
 		);
   return $inherited;
 }
