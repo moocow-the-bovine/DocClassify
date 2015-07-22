@@ -534,13 +534,13 @@ sub compile_xcm {
     my $doc_weight = $catProfile eq 'average' ? ones($ND) : $map->{tdm0}->sumover->decode;
     $doc_weight  /= $doc_weight->sumover;
     my $docids = $map->docIdPdl;
-    my ($d_id_local,$d_id_global,$d_x,$c_id,$cat);
+    my ($d_id_local,$d_id_global,$d_x,$c_id,$cat, $tmp);
     foreach $d_id_local (0..($ND-1)) {
       $d_id_global = $docids->at($d_id_local);
       $d_x  = $doc_weight->index($d_id_local) * $xdm->slice(",$d_id_local"); ##-- [0,$di] -> $x
       foreach $cat (@{$map->{docs}[$d_id_global]{cats}}) {
 	$c_id = $lc_sym2id->{$cat->{name}};
-	(my $tmp=$xcm->slice(",$c_id")) += $d_x;
+	($tmp=$xcm->slice(",$c_id")) += $d_x;
       }
     }
     if ($map->{nullCat}) {

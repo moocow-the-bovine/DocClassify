@@ -100,7 +100,7 @@ sub new {
 			       trainExclusive => 1,
 			       minFreq =>10,
 			       minDocFreq =>4,
-			       maxTermsPerDoc =>1,
+			       maxTermsPerDoc =>0,
 
 			       smoothf =>1,
 			       termWeight  => 'uniform',

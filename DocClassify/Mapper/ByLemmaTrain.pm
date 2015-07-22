@@ -443,13 +443,14 @@ sub compile_tcm0 {
   my $NT = $tenum->size;
   my $ND = $docids->nelem;
   my $NC = $lcenum->size;
+  my ($tmp); ##-- for annoying 'Can't return a temporary from lvalue subroutine at ...' workarounds
 
   $map->vlog('info', "compile_tcm0(): matrix: tcm0: (NT=$NT x NC=$NC) [Term x Cat -> Freq]") if ($map->{verbose});
 
   ##-- step 0: get sparse boolean dcmb [Doc x Cat -> Bool]
   my $dcm    = $map->{dcm};
   my $dcmb   = $dcm->clone;
-  $dcmb->_nzvals->slice("0:-1") .= 1;
+  ($tmp      = $dcmb->_nzvals->slice("0:-1")) .= 1;
   my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di_local] -> $ncats
   ###
   #my $dcm_wd = $dcmb->_whichND->slice("(0),");
@@ -479,9 +480,9 @@ sub compile_tcm0 {
     $tdm0d = $tdm0->dice_axis(1,$di_local);
     foreach $ci (@$lcenum_sym2id{map {$_->{name}} @{$docs->[$di_global]{cats}}}) {
       $slice1 = $nzi.':'.($nzi+$n-1);
-      $tcm0_w->slice("(0),$slice1") .= $tdm0d->_whichND->slice("(0),");
-      $tcm0_w->slice("(1),$slice1") .= $ci;
-      $tcm0_v->slice("$slice1")     .= $tdm0d->_nzvals;
+      ($tmp=$tcm0_w->slice("(0),$slice1")) .= $tdm0d->_whichND->slice("(0),");
+      ($tmp=$tcm0_w->slice("(1),$slice1")) .= $ci;
+      ($tmp=$tcm0_v->slice("$slice1"))     .= $tdm0d->_nzvals;
       $nzi += $n;
     }
   }
