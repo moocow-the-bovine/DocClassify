@@ -78,7 +78,7 @@ sub new {
   $opts{class} = 'default' if ($that eq __PACKAGE__ && !exists($opts{class}));
 
   my ($doc);
-  if (defined($opts{class})) {
+  if (defined($opts{class}) && $opts{class} ne __PACKAGE__) {
     ##-- subclass selection
     my $class = $opts{class};
     $class=$ALIAS{$class} while (defined($ALIAS{$class}));
@@ -105,6 +105,12 @@ sub new {
   return $doc;
 }
 
+## $obj2 = $obj->shadow(%opts)
+##  + new object identical to $obj, overriding %opts
+##  + overrides DocClassify::Object::shadow() by forcing 'class' kewy
+sub shadow {
+  return $_[0]->SUPER::shadow(@_[1..$#_],class=>ref($_[0]));
+}
 
 ## @noShadowKeys = $obj->noShadowKeys()
 ##  + returns list of keys not to be passed to $CLASS->new() on shadow()

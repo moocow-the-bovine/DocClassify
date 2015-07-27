@@ -106,7 +106,7 @@ sub compile {
   $opts{_compile_tcm} = $map->{_compile_tcm} if (!exists($opts{_compile_tcm}));
 
   ##-- report lemmatizer class
-  $map->vlog('info', "compile(): lemmatizer class: ", ref($map->lemmatizer));
+  $map->vlog('info', "compile(): lemmatizer class: ", ref($map->lemmatizer)) if ($map->{verbose});
 
   ##-- frequency-trimming
   $map->compileTrim();

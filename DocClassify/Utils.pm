@@ -422,7 +422,7 @@ sub _vcos {
   my $d = $dr1->dim(0);
   my ($sigma1,$sigma2) = @opts{qw(sigma1 sigma2)};
   if (!defined($sigma1)) { $sigma1 = $dr1->pow(2)->average; $sigma1->inplace->sqrt; } ##-- expensive!
-  if (!defined($sigma2)) { $sigma2 = $dr2->pow(2)->average; $sigma2->inplace->sqrt; } ##-- epensive!
+  if (!defined($sigma2)) { $sigma2 = $dr2->pow(2)->average; $sigma2->inplace->sqrt; } ##-- expensive!
 
   my $dist = ($dr1*$dr2)->sumover;
   ($dist
