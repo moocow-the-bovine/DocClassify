@@ -130,7 +130,8 @@ sub compile {
     $map->compile_tcm0();
     $map->compile_tcm_log();
     $map->compile_tw($map->{tcm0});
-    $map->{tcm} = $map->{tcm} * $map->{tw};
+    #$map->{tcm} = $map->{tcm} * $map->{tw};
+    $map->{tcm}->_nzvals *= $map->{tw}->index($map->{tcm}->_whichND->slice("(0),")); ##-- faster and memory-friendlier
   } else {
     ##-- smooth & log-transform term-doc matrix
     $map->compile_tdm_log();
@@ -142,7 +143,8 @@ sub compile {
     } else {
       $map->compile_tw();
     }
-    $map->{tdm} = $map->{tdm} * $map->{tw};
+    #$map->{tdm} = $map->{tdm} * $map->{tw};
+    $map->{tdm}->_nzvals *= $map->{tw}->index($map->{tdm}->_whichND->slice("(0),"));  ##-- faster and memory-friendlier
   }
 
   ##-- clear expensive perl signature structs (we've outgrown them)
@@ -402,7 +404,7 @@ sub compile_tdm0 {
 		   ->append(0)->rotate(1)->slice("0:-2")->cumusumover);
 
   ##-- step 3: create CCS::Nd tdm0
-  $map->vlog('info',"compile_tdm0(): matrix: tdm0: PDL::CCS::Nd") if ($map->{verbose});
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: PDL::CCS::Nd [Nnz=$nnz]") if ($map->{verbose});
   my $sigs   = $map->{sigs};
   my $tdm0_w = zeroes(long,2,$nnz);
   my $tdm0_v = zeroes(double,$nnz);
@@ -449,46 +451,69 @@ sub compile_tcm0 {
 
   ##-- step 0: get sparse boolean dcmb [Doc x Cat -> Bool]
   my $dcm    = $map->{dcm};
-  my $dcmb   = $dcm->clone;
-  ($tmp      = $dcmb->_nzvals->slice("0:-1")) .= 1;
+  my $dcmb   = $dcm->shadow(which=>$dcm->_whichND, vals=>ones(ushort,$dcm->_vals->dims))->_missing(0);
   my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di_local] -> $ncats
-  ###
-  #my $dcm_wd = $dcmb->_whichND->slice("(0),");
-  #my $dcm_wc = $dcmb->_whichND->slice("(1),");
 
-  ##-- step 1: count doc-term nnz
-  $map->vlog('info', "compile_tcm0(): matrix: tcm0: Nnz") if ($map->{verbose});
-  my $doc_wt    = $map->{doc_wt};
-  my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt])->index($docids);
-  my $doc_cat_wt_n = $doc_wt_n * $doc_nc;
-  my $nnz       = $doc_cat_wt_n->sum;                        ##-- sclr: nnz($d,$t)
+  ##-- check for determistic (doc->cat) mappings
+  if ($doc_nc->max == 1) {
+    ##-- optimize for determistic (doc->cat) mapping
+    $map->vlog('info', "compile_tcm0(): deterministic (Doc->Cat) mapping detected") if ($map->{verbose});
 
-  ##-- step 3: create CCS::Nd
-  $map->vlog('info', "compile_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
-  my $docs = $map->{docs};
-  my $lcenum_sym2id = $map->{lcenum}{sym2id};
-  my $tdm0 = $map->{tdm0};
-  ##
-  my $tcm0_w = zeroes(long,2,$nnz);
-  my $tcm0_v = zeroes(double,$nnz);
-  my ($di_local,$di_global,$tdm0d,$ci,$n,$slice1);
-  my $nzi = 0;
-  foreach $di_local (0..($ND-1)) {
-    $di_global = $docids->at($di_local);
-    $n = $doc_wt_n->at($di_local);
-    next if (!$n);
-    $tdm0d = $tdm0->dice_axis(1,$di_local);
-    foreach $ci (@$lcenum_sym2id{map {$_->{name}} @{$docs->[$di_global]{cats}}}) {
-      $slice1 = $nzi.':'.($nzi+$n-1);
-      ($tmp=$tcm0_w->slice("(0),$slice1")) .= $tdm0d->_whichND->slice("(0),");
-      ($tmp=$tcm0_w->slice("(1),$slice1")) .= $ci;
-      ($tmp=$tcm0_v->slice("$slice1"))     .= $tdm0d->_nzvals;
-      $nzi += $n;
-    }
+    ##-- save some memory
+    undef $dcmb;
+    undef $doc_nc;
+
+    my ($tmp);
+    my $tdm0 = $map->get_tdm0();
+    my $d2c  = zeroes(long, $dcm->dim(0)); ##-- pdl (ND) : [$di] => $ci_local
+    ($tmp=$d2c->index($dcm->_whichND->slice("(0),"))) .= $dcm->_whichND->slice("(1),");
+    my $which0 = $tdm0->_whichND->pdl;
+    my $vals0  = $tdm0->_vals;
+    ($tmp=$which0->slice("(1),")) .= $d2c->index($which0->slice("(1),"));
+    my $which  = $which0->uniqvec;
+    my $nzvals = zeroes($tdm0->type, $which->dim(1));
+    $tdm0->_nzvals->indadd( $which0->vsearchvec($which), $nzvals );
+    my $tcm0   = PDL::CCS::Nd->newFromWhich($which,$nzvals->append($tdm0->missing),steal=>1);
+    $map->{tcm0} = $tcm0;
   }
-  my $tcm0_dims = pdl(long,$NT,$NC);
-  my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
-  $map->{tcm0} = $tcm0;
+  else {
+    ##-- non-deterministic (doc->cat) mapping: do it the old (hard and slow) way
+    $map->vlog('info', "compile_tcm0(): non-deterministic (Doc->Cat) mapping detected") if ($map->{verbose});
+
+    ##-- step 1: count doc-term nnz
+    $map->vlog('info', "compile_tcm0(): matrix: tcm0: Nnz") if ($map->{verbose});
+    my $doc_wt    = $map->{doc_wt};
+    my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt])->index($docids);
+    my $doc_cat_wt_n = $doc_wt_n * $doc_nc;
+    my $nnz       = $doc_cat_wt_n->sum;                        ##-- sclr: nnz($d,$t)
+
+    ##-- step 3: create CCS::Nd
+    $map->vlog('info', "compile_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
+    my $docs = $map->{docs};
+    my $lcenum_sym2id = $map->{lcenum}{sym2id};
+    my $tdm0 = $map->{tdm0};
+    ##
+    my $tcm0_w = zeroes(long,2,$nnz);
+    my $tcm0_v = zeroes(double,$nnz);
+    my ($di_local,$di_global,$tdm0d,$ci,$n,$slice1);
+    my $nzi = 0;
+    foreach $di_local (0..($ND-1)) {
+      $di_global = $docids->at($di_local);
+      $n = $doc_wt_n->at($di_local);
+      next if (!$n);
+      $tdm0d = $tdm0->dice_axis(1,$di_local);
+      foreach $ci (@$lcenum_sym2id{map {$_->{name}} @{$docs->[$di_global]{cats}}}) {
+	$slice1 = $nzi.':'.($nzi+$n-1);
+	($tmp=$tcm0_w->slice("(0),$slice1")) .= $tdm0d->_whichND->slice("(0),");
+	($tmp=$tcm0_w->slice("(1),$slice1")) .= $ci;
+	($tmp=$tcm0_v->slice("$slice1"))     .= $tdm0d->_nzvals;
+	$nzi += $n;
+      }
+    }
+    my $tcm0_dims = pdl(long,$NT,$NC);
+    my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
+    $map->{tcm0} = $tcm0;
+  }
 
   return $map;
 }
@@ -591,20 +616,27 @@ sub compile_tw {
   }
 
   my $t_f = $tdm0->xchg(0,1)->sumover;              ##-- ccs: [$ti] -> f($ti)
-  my ($tw);
+  my ($tw,$tmp);
   if ($termWeight eq 'uniform') {
     $tw = ones($NT);                                ##-- identity weighting
   }
   elsif ($termWeight eq 'max-entropy-quotient') {
     ##-- weight terms by doc max-entropy (see e.g. Berry(1995); Nakov, Popova, & Mateev (2001))
     #my $tdm0   = $map->{tdm0};                     ##-- ccs: [$ti,$di] -> f($ti,$di)
-    my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
-    my $td_pdgt = ($tdm0 / $t_f)->_missing(0);      ##-- ccs: [$ti,$di] -> p($di|$ti)
+    #my $t_f     = $tdm0->xchg(0,1)->sumover;        ##-- ccs: [$ti] -> f($ti)
+    my $t_f     = $tdm0->xchg(0,1)->sumover->decode; ##-- pdl: [$ti] -> f($ti) : faste
+    my $td_pdgt = $tdm0->shadow(                     ##-- ccs: [$ti,$di] -> p($di|$ti)
+				which=>$tdm0->_whichND,
+				vals=>$tdm0->_vals->pdl
+			       );
+    ($tmp=$td_pdgt->_nzvals) /= $t_f->index($tdm0->_whichND->slice("(0),"));
     $tw         = $td_pdgt->log->_missing(0);       ##-- ccs: [$ti,$di] -> ln p($di|$ti)
-    $tw        /= log(2);                           ##                  -> log p($di|$ti)
-    $tw        *= $td_pdgt;                         ##                  -> p($di|$ti) * log p($di|$ti)
+    my $twvals  = $tw->_vals;
+    $twvals    /= log(2);                           ##                  -> log p($di|$ti)
+    #$tw       *= $td_pdgt;                         ##                  -> p($di|$ti) * log p($di|$ti) [ccs]
+    $twvals    *= $td_pdgt->_vals;                  ##                  -> p($di|$ti) * log p($di|$ti) [dense]
     $tw         = $tw->xchg(0,1)->sumover;          ##-- pdl: [$ti] ->  -H(Doc|T=$ti)
-    $tw        /= log($ND)/log(2);                  ##-- pdl: [$ti] ->  -H(Doc|T=$ti)/Hmax(Doc) ##-- uniform!
+    $tw        /= log($ND)/log(2);                  ##-- pdl: [$ti] ->  -H(Doc|T=$ti)/Hmax(Doc)
     $tw        += 1;                                ##-- pdl: [$ti] -> 1-H(Doc|T=$ti)/Hmax(Doc)
   }
   elsif ($termWeight eq 'entropy-quotient') {
@@ -687,7 +719,18 @@ sub logwm {
 sub get_tdm0 {
   my $map = shift;
   return $map->{tdm0} if (defined($map->{tdm0}));
-  return $map->{tdm0} = ($map->{tdm} / $map->{tw})->_missing(0)->exp - $map->{smoothf};
+
+  ##-- correct but expensive
+  #return $map->{tdm0} = ($map->{tdm} / $map->{tw})->_missing(0)->exp - $map->{smoothf};
+
+  ##-- faster & memory-friendlier (shares whichND with $tdm)
+  my $tdm   = $map->{tdm};
+  my $tdm0  = $tdm->shadow(which=>$tdm->_whichND, vals=>$tdm->_vals->pdl, missing=>$map->{smoothf});
+  my $nzv0  = $tdm0->_nzvals;
+  $nzv0    /= $map->{tw}->index($tdm0->_whichND->slice("(0),"));
+  $nzv0->inplace->exp();
+  $nzv0   -= $map->{smoothf};
+  return $map->{tdm0} = $tdm0;
 }
 
 ##----------------------------------------------
@@ -751,52 +794,88 @@ sub get_tcm0 {
   my $map = shift;
   return $map->{tcm0} if (defined($map->{tcm0}));
   if (defined($map->{tcm})) {
-    $map->{tcm0} = ($map->{tcm} / $map->{tw})->_missing(0)->exp - $map->{smoothf};
-  } else {
+    ##-- correct but expensive
+    #$map->{tcm0} = ($map->{tcm} / $map->{tw})->_missing(0)->exp - $map->{smoothf};
+
+    ##-- faster & memory-friendlier (shares whichND with $tcm)
+    my $tcm = $map->{tcm};
+    my $tcm0 = $tcm->shadow(which=>$tcm->_whichND, vals=>$tcm->_vals->pdl, missing=>$map->{smoothf});
+    my $nzv0 = $tcm0->_nzvals;
+    $nzv0   /= $map->{tw}->index($tcm0->_whichND->slice("(0),"));
+    $nzv0->inplace->exp();
+    $nzv0   -= $map->{smoothf};
+    $map->{tcm0} = $tcm0;
+  }
+  else {
     ##-- create CCS::Nd
     #$map->vlog('info', "get_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
 
     ##-- step 0: get sparse boolean dcmb [Doc x Cat -> Bool]
     my $dcm    = $map->{dcm};
-    my $dcmb   = $dcm->clone;
-    $dcmb->_nzvals->slice("0:-1") .= 1;
+    my $dcmb   = $dcm->shadow(which=>$dcm->_whichND, vals=>ones(ushort,$dcm->_vals->dims))->_missing(0);
     my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di_local] -> $ncats
 
-    ##-- step 1: count doc-term nnz [HACKED]
-    my $tdm0 = $map->get_tdm0();
-    my ($d_ptr,$d_pi2nzi) = $tdm0->getptr(1);
-    my $d_nzimin = $d_ptr->slice("0:-2");
-    my $d_nzimax = $d_ptr->slice("1:-1")-1;
-    my $d_nzinull = ($d_nzimin > $d_nzimax);
-    my $d_ptrlen = $d_nzimax - $d_nzimin + 1;
-    my $tdm0_which  = $tdm0->_whichND->dice_axis(1,$d_pi2nzi);
-    my $tdm0_nzvals = $tdm0->_nzvals->index($d_pi2nzi);
-    my $nnz = ($d_ptrlen * $doc_nc)->sum;
+    ##-- check for determistic (doc->cat) mappings
+    if ($doc_nc->max == 1) {
+      ##-- optimize for determistic (doc->cat) mapping
+      $map->vlog('info', "get_tcm0(): deterministic (Doc->Cat) mapping detected") if ($map->{verbose});
 
-    ###~~~ OLD
-    my $tcm0_w = zeroes(long,2,$nnz);
-    my $tcm0_v = zeroes(double,$nnz);
+      ##-- save some memory
+      undef $dcmb;
+      undef $doc_nc;
 
-    my ($di,$tdm0d,$ci,$n,$slice1,$slice2);
-    my $nzi = 0;
-    foreach $di ($d_nzimin->xvals->where(!$d_nzinull)->list) {
-      $n = $d_ptrlen->at($di);
-      $slice2 = $d_nzimin->at($di).":".$d_nzimax->at($di);
-      foreach $ci (
-		   #$dcmb->slice("($di)")->which->list
-		   $dcmb->dice_axis(0,$di)->_whichND->slice("(1),")->list
-		  )
-	{
+      my ($tmp);
+      my $tdm0 = $map->get_tdm0();
+      my $d2c  = zeroes(long, $dcm->dim(0)); ##-- pdl (ND) : [$di] => $ci_local
+      ($tmp=$d2c->index($dcm->_whichND->slice("(0),"))) .= $dcm->_whichND->slice("(1),");
+      my $which0 = $tdm0->_whichND->pdl;
+      my $vals0  = $tdm0->_vals;
+      ($tmp=$which0->slice("(1),")) .= $d2c->index($which0->slice("(1),"));
+      my $which  = $which0->uniqvec;
+      my $nzvals = zeroes($tdm0->type, $which->dim(1));
+      $tdm0->_nzvals->indadd( $which0->vsearchvec($which), $nzvals );
+      my $tcm0   = PDL::CCS::Nd->newFromWhich($which,$nzvals->append($tdm0->missing),steal=>1);
+      $map->{tcm0} = $tcm0;
+    }
+    else {
+      ##-- non-deterministic (doc->cat) mapping: do it the old (hard and slow) way
+      $map->vlog('info', "get_tcm0(): non-deterministic (Doc->Cat) mapping detected") if ($map->{verbose});
+
+      ##-- step 1: count doc-term nnz [HACKED]
+      my $tdm0 = $map->get_tdm0();
+      my ($d_ptr,$d_pi2nzi) = $tdm0->getptr(1);
+      my $d_nzimin = $d_ptr->slice("0:-2");
+      my $d_nzimax = $d_ptr->slice("1:-1")-1;
+      my $d_nzinull = ($d_nzimin > $d_nzimax);
+      my $d_ptrlen = $d_nzimax - $d_nzimin + 1;
+      my $tdm0_which  = $tdm0->_whichND->dice_axis(1,$d_pi2nzi);
+      my $tdm0_nzvals = $tdm0->_nzvals->index($d_pi2nzi);
+      my $nnz = ($d_ptrlen * $doc_nc)->sum;
+
+      ###~~~ OLD
+      my $tcm0_w = zeroes(long,2,$nnz);
+      my $tcm0_v = zeroes(double,$nnz);
+
+      my ($di,$tdm0d,$ci,$n,$slice1,$slice2);
+      my $nzi = 0;
+      foreach $di ($d_nzimin->xvals->where(!$d_nzinull)->list) {
+	$n = $d_ptrlen->at($di);
+	$slice2 = $d_nzimin->at($di).":".$d_nzimax->at($di);
+	foreach $ci (
+		     #$dcmb->slice("($di)")->which->list
+		     $dcmb->dice_axis(0,$di)->_whichND->slice("(1),")->list
+		    ) {
 	  $slice1 = $nzi.':'.($nzi+$n-1);
 	  $tcm0_w->slice("(0),$slice1") .= $tdm0_which->slice("(0),$slice2");
 	  $tcm0_w->slice("(1),$slice1") .= $ci;
 	  $tcm0_v->slice("$slice1")     .= $tdm0_nzvals->slice("$slice2");
 	  $nzi += $n;
 	}
+      }
+      my $tcm0_dims = pdl(long,$map->{tenum}->size,$map->{lcenum}->size);
+      my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
+      $map->{tcm0} = $tcm0;
     }
-    my $tcm0_dims = pdl(long,$map->{tenum}->size,$map->{lcenum}->size);
-    my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
-    $map->{tcm0} = $tcm0;
   }
   return $map->{tcm0};
 }
