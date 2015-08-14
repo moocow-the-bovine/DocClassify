@@ -87,6 +87,8 @@ if ($compileMap) {
 
 $mapper->saveFile($outfile, optsSave('map'));
 
+undef $mapper; ##-- cleanup
+
 =pod
 
 =head1 NAME
@@ -119,6 +121,7 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -exclusive , -nox      # do/don't use only best category for each doc (default=do)
   -compile   , -noc      # do/don't compile mapper after training (default=do)
   -clear     , -noclear  # do/don't clear training cache before saving (default=do)
+  -savemem   , -nomem    # do/don't use temporary files to save memory (default=don't)
   -mapper-option OPT=VAL # set generic (class-specific) mapper option
 
  I/O Options:

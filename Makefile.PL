@@ -18,6 +18,14 @@ WriteMakefile
 		    'PDL::VectorValued' => undef,
 		    #'DiaColloDB' => undef, ##-- '0.05.001' - for MUDL::Enum directory I/O
 		    ##
+		    ##-- for 'saveMem' training option
+		    'Tie::File::Indexed' => 0.01
+		    'DB_File' => undef,
+		    'File::Spec' => undef,
+		    'File::Temp' => undef,
+		    'File::Path' => undef,
+		    ##
+		    ##-- 3rd-party dependencies
 		    'Cwd' => undef,
 		    'File::Basename' => undef,
 		    'File::Find' => undef,

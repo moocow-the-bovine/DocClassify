@@ -1,5 +1,5 @@
 ## -*- Mode: CPerl -*-
-## File: DocClassify::Signature.pm
+## File: DocClassify::Object.pm
 ## Author: Bryan Jurish <moocow@cpan.org>
 ## Descript: document classifier: generic objects
 

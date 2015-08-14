@@ -6,6 +6,9 @@ use DocClassify;
 use DocClassify::Mapper::Train;
 use DocClassify::Utils qw(:all);
 
+use DocClassify::Temp::Array;
+use DocClassify::Temp::Hash;
+
 use MUDL;
 use MUDL::SVD;
 use MUDL::PDL::Stats;
@@ -3910,6 +3913,90 @@ sub test_file2dir {
 #test_file2dir(@ARGV);
 
 ##--------------------------------------------------------------
+## test temp objects
+
+sub isok {
+  my $label = shift;
+  print STDERR "$label: ", ($_[0] ? "ok" : "NOT ok"), "\n";
+}
+
+sub test_tmphash {
+  my (%h, %w);
+  my $file = 'tmp.db';
+  isok("tiehash", tie(%h, 'DocClassify::Temp::Hash', $file));
+
+  ##-- check if file exists
+  isok("tie: file: exists", (-e $file));
+
+  ##-- check data
+  #%h = %w = map {((chr($_+ord('a')))=>$_)} (0..25);
+  %h = %w = (foo=>'bar', baz=>'bonk');
+  isok("tie: data: size", keys(%h)==keys(%w));
+  isok("tie: data: $_", $h{$_} eq $w{$_}) foreach (sort keys %w);
+
+  ##-- try to delete in-place
+  do {
+    %h = %w = map {((chr($_+ord('a')))=>$_)} (0..25);
+    my $tied = tied(%h);
+    my ($key,$val,$status);
+    for ($status = $tied->seq($key,$val,DB_File::R_FIRST); $status == 0; $status = $tied->seq($key,$val,DB_File::R_NEXT)) {
+      $tied->del($key, DB_File::R_CURSOR) if ($val >= 10);
+    }
+    $tied->sync();
+    system("tt-db2dict.perl $file");
+  };
+
+  #exit 1; ##-- check unlink on premature exit
+
+  ##-- untie
+  isok("untie", untie(%h));
+  isok("untie: file: !exists", (!-e $file));
+
+  ##-- re-tie (-temp)
+  tie(%h, 'DocClassify::Temp::Hash', $file, UNLINK=>0)
+    or die("$0: re-tie failed for temp-hash $file: $!");
+  isok("!temp: tie: file: exists", (-e $file));
+  isok("!temp: untie", untie(%h));
+  isok("!temp: untie: file: exists", (-e $file));
+
+  unlink($file);
+  exit 0;
+}
+test_tmphash(@ARGV);
+
+sub test_tmparray {
+  my (@a,@w);
+  my $file = 'tmp.ary';
+  isok("tiearray", tie(@a, 'DocClassify::Temp::Array', $file));
+
+  ##-- check if file exists
+  isok("tie: file: exists", (-e $file));
+
+  ##-- check data
+  @a = @w = qw(foo bar baz bonk);
+  isok("tie: data: size", @a==@w);
+  isok("tie: data[$_]", $a[$_] eq $w[$_]) foreach (0..$#w);
+
+  #exit 1; ##-- check unlink on premature exit
+
+  ##-- untie
+  isok("untie", untie(@a));
+  isok("untie: file: !exists", (!-e $file));
+
+  ##-- re-tie (-temp)
+  tie(@a, 'DocClassify::Temp::Array', $file, UNLINK=>0)
+    or die("$0: re-tie failed for temp-array $file: $!");
+  isok("!temp: tie: file: exists", (-e $file));
+  isok("!temp: untie", untie(@a));
+  isok("!temp: untie: file: exists", (-e $file));
+
+  unlink("$file$_") foreach ('',qw(.idx .hdr));
+  exit 0;
+}
+#test_tmparray(@ARGV);
+
+
+##--------------------------------------------------------------
 ## test reflect
 
 ## sum of squared errors
@@ -4873,7 +4960,7 @@ sub test_reflect {
   print STDERR "test_reflect(): done\n";
   exit 0;
 }
-test_reflect(@ARGV);
+#test_reflect(@ARGV);
 
 ##======================================================================
 ## MAIN (dummy)

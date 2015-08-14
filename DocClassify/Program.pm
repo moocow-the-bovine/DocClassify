@@ -103,7 +103,8 @@ our %opts =
 	      nullCat => '(auto)',        ##-- null-prototype target category; false for none
 
 	      ##-- program-local options
-	      clearCache => 1,
+	      clearCache => 1,		##-- clear cached data structures (docs,sigs) after training?
+	      saveMem => 0,		##-- save memory during training?
 	     },
    mapSave => { mode=>undef },
    mapLoad => { mode=>undef },
@@ -207,6 +208,7 @@ sub dcOptions {
    'cross-check-n|xcheck-n|txn|xn=i' => \$opts{mapNew}{xn},
    #'random-seed|seed|rs=i' => \$opts{mapNew}{seed},
    'clear-training-cache|clear-cache|clear!' => \$opts{mapNew}{clearCache},
+   'save-memory|save-mem|savemem|mem!' => \$opts{mapNew}{saveMem},
    'mapper-option|map-option|mapopt|mo=s%' => $opts{mapNew},
    'null-cat|nullcat|null|nc=s' => \$opts{mapNew}{nullCat},
    'no-null-cat|no-nullcat|nonullcat|nonull' => sub { $opts{mapNew}{nullCat}=undef; },

@@ -75,6 +75,13 @@ sub name {
 ##==============================================================================
 ## Methods: API: Training
 
+## $map = $map->trainInit()
+##  + initialize mapper for training
+##  + default implementation does nothing
+sub trainInit {
+  return $_[0];
+}
+
 ## $map = $map->trainCorpus($corpus)
 ##  + add training data from $corpus
 ##  + default just calls $map->trainDocument($doc) foreach doc in corpus

@@ -40,6 +40,7 @@ our $verbose = 3;
 ## %$map, %opts:
 ##  ##-- options
 ##  verbose => $vlevel,              ##-- verbosity level (default=$verbose)
+##  saveMem => $bool,                ##-- save memory by using disk files for training temporaries? (default=0)
 ##  lzClass => $lzClass,             ##-- lemmatizer class (see DocClassify::Lemmatizer::new(); default='default')
 ##  lzOpts => \%lzOpts,              ##-- options for $lzClass->new();
 ##  trainExclusive => $bool,         ##-- use each doc to train at most 1 cat? (default=true)
@@ -95,6 +96,7 @@ sub new {
   my $obj =  $that->SUPER::new(
 			       ##-- options
 			       verbose=>$verbose,
+			       saveMem => 0,
 			       lzClass => 'default',
 			       lzOpts  => {},
 			       trainExclusive => 1,
@@ -140,6 +142,7 @@ sub new {
 			       ##-- user args
 			       @_,
 			      );
+
   return $obj;
 }
 

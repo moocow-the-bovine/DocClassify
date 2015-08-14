@@ -18,6 +18,9 @@ use Encode qw(encode decode);
 use Exporter;
 use English; ##-- $UID=$<, $EUID=$>, $GID=$(, $EGID=$)
 
+use File::Spec qw(); ##-- for tmpdir()
+use File::Temp qw(); ##-- for tempdir(), tempfile()
+
 use XML::LibXML;
 use XML::LibXSLT;
 
@@ -43,6 +46,7 @@ our %EXPORT_TAGS =
    encode => [qw(deep_encode deep_decode deep_recode deep_utf8_upgrade)],
    perms => [qw(setuids setgids)],
    profile => [qw(profile_reset profile_start profile_stop profile_elapsed profile_string)],
+   temp => [qw($TMPDIR tmpdir tmpfile tmparray tmphash)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
@@ -551,6 +555,79 @@ sub deep_utf8_upgrade {
   return $thingy;
 }
 
+##==============================================================================
+## Functions: temporaries
+
+## $TMPDIR : global temp directory to use
+our $TMPDIR  = undef;
+
+## $tmpdir = CLASS->tmpdir()
+## $tmpdir = CLASS_>tmpdir($template, %opts)
+##  + in first form, get name of global tempdir ($TMPDIR || File::Spec::tmpdir())
+##  + in second form, create and return a new temporary directory via File::Temp::tempdir()
+sub tmpdir {
+  my $that = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
+  my $tmpdir = $TMPDIR || File::Spec->tmpdir();
+  return @_ ? File::Temp::tempdir($_[0], DIR=>$tmpdir, @_[1..$#_]) : $tmpdir;
+}
+
+## $filename = CLASS->tmpfile()
+## $filename = CLASS->tmpfile($template, %opts)
+sub tmpfile {
+  my $that = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
+  my $template = shift // 'tmpXXXXX';
+  my ($fh,$filename) = File::Temp::tempfile($template, DIR=>$that->tmpdir(), @_)
+    or return undef;
+  $fh->close();
+  return $filename;
+}
+
+## \@tmparray = CLASS->tmparray($template, %opts)
+##  + ties a new temporary array via $class (default='Tie::File::Indexed::JSON')
+##  + calls tie(my @tmparray, 'DocClassify::Temp::Array', $tmpfilename, %opts)
+sub tmparray {
+  my $that  = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
+  my ($template,%opts) = @_;
+
+  ##-- load target module
+  eval { require "DocClassify/Temp/Array.pm" }
+    or DocClassify->logconfess("tmparray(): failed to load class DocClassify::Temp::Array: $@");
+
+  ##-- default options
+  $template     //= 'dcXXXXXX';
+  $opts{SUFFIX} //= '.dba';
+  $opts{UNLINK}   = 1 if (!exists($opts{UNLINK}));
+
+  ##-- tie it up
+  my $tmpfile = $that->tmpfile($template, %opts);
+  tie(my @tmparray, 'DocClassify::Temp::Array', $tmpfile, %opts)
+    or DocClassify->logconfess("tmparray(): failed to tie file '$tmpfile' via DocClassify::Temp::Array: $@");
+  return \@tmparray;
+}
+
+## \%tmphash = CLASS->tmphash($class, $template, %opts)
+##  + ties a new temporary hash via $class (default='DB_File')
+##  + calls tie(my @tmparray, $class, $tmpfilename, temp=>1, %opts)
+sub tmphash {
+  my $that  = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
+  my ($template,%opts) = @_;
+
+  ##-- load target module
+  eval { require "DocClassify/Temp/Hash.pm" }
+    or DocClassify->logconfess("tmparray(): failed to load class DocClassify::Temp::Hash: $@");
+
+  ##-- default options
+  $template     //= 'dcXXXXXX';
+  $opts{SUFFIX} //= '.dbh';
+  $opts{UNLINK}   = 1 if (!exists($opts{UNLINK}));
+
+  ##-- tie it up
+  my $tmpfile = $that->tmpfile($template, %opts);
+  tie(my %tmphash, 'DocClassify::Temp::Hash', $tmpfile, %opts)
+    or DocClassify->logconfess("tmphash(): failed to tie file '$tmpfile' via DocClassify::Temp::Hash: $@");
+  return \%tmphash;
+}
+
 
 ##==============================================================================
 ## Footer
@@ -726,10 +803,10 @@ Bryan Jurish E<lt>moocow@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009 by Bryan Jurish
+Copyright (C) 2009-2015 by Bryan Jurish
 
 This package is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.8.4 or,
+it under the same terms as Perl itself, either Perl version 5.20.2 or,
 at your option, any later version of Perl 5 you may have available.
 
 =cut

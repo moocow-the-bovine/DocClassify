@@ -24,9 +24,39 @@ use strict;
 ##==============================================================================
 ## Methods: API: Training
 
+## $map = $map->trainInit()
+##  + override honors "saveMem" attribute by tying @$map{qw(docs sigs gf df)} if not already tied
+sub trainInit {
+  my $map = shift;
+  if ($map->{saveMem}) {
+    tied(@{$map->{docs}})
+      or $map->{docs}=tmparray("dc_docs_XXXXXXXX", UNLINK=>$map->{clearCache})
+      or $map->logconfess("new(): failed to tie temporary {docs} array for 'saveMem' option: $!");
+
+    tied(@{$map->{sigs}})
+      or $map->{sigs}=tmparray("dc_sigs_XXXXXXXX", UNLINK=>$map->{clearCache})
+      or $map->logconfess("new(): failed to tie temporary {sigs} array for 'saveMem' option: $!");
+
+    tied(%{$map->{gf}})
+      or $map->{gf}=tmphash("dc_gf_XXXXXXXX", UNLINK=>$map->{clearCache})
+      or $map->logconfess("new(): failed to tie temporary {gf} hash for 'saveMem' option: $!");
+
+    tied(%{$map->{df}})
+      or $map->{df}=tmphash("dc_df_XXXXXXXX", UNLINK=>$map->{clearCache})
+      or $map->logconfess("new(): failed to tie temporary {df} hash for 'saveMem' option: $!");
+  }
+  return $map->SUPER::trainInit(@_);
+}
+
 ## $map = $map->trainCorpus($corpus)
 ##  + add training data from $corpus
+##  + override calls trainInit()
 ##  + inherited default just calls $map->trainDocument($doc) foreach doc in corpus
+sub trainCorpus {
+  my $map = shift;
+  $map->trainInit();
+  return $map->SUPER::trainCorpus(@_);
+}
 
 ## $map = $map->trainDocument($doc)
 ##  + add training data from $doc
@@ -191,7 +221,8 @@ sub recompile {
     my $tdm0_w = $tdm0->_whichND;
     my $tdm0_v = $tdm0->_whichVals;
     my $t2sym  = $map->{tenum}{id2sym};
-    my $sigs   = $map->{sigs} = [map {DocClassify::Signature->new(lf=>{})} @{$map->{docs}}];
+    my $sigs   = ($map->{sigs} //= []);
+    @$sigs     = map {DocClassify::Signature->new(lf=>{})} @{$map->{docs}};
     my $nzimax = $tdm0_v->nelem-1;
     my ($di,$ti);
     foreach (0..$nzimax) {
@@ -277,14 +308,60 @@ sub compileTrim {
     }
   }
 
-  ##-- trim by global term frequency
-  $map->vlog('info', "compileTrim(): by global term freqency: minFreq=$map->{minFreq}") if ($map->{verbose});
-  delete(@{$map->{gf}}{ grep {$map->{gf}{$_} < $map->{minFreq}} keys(%{$map->{gf}}) }) if ($map->{minFreq}>0);
+  ##-- trim: common variables
+  my ($gf,$df, $mingf,$mindf) = @$map{qw(gf df minFreq minDocFreq)};
 
-  ##-- trim by doc "frequency"
+  ##-- trim %$gf by global term frequency
+  $map->vlog('info', "compileTrim(): by global term freqency: minFreq=$map->{minFreq}") if ($map->{verbose});
+  if (($mingf=$map->{minFreq}) > 0) {
+    if (UNIVERSAL::isa(tied(%$gf),'DB_File')) {
+      ##-- trim: by global term frequency: saveMem/DB_File
+      $map->vlog('info', "compileTrim(): by global term freqency: DB_File") if ($map->{verbose});
+      my $tied = tied(%$gf);
+      my ($key,$val,$status);
+      for ($status=$tied->seq($key,$val,DB_File::R_FIRST()); $status==0; $status=$tied->seq($key,$val,DB_File::R_NEXT())) {
+	$tied->del($key, DB_File::R_CURSOR()) if ($val < $mingf);
+      }
+    } else {
+      ##-- trim: by global term frequency: default/HASH
+      delete(@$gf{ grep {$gf->{$_} < $mingf} keys(%$gf) });
+    }
+  }
+
+  ##-- trim %$gf by doc "frequency"
   $map->vlog('info', "compileTrim(): by document term frequency: minDocFreq=$map->{minDocFreq}") if ($map->{verbose});
-  delete(@{$map->{gf}}{ grep {$map->{df}{$_} < $map->{minDocFreq}} keys(%{$map->{gf}}) }) if ($map->{minDocFreq}>0);
-  delete(@{$map->{df}}{ grep {!exists($map->{gf}{$_})} keys(%{$map->{df}}) });
+  if (($mindf=$map->{minDocFreq}) > 0) {
+    if (UNIVERSAL::isa(tied(%$gf),'DB_File')) {
+      ##-- trim: by doc-frequency: saveMem/DB_File
+      $map->vlog('info', "compileTrim(): by document term freqency: DB_File") if ($map->{verbose});
+      my $tied = tied(%$gf);
+      my ($key,$val,$status);
+      for ($status=$tied->seq($key,$val,DB_File::R_FIRST()); $status==0; $status=$tied->seq($key,$val,DB_File::R_NEXT())) {
+	$tied->del($key, DB_File::R_CURSOR()) if ($df->{$key} < $mindf);
+      }
+    }
+    else {
+      ##-- trim: by doc-frequency: default/HASH: gf
+      delete(@$gf{ grep {$df->{$_} < $mindf} keys(%$gf) });
+    }
+  }
+
+  ##-- trim %$df: intersect with %$gf
+  if ($mingf > 0 || $mindf > 0) {
+    $map->vlog('info', "compileTrim(): intersect global- and doc-frequency") if ($map->{verbose});
+    if (UNIVERSAL::isa(tied(%$df),'DB_File')) {
+      ##-- trim: intersect: saveMem/DB_File
+      $map->vlog('info', "compileTrim(): intersect: DB_File") if ($map->{verbose});
+      my $tied = tied(%$df);
+      my ($key,$val,$status);
+      for ($status=$tied->seq($key,$val,DB_File::R_FIRST()); $status==0; $status=$tied->seq($key,$val,DB_File::R_NEXT())) {
+	$tied->del($key, DB_File::R_CURSOR()) if (!exists($gf->{$key}));
+      }
+    } else {
+      ##-- trim: intersect: defaulkt/HASH
+      delete(@$df{ grep {!exists  $gf->{$_}} keys(%$df) });
+    }
+  }
 
   return $map;
 }
@@ -298,7 +375,7 @@ sub compileTermEnum {
   my $tenum = $map->{tenum};
   $tenum->clear();
   #@{$tenum->{id2sym}} = ($map->{unkTerm}, keys(%{$map->{gf}}));
-  @{$tenum->{id2sym}} = (keys(%{$map->{gf}}));
+  @{$tenum->{id2sym}} = keys %{$map->{gf}};
   @{$tenum->{sym2id}}{@{$tenum->{id2sym}}} = (0..$#{$tenum->{id2sym}});
   return $map;
 }
@@ -355,15 +432,23 @@ sub compile_dcm {
   my $dc_which = zeroes(long,2,$ndc);
   my $dc_vals  = zeroes(double,$ndc);
   my $nzi      = 0;
-  my ($doc,$cat,$tmp);
-  foreach $doc (@{$map->{docs}}) {
+  my $docs     = $map->{docs};
+  my $dtied    = tied @$docs;
+  my ($doc,$cat,$catid,$updated,$tmp);
+  foreach $doc (@$docs) {
+    $updated = 0;                               ##-- true if we've updated any cat-ids (for saveMem)
     foreach $cat (@{$doc->{cats}}) {
-      $cat->{id} = $lcenum->{sym2id}{$cat->{name}}; ##-- re-assign category IDs !
+      $catid = $lcenum->{sym2id}{$cat->{name}}; ##-- re-compute category IDs !
+      if ($catid != $cat->{id}) {
+	$cat->{id} = $catid;
+	$updated   = 1;
+      }
       $dc_which->set(0,$nzi, $doc->{id});
       $dc_which->set(1,$nzi, $cat->{id});
       $dc_vals->set($nzi,    $cat->{deg});
       ++$nzi;
     }
+    $docs->[$doc->{id}] = $doc if ($updated && $dtied); ##-- update tied doc
   }
   $map->{dcm} = PDL::CCS::Nd->newFromWhich($dc_which,$dc_vals);
   #(...,'inf')->badmissing->nanmissing;
@@ -390,6 +475,7 @@ sub compile_tdm0 {
   my $tenum_id2sym = $tenum->{id2sym};
   my $doc_wt = $map->{doc_wt} = []; ##-- [$docid] => pdl($nnz_doc) : [$nzi_doc] -> $ti : f($doc,$ti) defined
   my ($lf);
+  ##-- TODO: optimize @$doc_wt for 'saveMem' mode!
   @$doc_wt = map {
     $lf=$_->{lf};
     pdl(long, [ grep {defined($_)} @$tenum_sym2id{grep {$lf->{$_}>0} keys(%$lf)} ])
