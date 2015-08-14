@@ -65,6 +65,9 @@ DocClassify/Program.pm
 DocClassify/Server.pm
 DocClassify/Server/XmlRpc.pm
 DocClassify/Signature.pm
+DocClassify/Temp.pm
+DocClassify/Temp/Array.pm
+DocClassify/Temp/Hash.pm
 DocClassify/Utils.pm
 Makefile.PL
 MANIFEST
