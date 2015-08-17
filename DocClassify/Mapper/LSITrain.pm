@@ -313,81 +313,6 @@ sub loadCrossCheckEval {
   return $map;
 }
 
-## $map = $map->compileCrossCheck()
-##  + does cross-checking for training data
-##  + caches $map->{dc_dist}: dense pdl [$di,$ci] -> dist($di,$ci)
-##  + OBSOLETE
-sub compileCrossCheck {
-  my $map = shift;
-  my $xcn = $map->{xn};
-
-  if (!$xcn || $xcn<3) {
-    $map->vlog('warn', "compileCrossCheck(): cross-validation disabled (xn=".($xcn||0).")");
-    return $map;
-  }
-
-  ##-- cross-check: generate test corpora
-  my $corpus = DocClassify::Corpus->new(docs=>$map->{docs});
-  my @subcs  = $corpus->splitN($xcn, seed=>$map->{seed}, exclusive=>$map->{trainExclusive}, label=>"XCHECK.%d/$xcn");
-
-  ##-- cross-check: map subcorpora to document index pdls
-  $map->logconfess("compileCrossCheck(): can't handle non-exclusive training mode!") if (!$map->{trainExclusive});
-  my $NC     = $map->{lcenum}->size;
-  my $ND     = $map->{denum}->size;
-  my $d2subc = zeroes(long,$ND);
-  foreach (0..$#subcs) {
-    $d2subc->index(pdl(long, [map {$_->{id}} @{$subcs[$_]{docs}}])) .= $_;
-  }
-  my $dcm_z = $map->{dcm}->missing->sclr;
-  my $d2c   = $map->{dcm}->xchg(0,1)->_missing('inf')->minimum_ind->decode;  ##-- [$di] -> $ci_best
-  $map->{dcm}->missing($dcm_z);
-
-  ##-- cross-check: train & map
-  my $dc_dist = zeroes(double,$ND,$NC);       ##-- [$di,$ci] -> dist($di,$ci)
-  ##
-  my ($xci,$xclabel, $map2, $docids_train,$docids_test);
-  my ($od_did,$od_tdm,$od_xdm,$od_cdmat);
-  foreach $xci (1..$xcn) {
-    ##-- create & compile subset mapper
-    $xclabel = "XCHECK ($xci/$xcn)";
-    ($docids_test,$docids_train) = which_both($d2subc==($xci-1));
-    if ($docids_train->isempty || $docids_test->isempty) {
-      $map->logwarn("compileCrossCheck(): [$xclabel]: TRAIN: empty subcorpus: skipping!");
-      next;
-    }
-    my ($ND_train,$ND_test) = ($docids_train->nelem,$docids_test->nelem);
-    $map->vlog('info',"compileCrossCheck(): [$xclabel]: TRAIN: ND_train=$ND_train, ND_test=$ND_test") if ($map->{verbose});
-    $map2 = $map->docSubset($docids_train);
-    $map2->compileLocal(label=>$xclabel);
-
-    ##-- map left-out ("other") documents
-    #$map2->{verbose} = 0; 
-    $map->vlog('info', "compileCrossCheck(): [$xclabel]: MAP: ND_test=$ND_test") if ($map->{verbose});
-    foreach $od_did ($docids_test->list) {
-      $map->vlog('trace', "compileCrossCheck(): [$xclabel]: MAP: DOC(".$map->{docs}[$od_did]{label}.")") if ($map->{verbose}>=2);
-      $od_tdm = $map->{tdm}->dice_axis(1,$od_did);
-      $od_xdm = $map2->svdApply($od_tdm);
-      $od_cdmat = $map2->{disto}->clusterDistanceMatrix(data=>$od_xdm,cdata=>$map2->{xcm})->lclip(0);
-      $dc_dist->slice("($od_did),") .= $od_cdmat->flat;
-    }
-  }
-  $map->{dc_dist} = $dc_dist; ##-- save doc-cat distance matrix
-
-  return $map;
-}
-
-## $map2 = $map->docSubset($docids)
-##  + creates and returns a shallow copy of $map using only the subset $docids
-##  + $docids : pdl($ND_local): [$ndli] -> $docid_global
-sub docSubset {
-  my ($map,$docids) = @_;
-  my $map2 = $map->shadow(%$map, docids=>$docids);
-  $map2->{dcm}  = $map2->{dcm}->dice_axis(0,$docids) if (defined($map2->{dcm}));
-  $map2->{tdm0} = $map2->{tdm0}->dice_axis(1,$docids) if (defined($map2->{tdm0}));
-  $map2->{tdm}  = $map2->{tdm}->dice_axis(1,$docids) if (defined($map2->{tdm}));
-  delete(@$map2{qw(svd xdm xcm tcm0 tcm)});
-  return $map2;
-}
 
 ## $map = $map->compileLocal(%opts)
 ##  + compiles local map params qw(svd xdm xcm)
@@ -533,12 +458,10 @@ sub compile_xcm {
     my $xcm = zeroes(double, $map->{svdr},$NC);
     my $doc_weight = $catProfile eq 'average' ? ones($ND) : $map->{tdm0}->sumover->decode;
     $doc_weight  /= $doc_weight->sumover;
-    my $docids = $map->docIdPdl;
-    my ($d_id_local,$d_id_global,$d_x,$c_id,$cat, $tmp);
-    foreach $d_id_local (0..($ND-1)) {
-      $d_id_global = $docids->at($d_id_local);
-      $d_x  = $doc_weight->index($d_id_local) * $xdm->slice(",$d_id_local"); ##-- [0,$di] -> $x
-      foreach $cat (@{$map->{docs}[$d_id_global]{cats}}) {
+    my ($d_id,$d_x,$c_id,$cat, $tmp);
+    foreach $d_id (0..($ND-1)) {
+      $d_x = $doc_weight->index($d_id) * $xdm->slice(",$d_id"); ##-- [0,$di] -> $x
+      foreach $cat (@{$map->{docs}[$d_id]{cats}}) {
 	$c_id = $lc_sym2id->{$cat->{name}};
 	($tmp=$xcm->slice(",$c_id")) += $d_x;
       }

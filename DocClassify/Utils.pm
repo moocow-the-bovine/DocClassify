@@ -46,7 +46,7 @@ our %EXPORT_TAGS =
    encode => [qw(deep_encode deep_decode deep_recode deep_utf8_upgrade)],
    perms => [qw(setuids setgids)],
    profile => [qw(profile_reset profile_start profile_stop profile_elapsed profile_string)],
-   temp => [qw($TMPDIR tmpdir tmpfile tmparray tmphash)],
+   temp => [qw($TMPDIR tmpdir tmpfh tmpfile tmparray tmphash)],
   );
 our @EXPORT_OK = map {@$_} values(%EXPORT_TAGS);
 our @EXPORT    = @EXPORT_OK;
@@ -571,13 +571,22 @@ sub tmpdir {
   return @_ ? File::Temp::tempdir($_[0], DIR=>$tmpdir, @_[1..$#_]) : $tmpdir;
 }
 
+## $fh = CLASS->tmpfh()
+## $fh = CLASS->tmpfh($template, %opts)
+##  + get a new temporary filehandle or undef on error
+##  + in list context, returns ($fh,$filename) or empty list on error
+sub tmpfh {
+  my $that = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
+  my $template = shift // 'tmpXXXXX';
+  my ($fh,$filename) = File::Temp::tempfile($template, DIR=>$that->tmpdir(), @_) or return qw();
+  return wantarray ? ($fh,$filename) : $fh;
+}
+
 ## $filename = CLASS->tmpfile()
 ## $filename = CLASS->tmpfile($template, %opts)
 sub tmpfile {
   my $that = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
-  my $template = shift // 'tmpXXXXX';
-  my ($fh,$filename) = File::Temp::tempfile($template, DIR=>$that->tmpdir(), @_)
-    or return undef;
+  my ($fh,$filename) = $that->tmpfh(@_) or return undef;
   $fh->close();
   return $filename;
 }

@@ -68,7 +68,7 @@ our $verbose = 3;
 ##  gcenum => $localCatEnum,         ##-- global cat enum         ($NCg=$globalCatEnum->size())
 ##  tenum => $termEnum,              ##-- term (lemma) enum       ($NT=$termEnum->size())
 ##  denum => $docEnum,               ##-- document (label) enum   ($ND=$docEnum->size()=scalar(@docs))
-##  docids => $docIdPdl,             ##-- document id subset: pdl($ND_local): [$doc_pdl_index] -> $docid_denum
+##  #docids => $docIdPdl,             ##-- document id subset: pdl($ND_local): [$doc_pdl_index] -> $docid_denum  ##-- OBSOLETE (support removed in v0.16)
 ##  ##
 ##  ##-- data: training
 ##  lz => $lemmatizer,               ##-- DocClassify::Lemmatizer object
@@ -90,7 +90,7 @@ our $verbose = 3;
 ##  tcm => $tcm_pdl,                 ##-- term-cat matrix: PDL::CCS::Nd ($NT,$NC): [$ti,$ci] -> log(f($ti,$ci)+$f0)*w($ti)
 ##  ##
 ##  ##-- data: compile() caches
-##  doc_wt => \@doc_wt,              ##-- doc term indices: $di => pdl($NnzDocI) : [$nzi] -> $ti : f($ti,$di)>0
+##  #doc_wt => \@doc_wt,              ##-- doc term indices: $di => pdl($NnzDocI) : [$nzi] -> $ti : f($ti,$di)>0  -- UNUSED in v>=0.16
 sub new {
   my $that = shift;
   my $obj =  $that->SUPER::new(

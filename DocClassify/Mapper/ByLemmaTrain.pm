@@ -13,6 +13,7 @@ use MUDL::Cluster::Distance;
 use MUDL::Cluster::Distance::Builtin;
 
 use PDL;
+use PDL::IO::FastRaw; ##-- for mapfraw()
 use PDL::CCS::Nd;
 use PDL::VectorValued;
 
@@ -458,7 +459,7 @@ sub compile_dcm {
 ##----------------------------------------------
 ## $map = $map->compile_tdm0()
 ##  + compiles raw term-doc frequency matrix: $map->{tdm0} : [$tid,$did] => f($term[$tid],$doc[$did])
-##  + caches $map->{doc_wt}
+##  + new implementation does NOT cache or use $map->{doc_wt}
 sub compile_tdm0 {
   my $map = shift;
 
@@ -469,67 +470,60 @@ sub compile_tdm0 {
 
   $map->vlog('info', "compile_tdm0(): matrix: tdm0: (NT=$NT x ND=$ND) [Term x Doc -> Freq]") if ($map->{verbose});
 
-  ##-- step 1: @$doc_wt: doc-wise term ids
-  $map->vlog('info',"compile_tdm0(): matrix: tdm0: doc_wt [Doc -> Terms]") if ($map->{verbose});
+  ##-- step 1: create tempfiles $tdm0_w_fh (~whichND), $tdm0_val_fh (~nzvals)
   my $tenum_sym2id = $tenum->{sym2id};
   my $tenum_id2sym = $tenum->{id2sym};
-  my $doc_wt = $map->{doc_wt} = []; ##-- [$docid] => pdl($nnz_doc) : [$nzi_doc] -> $ti : f($doc,$ti) defined
-  my ($lf);
-  ##-- TODO: optimize @$doc_wt for 'saveMem' mode!
-  @$doc_wt = map {
-    $lf=$_->{lf};
-    pdl(long, [ grep {defined($_)} @$tenum_sym2id{grep {$lf->{$_}>0} keys(%$lf)} ])
-  } @{$map->{sigs}};
-
-  ##-- step 2: count doc-term nnz
-  $map->vlog('info',"compile_tdm0(): matrix: tdm0: Nnz") if ($map->{verbose});
-  my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt]);
-  my $nnz       = $doc_wt_n->sum;                        ##-- sclr: nnz($d,$t)
-  my $doc_wt_i1 = $doc_wt_n->cumusumover-1;              ##-- [$di] -> sum_{$dj<=$di} nnz($dj)
-  my $doc_wt_i0 = ($doc_wt_n                             ##-- [$di] -> sum_{$dj< $di} nnz($di)
-		   ->append(0)->rotate(1)->slice("0:-2")->cumusumover);
-
-  ##-- step 3: create CCS::Nd tdm0
-  $map->vlog('info',"compile_tdm0(): matrix: tdm0: PDL::CCS::Nd [Nnz=$nnz]") if ($map->{verbose});
-  my $sigs   = $map->{sigs};
-  my $tdm0_w = zeroes(long,2,$nnz);
-  my $tdm0_v = zeroes(double,$nnz);
-  my ($slice1);
-  foreach ($doc_wt_n->which->list) {
-    $slice1 = $doc_wt_i0->at($_).":".$doc_wt_i1->at($_);
-    (my $tmp=$tdm0_w->slice("(0),$slice1")) .= $doc_wt->[$_];
-    ($tmp=$tdm0_w->slice("(1),$slice1")) .= $_;
-    ($tmp=$tdm0_v->slice("$slice1"))     .= pdl([ @{$sigs->[$_]{lf}}{@$tenum_id2sym[$doc_wt->[$_]->list]} ]);
+  my $pack_wnd = $PDL::Types::pack[ long->enum ];
+  my $pack_val = $PDL::Types::pack[ double->enum ];
+  my ($tdm0_wnd_fh,$tdm0_wnd_file) = tmpfh('dc_tdm0_wnd_XXXXXX', UNLINK=>1, SUFFIX=>'.pdl');
+  my ($tdm0_val_fh,$tdm0_val_file) = tmpfh('dc_tdm0_val_XXXXXX', UNLINK=>1, SUFFIX=>'.pdl');
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: tempfiles ($tdm0_wnd_file, $tdm0_val_file)") if ($map->{verbose});
+  my $di = 0;
+  my ($lf,%tif,$ti,$tf);
+  foreach (@{$map->{sigs}}) {
+    $lf  = $_->{lf};
+    %tif = map {defined($ti=$tenum_sym2id->{$_}) && ($tf=$lf->{$_})>0 ? ($ti=>$tf) : qw()} keys(%$lf);
+    $tdm0_wnd_fh->print(pack($pack_wnd, map {($_,$di)} keys %tif));
+    $tdm0_val_fh->print(pack($pack_val, values %tif));
+    ++$di;
   }
-  my $tdm0_dims = pdl(long,$NT,$ND);
-  my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm0_w,$tdm0_v,dims=>$tdm0_dims,missing=>0);
-  #$tdm0 = $map->{tdm0} = $tdm0->dummy(0,1)->sumover->recode; ##-- avoid dangling zeroes
+  undef $lf;
+  %tif = qw();
+  my $nnz = $tdm0_val_fh->tell / length(pack($pack_val,0));
+
+  ##-- step 2: mmap temp files to PDLs
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: mmap") if ($map->{verbose});
+  $tdm0_wnd_fh->close() or $map->logconfess("compile_tdm0(): close failed for tempfile $tdm0_wnd_file: $!");
+  $tdm0_val_fh->close() or $map->logconfess("compile_tdm0(): close failed for tempfile $tdm0_val_file: $!");
+  my $tdm0_wnd = mapfraw($tdm0_wnd_file, {Creat=>0,Trunc=>0,ReadOnly=>1,Dims=>[2,$nnz],Datatype=>long});
+  my $tdm0_val = mapfraw($tdm0_val_file, {Creat=>0,Trunc=>0,ReadOnly=>1,Dims=>[$nnz+1],Datatype=>double});
+  $map->logconfess("compile_tdm0(): mmap failed for $tdm0_wnd_file") if (!defined($tdm0_wnd));
+  $map->logconfess("compile_tdm0(): mmap failed for $tdm0_val_file") if (!defined($tdm0_val));
+
+  ##-- step 3: ccs
+  $map->vlog('info',"compile_tdm0(): matrix: tdm0: PDL::CCS::Nd [Nnz=$nnz]") if ($map->{verbose});
+  my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm0_wnd,$tdm0_val,dims=>pdl(long,$NT,$ND),missing=>0);
+
+  ##-- step 4: cleanup
+  undef $tdm0_wnd;
+  undef $tdm0_val;
+  !-e $tdm0_wnd_file or CORE::unlink($tdm0_wnd_file) or $map->logwarn("compile_tdm0(): failed to unlink tempfile $tdm0_wnd_file: $!");
+  !-e $tdm0_val_file or CORE::unlink($tdm0_val_file) or $map->logwarn("compile_tdm0(): failed to unlink tempfile $tdm0_val_file: $!");
 
   return $map;
 }
 
 ##----------------------------------------------
-## $docIdPdl = $map->docIdPdl()
-##  + returns size of local doc subset (docids) or sequence($map->{denum}->size)
-##  + returned pdl is ($NDocsLocal) : [$docid_local] -> $docid_global
-sub docIdPdl {
-  my $map = shift;
-  return $map->{docids} if (defined($map->{docids}));
-  return sequence(long,$map->{denum}->size);
-}
-
-##----------------------------------------------
 ## $map = $map->compile_tcm0()
 ##  + compiles matrix $map->{tcm0}: CCS::Nd: ($NT x $NC) [Term x Cat -> Freq] from $map->{tdm0}
-##  + requires cached $map->{tdm0}, $map->{dcm}, $map->{doc_wt}
+##  + requires cached $map->{tdm0}, $map->{dcm}
 sub compile_tcm0 {
   my $map = shift;
 
   ##-- vars
   my ($denum,$tenum,$lcenum) = @$map{qw(denum tenum lcenum)};
-  my $docids = $map->docIdPdl;
   my $NT = $tenum->size;
-  my $ND = $docids->nelem;
+  my $ND = $denum->size;
   my $NC = $lcenum->size;
   my ($tmp); ##-- for annoying 'Can't return a temporary from lvalue subroutine at ...' workarounds
 
@@ -538,7 +532,7 @@ sub compile_tcm0 {
   ##-- step 0: get sparse boolean dcmb [Doc x Cat -> Bool]
   my $dcm    = $map->{dcm};
   my $dcmb   = $dcm->shadow(which=>$dcm->_whichND, vals=>ones(ushort,$dcm->_vals->dims))->_missing(0);
-  my $doc_nc = $dcmb->xchg(0,1)->sumover->decode; ##-- [$di_local] -> $ncats
+  my $doc_nc = $dcmb->xchg(0,1)->sumover; ##-- ccs: [$di_local] -> $ncats
 
   ##-- check for determistic (doc->cat) mappings
   if ($doc_nc->max == 1) {
@@ -568,36 +562,30 @@ sub compile_tcm0 {
 
     ##-- step 1: count doc-term nnz
     $map->vlog('info', "compile_tcm0(): matrix: tcm0: Nnz") if ($map->{verbose});
-    my $doc_wt    = $map->{doc_wt};
-    my $doc_wt_n  = pdl(long, [map {$_->nelem} @$doc_wt])->index($docids);
-    my $doc_cat_wt_n = $doc_wt_n * $doc_nc;
-    my $nnz       = $doc_cat_wt_n->sum;                        ##-- sclr: nnz($d,$t)
+    my $tdm0        = $map->get_tdm0;
+    my $doc_nnz     = $tdm0->nnz->decode;
+    my $nnz         = ($doc_nnz * $doc_nc)->sum;                        ##-- sclr: nnz($c,$t)
 
     ##-- step 3: create CCS::Nd
     $map->vlog('info', "compile_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
-    my $docs = $map->{docs};
-    my $lcenum_sym2id = $map->{lcenum}{sym2id};
-    my $tdm0 = $map->{tdm0};
-    ##
-    my $tcm0_w = zeroes(long,2,$nnz);
-    my $tcm0_v = zeroes(double,$nnz);
-    my ($di_local,$di_global,$tdm0d,$ci,$n,$slice1);
+    my $tcm0_w = zeroes(long,   2,$nnz);
+    my $tcm0_v = zeroes(double, $nnz);
+
+    my ($ci,$cdis,$di,$n,$tdm0d,$slice1);
     my $nzi = 0;
-    foreach $di_local (0..($ND-1)) {
-      $di_global = $docids->at($di_local);
-      $n = $doc_wt_n->at($di_local);
-      next if (!$n);
-      $tdm0d = $tdm0->dice_axis(1,$di_local);
-      foreach $ci (@$lcenum_sym2id{map {$_->{name}} @{$docs->[$di_global]{cats}}}) {
+    foreach $ci (0..($NC-1)) {
+      $cdis = $dcmb->dice_axis(1,$ci)->_whichND->slice("(0),");
+      foreach $di ($cdis->list) {
+	next if (!($n = $doc_nnz->at($di)));
+	$tdm0d  = $tdm0->dice_axis(1,$di);
 	$slice1 = $nzi.':'.($nzi+$n-1);
-	($tmp=$tcm0_w->slice("(0),$slice1")) .= $tdm0d->_whichND->slice("(0),");
-	($tmp=$tcm0_w->slice("(1),$slice1")) .= $ci;
-	($tmp=$tcm0_v->slice("$slice1"))     .= $tdm0d->_nzvals;
+	($tmp   = $tcm0_w->slice("(0),$slice1")) .= $tdm0d->_whichND->slice("(0),");
+	($tmp   = $tcm0_w->slice("(1),$slice1")) .= $ci;
+	($tmp   = $tcm0_v->slice("$slice1"))     .= $tdm0d->_nzvals;
 	$nzi += $n;
       }
     }
-    my $tcm0_dims = pdl(long,$NT,$NC);
-    my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
+    my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>pdl(long,$NT,$NC),missing=>0)->dummy(0,1)->sumover;
     $map->{tcm0} = $tcm0;
   }
 
