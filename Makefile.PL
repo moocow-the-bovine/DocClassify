@@ -19,7 +19,7 @@ WriteMakefile
 		    #'DiaColloDB' => undef, ##-- '0.05.001' - for MUDL::Enum directory I/O
 		    ##
 		    ##-- for 'saveMem' training option
-		    'Tie::File::Indexed' => 0.01
+		    'Tie::File::Indexed' => 0.02,
 		    'DB_File' => undef,
 		    'File::Spec' => undef,
 		    'File::Temp' => undef,
