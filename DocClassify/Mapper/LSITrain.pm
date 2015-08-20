@@ -375,8 +375,8 @@ sub compile_svd {
   my $svd  = $map->{svd} = MUDL::SVD->new(r=>$map->{svdr}, maxiters=>0); #$maxiters=>(2*$map->{svdr})
   $svd->computeccs_nd($map->{byCat} ? $map->{tcm} : $map->{tdm});
   if ($opts{svdShrink}) {
+    $map->vlog('info', "compile_svd() [$label]: SVD: auto-shrinking to r=$svd->{r}") if ($map->{verbose});
     $svd->shrink();
-    $map->vlog('info', "compile_svd() [$label]: SVD: auto-shrunk to r=$svd->{r}") if ($map->{verbose});
     $map->{svdr} = $svd->{r}; ##-- NOT HERE ?!
   }
   if ($opts{svdCache} || !defined($opts{svdCache})) {
