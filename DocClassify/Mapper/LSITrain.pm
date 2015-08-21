@@ -169,27 +169,28 @@ sub compileFit {
 
   ##--------------------
   ##-- get positive & negative samples
-  my $dc_which1 = sequence($ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
+  my $dc_which1 = sequence($d2c->type, $ND)->cat($d2c)->xchg(0,1);  ##-- [$di]     -> [$di,$ci] : $di \in $ci
   if ($map->{nullCat}) {
     ##-- hack positives for null cat
     my $cid_null_src = $map->{lcenum}{sym2id}{'(null)'};
     my $cid_null_dst = $map->{lcenum}{sym2id}{$map->{nullCat}};
     my $which_dst    = which($d2c==$cid_null_dst);
-    $dc_which1 = $dc_which1->glue(1,$which_dst->cat(pdl(long,$cid_null_src))->xchg(0,1));
+    $dc_which1 = $dc_which1->glue(1,$which_dst->cat(pdl($which_dst->type,$cid_null_src))->xchg(0,1));
   }
   my $dc_mask1  = zeroes(byte,$dc_dist->dims);          ##-- [$di,$ci] -> 1($di \in     $ci)
   $dc_mask1->indexND($dc_which1) .= 1;
   my $dc_mask = $dc_mask1; ##-- alias
   my $dc_which0 = whichND(!$dc_mask1);                   ##-- [$di,$ci] -> 1($di \not\in $ci)
-  my $nc  = $dc_mask1->long->sumover->double;            ##-- [$ci] -> |{ $di : $di \in     $ci }|
+  my $nc  = ($dc_mask1->convert($map->_ftype)
+	     ->sumover->convert($map->vtype));           ##-- [$ci] -> |{ $di : $di \in     $ci }|
   my $nnc = $nc->sum - $nc;                              ##-- [$ci] -> |{ $di : $di \not\in $ci }|
 
   ##--------------------
   ## doc-cat distance matrix: by boolean membership
   ##   $dc1dist: CCS: [$di,$ci] -> dist($ci,$di) : $di     \in $ci
   ##   $dc0dist: CCS: [$di,$ci] -> dist($ci,$di) : $di \not\in $ci
-  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1),dims=>pdl(long,[$dc_dist->dims]));
-  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0),dims=>pdl(long,[$dc_dist->dims]));
+  my $dc1dist = PDL::CCS::Nd->newFromWhich($dc_which1,$dc_dist->indexND($dc_which1),dims=>pdl($map->_dtype,[$dc_dist->dims]));
+  my $dc0dist = PDL::CCS::Nd->newFromWhich($dc_which0,$dc_dist->indexND($dc_which0),dims=>pdl($map->_dtype,[$dc_dist->dims]));
 
   ##--------------------
   ## fit parameters: global
@@ -288,7 +289,7 @@ sub loadCrossCheckEval {
   my $NDx = $denum->size;
 
   ##-- $dc_d2c: pdl($NDx): [$di] -> $ci_wanted
-  my $d2c = pdl(long,[@$lc_sym2id{map {$lab2docs->{$_}[0]{cats}[0]{name}} @{$denum->{id2sym}}}]);
+  my $d2c = pdl($map->itype,[@$lc_sym2id{map {$lab2docs->{$_}[0]{cats}[0]{name}} @{$denum->{id2sym}}}]);
 
   ##-- $dc_dist: pdl($NDx,$NC): [$dix,$ci] -> dist($ci,$di)
   my $dc_dist = zeroes($NDx,$NC)+2; ##-- initialize to a meaningful maximum
@@ -303,7 +304,7 @@ sub loadCrossCheckEval {
     @dcname = map  {$_->{proto} ? $_->{proto} : $_->{name}} @dcats2;
     @dci    = grep {defined($lc_sym2id->{$dcname[$_]})} (0..$#dcats2);
     @dcdist = map  {$dcats2[$_]{dist_raw}} @dci;
-    $dc_dist->slice("($di),")->index(pdl(long,[@$lc_sym2id{@dcname[@dci]}])) .= pdl(\@dcdist);
+    $dc_dist->slice("($di),")->index(pdl($map->itype,[@$lc_sym2id{@dcname[@dci]}])) .= pdl($dc_dist->type,\@dcdist);
   }
 
   ##-- cache values: {dc_dist}, {dc_d2c}
@@ -337,6 +338,9 @@ sub compileLocal {
 
   ##-- vector: $map->{tw_ccs}: ($NT): [$tid] -> weight($term[$tid])
   #$map->compile_tw_ccs(%opts);
+
+  ##-- convert to target index+value types
+  $map->compile_types(%opts);
 
   return $map;
 }
@@ -448,15 +452,15 @@ sub compile_xcm {
     $map->compile_tcm0() if (!defined($map->{tcm0}));
     $map->compile_tcm()  if (!defined($map->{tcm}));
     my $tcma = $map->{tcm}->decode;
-    my $cn   = ($map->{dcm}->decode != 0)->double->sumover;
+    my $cn   = ($map->{dcm}->decode != 0)->convert($tcma->type)->sumover;
     $map->{xcm} = $map->{svd}->apply($tcma/$cn->slice("*1,"));
   }
   elsif ($catProfile eq 'average' || $catProfile eq 'weighted-average') {
     ##-- TODO: use MUDL::Cluster::Method::d2c_*() methods here!
     my $lc_sym2id = $map->{lcenum}{sym2id};
     my $xdm = $map->{xdm};
-    my $xcm = zeroes(double, $map->{svdr},$NC);
-    my $doc_weight = $catProfile eq 'average' ? ones($ND) : $map->{tdm0}->sumover->decode;
+    my $xcm = zeroes($map->_vtype, $map->{svdr},$NC);
+    my $doc_weight = $catProfile eq 'average' ? ones($map->{tdm0}->type,$ND) : $map->{tdm0}->sumover->decode;
     $doc_weight  /= $doc_weight->sumover;
     my ($d_id,$d_x,$c_id,$cat, $tmp);
     foreach $d_id (0..($ND-1)) {
@@ -476,7 +480,26 @@ sub compile_xcm {
   return $map;
 }
 
+##--------------------------------------------------------------
+## Methods: Compilation: Types
+##  + converts compiled piddles to target types @$map{qw(vtype itype))}
+##  + %opts:
+##     label  => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
+##  + override only compiles types if $map->{svd} is 
+sub compile_types {
+  my ($map,%opts) = @_;
+  my $label = $map->labelString(%opts);
 
+  ##-- local piddles
+  $map->SUPER::compile_types(%opts,label=>"$label/local")
+    or return undef;
+
+  ##-- svd piddles
+  $map->SUPER::compile_types(%opts, label=>"$label/svd", refs=>$map->object_pdlrefs($map->{svd}))
+    or return undef;
+
+  return $map;
+}
 
 ##==============================================================================
 ## Functions: Utils

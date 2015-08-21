@@ -436,7 +436,12 @@ sub dirHeaderKeys {
 ##  + default returns hash of $obj->dirHeaderKeys() and special '__CLASS__' key
 sub dirHeaderData {
   my $obj = shift;
-  return { __CLASS__=>(ref($obj)||$obj), (map {($_=>$obj->{$_})} grep {exists($obj->{$_})} $obj->dirHeaderKeys) };
+  return {
+	  __CLASS__=>(ref($obj)||$obj),
+	  (map {($_=>$obj->{$_})}
+	   grep {exists($obj->{$_})}
+	   $obj->dirHeaderKeys)
+	 };
 }
 
 ## $bool = $obj->saveDirHeader($dirname_or_filename)

@@ -62,6 +62,8 @@ our $verbose = 3;
 ##  dist => $distSpec,               ##-- distance spec for MUDL::Cluster::Distance (default='u')
 ##                                   ##   + 'c'=Pearson, 'u'=Cosine, 'e'=Euclid, ...
 ##  nullCat => $catName,             ##-- cat name for null prototype (default=undef (none)); enum name='(null)'; '(auto)': use min id; false for none
+##  vtype => $vtype,                 ##-- PDL::Type or string: value type for saved PDLs (default='double')
+##  itype => $itype,                 ##-- PDL::Type or string: index type for saved PDLs (default='ccs_indx')
 ##  ##
 ##  ##-- data: enums
 ##  lcenum => $globalCatEnum,        ##-- local cat enum, compcat ($NC=$catEnum->size())
@@ -113,6 +115,8 @@ sub new {
 			       weightByCat => 0,
 			       dist => 'u',
 			       nullCat => undef,
+			       vtype => 'double',
+			       itype => 'ccs_indx',
 
 			       ##-- data: enums
 			       lcenum => MUDL::Enum->new,
@@ -363,8 +367,8 @@ sub sigPdlRaw {
   my ($map,$sig_or_doc, $as_ccs) = @_;
   my $sig = $map->lemmaSignature($sig_or_doc); ##-- ensure lemmatized signature
   my $tenum = $map->{tenum};
-  my $dtf_wt = pdl(long,   [grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})}]);
-  my $dtf_nz = pdl(double, [@{$sig->{lf}}{@{$tenum->{id2sym}}[$dtf_wt->list]}]);
+  my $dtf_wt = pdl($map->itype, [grep{defined($_)} @{$tenum->{sym2id}}{keys(%{$sig->{lf}})}]);
+  my $dtf_nz = pdl($map->vtype, [@{$sig->{lf}}{@{$tenum->{id2sym}}[$dtf_wt->list]}]);
   if ($map->{cleanDocs} || !exists($map->{cleanDocs})) {
     ##-- cleanup
     #$sig->unlemmatize;
@@ -372,10 +376,10 @@ sub sigPdlRaw {
   }
   if ($as_ccs) {
     ##-- ccs mode
-    return PDL::CCS::Nd->newFromWhich($dtf_wt->dummy(0,1),$dtf_nz,dims=>pdl(long,[$tenum->size]),missing=>0)->dummy(1,1);
+    return PDL::CCS::Nd->newFromWhich($dtf_wt->dummy(0,1),$dtf_nz,dims=>pdl($map->_dtype,[$tenum->size]),missing=>0)->dummy(1,1);
   }
   ##-- dense mode
-  my $dtf = zeroes(double,$tenum->size);
+  my $dtf = zeroes($map->vtype,$tenum->size);
   (my $tmp=$dtf->index($dtf_wt)) .= $dtf_nz;
   return $dtf->slice(",*1");
 }
@@ -394,7 +398,7 @@ sub sigPdlRaw {
 ##  + keys for header save
 sub dirHeaderKeys {
   my $obj = shift;
-  return ($obj->SUPER::dirHeaderKeys(), qw(lzOpts));
+  return ($obj->SUPER::dirHeaderKeys(), qw(lzOpts vtype itype));
 }
 
 ## $bool = $map->saveDirData($dirname,%opts)

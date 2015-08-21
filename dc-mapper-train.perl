@@ -128,6 +128,9 @@ dc-mapper-train.perl - train DocClassify::Mapper subclass object
   -input-mode MODE       # I/O mode for input corpora (default=guess)
   -output-mode MODE      # I/O mode for output mapper (default=guess)
   -output-file FILE      # set corpus output file (default=-)
+  -float     , -double   # datatype for saving value PDLs (default=double)
+  -long      , -indx     # datatype for saving index PDLs (default=indx)
+  -32bit     , -64bit    # alias for '-float -long' / '-double -indx'
 
 =cut
 

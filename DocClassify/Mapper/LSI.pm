@@ -232,8 +232,8 @@ sub queryVector {
   ##-- pdl-ize query
   my $q_tdm0 = $map->sigPdlRaw($q_sig, $map->{mapccs});
   my $n_tdm0 = $q_tdm0->sum;
-  my $qdocs  = pdl(long,$q_sig->{qdocs_}//[]);
-  my $qcats  = pdl(long,$q_sig->{qcats_}//[]);
+  my $qdocs  = pdl($map->itype,$q_sig->{qdocs_}//[]);
+  my $qcats  = pdl($map->itype,$q_sig->{qcats_}//[]);
   $map->logwarn("queryVector(): null vector for query-string '$q_str'")
     if ($map->{verbose}
 	&& $map->{warnOnNullDoc}

@@ -171,6 +171,51 @@ sub mapQuery {
 }
 
 ##==============================================================================
+## Methods: API: types
+
+## $vtype = $map->vtype()
+##  + returns PDL::Type value type, caching it in $map->{vtype}
+sub vtype {
+  return $_[0]{vtype} if (UNIVERSAL::isa($_[0]{vtype},'PDL::Type'));
+  return $_[0]{vtype} = (PDL->can($_[0]{vtype}//'double') // PDL->can('double'))->();
+}
+
+## $_vtype = $map->_vtype()
+##  + returns PDL::Type to use for value compilation
+##  + currently always returns double()
+sub _vtype {
+  return PDL::double();
+}
+
+## $itype = $map->itype()
+##  + returns PDL::Type index type, caching it in $map->{itype}
+sub itype {
+  return $_[0]{itype} if (UNIVERSAL::isa($_[0]{itype},'PDL::Type'));
+  return $_[0]{itype} = (PDL->can($_[0]{itype}//'ccs_indx') // PDL->can('ccs_indx') // PDL->can('indx') // PDL->can('long'))->();
+}
+
+## $_itype = $map->_itype()
+##  + returns PDL::Type to use for index compilation
+##  + currently reurns first available PDL method of qw(ccs_indx indx long)
+sub _itype {
+  return (PDL->can('ccs_indx') // PDL->can('indx') // PDL->can('long'))->();
+}
+
+## $_dtype = $map->_dtype()
+##  + returns PDL::Type to use for CCS dimension piddles
+##  + default always returns 'long'
+sub _dtype {
+  return PDL::long();
+}
+
+## $_ftype = $map->_ftype()
+##  + returns PDL::Type to use for raw frequency piddles
+##  + default always returns 'long'
+sub _ftype {
+  return PDL::long();
+}
+
+##==============================================================================
 ## Methods: API: I/O
 ##  + see DocClassify::Object
 

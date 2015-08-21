@@ -101,6 +101,8 @@ our %opts =
 	      xn => 0,                    ##-- number of splits for parameter-fitting cross-check
 	      seed =>0,    		  ##-- random seed for x-check
 	      nullCat => '(auto)',        ##-- null-prototype target category; false for none
+	      vtype => 'double',      ##-- pdl value type
+	      itype => 'ccs_indx',    ##-- pdl index type
 
 	      ##-- program-local options
 	      clearCache => 1,		##-- clear cached data structures (docs,sigs) after training?
@@ -215,6 +217,14 @@ sub dcOptions {
    #'compile|c!' => \$compileMap,
    'mapper-input-mode|map-input-mode|mim=s' => \$opts{mapLoad}{mode},
    'mapper-output-mode|map-output-mode|mom=s' => \$opts{mapSave}{mode},
+   'mapper-value-type|map-value-type|mapper-vtype|map-vtype|mvt|vtype|vt=s' => \$opts{mapNew}{vtype},
+   'float|flt' => sub { $opts{mapNew}{vtype} = 'float' },
+   'double|dbl' => sub { $opts{mapNew}{vtype} = 'double' },
+   'mapper-index-type|map-index-type|mapper-itype|map-itype|mit|itype|it=s' => \$opts{mapNew}{itype},
+   'long|int' => sub { $opts{mapNew}{itype} = 'long' },
+   'indx|quad' => sub { $opts{mapNew}{itype} = 'ccs_indx' },
+   '32bit|32!' => sub { $opts{mapNew}{itype}='long';     $opts{mapNew}{vtype}='float'; },
+   '64bit|64!' => sub { $opts{mapNew}{itype}='ccs_indx'; $opts{mapNew}{vtype}='double'; },
 
    ##-- cutoff options
    'cut-negative-p|cnp|cut0p|c0p|c0=f' => \$opts{cutoffNew}{cut0p},

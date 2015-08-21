@@ -127,6 +127,7 @@ sub addCat {
 ##     weightByCat => $bool,   ##-- use tcm0 to compute term weights? (default=$map->{weightByCat})
 ##     _compile_tcm0 => $bool, ##-- force compilation of $map->{tcm0}
 ##     _compile_tcm  => $bool, ##-- force compilation of $map->{tcm}
+##     _compile_types => $bool, ##-- force call $map->compile_types()
 sub compile {
   my ($map,%opts) = @_;
 
@@ -195,6 +196,9 @@ sub compile {
 
   ##-- compile distance object
   $map->compile_disto(%opts);
+
+  ##-- convert to target index+value types
+  $map->compile_types(%opts) if ($opts{_compile_types} || ref($map) eq __PACKAGE__);
 
   return $map;
 }
@@ -430,8 +434,8 @@ sub compile_dcm {
   my $ndc = 0;
   $ndc += scalar(@{$_->{cats}}) foreach (@{$map->{docs}});
 
-  my $dc_which = zeroes(long,2,$ndc);
-  my $dc_vals  = zeroes(double,$ndc);
+  my $dc_which = zeroes($map->itype,2,$ndc);
+  my $dc_vals  = zeroes($map->vtype,$ndc);
   my $nzi      = 0;
   my $docs     = $map->{docs};
   my $dtied    = tied @$docs;
@@ -473,8 +477,8 @@ sub compile_tdm0 {
   ##-- step 1: create tempfiles $tdm0_w_fh (~whichND), $tdm0_val_fh (~nzvals)
   my $tenum_sym2id = $tenum->{sym2id};
   my $tenum_id2sym = $tenum->{id2sym};
-  my $pack_wnd = $PDL::Types::pack[ long->enum ];
-  my $pack_val = $PDL::Types::pack[ double->enum ];
+  my $pack_wnd = $PDL::Types::pack[ $map->_itype->enum ];
+  my $pack_val = $PDL::Types::pack[ $map->_vtype->enum ];
   my ($tdm0_wnd_fh,$tdm0_wnd_file) = tmpfh('dc_tdm0_wnd_XXXXXX', UNLINK=>1, SUFFIX=>'.pdl');
   my ($tdm0_val_fh,$tdm0_val_file) = tmpfh('dc_tdm0_val_XXXXXX', UNLINK=>1, SUFFIX=>'.pdl');
   $map->vlog('info',"compile_tdm0(): matrix: tdm0: tempfiles ($tdm0_wnd_file, $tdm0_val_file)") if ($map->{verbose});
@@ -495,14 +499,14 @@ sub compile_tdm0 {
   $map->vlog('info',"compile_tdm0(): matrix: tdm0: mmap") if ($map->{verbose});
   $tdm0_wnd_fh->close() or $map->logconfess("compile_tdm0(): close failed for tempfile $tdm0_wnd_file: $!");
   $tdm0_val_fh->close() or $map->logconfess("compile_tdm0(): close failed for tempfile $tdm0_val_file: $!");
-  my $tdm0_wnd = mapfraw($tdm0_wnd_file, {Creat=>0,Trunc=>0,ReadOnly=>1,Dims=>[2,$nnz],Datatype=>long});
-  my $tdm0_val = mapfraw($tdm0_val_file, {Creat=>0,Trunc=>0,ReadOnly=>1,Dims=>[$nnz+1],Datatype=>double});
+  my $tdm0_wnd = mapfraw($tdm0_wnd_file, {Creat=>0,Trunc=>0,ReadOnly=>1,Dims=>[2,$nnz],Datatype=>$map->_itype});
+  my $tdm0_val = mapfraw($tdm0_val_file, {Creat=>0,Trunc=>0,ReadOnly=>1,Dims=>[$nnz+1],Datatype=>$map->_vtype});
   $map->logconfess("compile_tdm0(): mmap failed for $tdm0_wnd_file") if (!defined($tdm0_wnd));
   $map->logconfess("compile_tdm0(): mmap failed for $tdm0_val_file") if (!defined($tdm0_val));
 
   ##-- step 3: ccs
   $map->vlog('info',"compile_tdm0(): matrix: tdm0: PDL::CCS::Nd [Nnz=$nnz]") if ($map->{verbose});
-  my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm0_wnd,$tdm0_val,dims=>pdl(long,$NT,$ND),missing=>0);
+  my $tdm0 = $map->{tdm0} = PDL::CCS::Nd->newFromWhich($tdm0_wnd,$tdm0_val,dims=>pdl($map->_dtype,$NT,$ND),missing=>0);
 
   ##-- step 4: cleanup
   undef $tdm0_wnd;
@@ -545,7 +549,7 @@ sub compile_tcm0 {
 
     my ($tmp);
     my $tdm0 = $map->get_tdm0();
-    my $d2c  = zeroes(long, $dcm->dim(0)); ##-- pdl (ND) : [$di] => $ci_local
+    my $d2c  = zeroes($map->itype, $dcm->dim(0)); ##-- pdl (ND) : [$di] => $ci_local
     ($tmp=$d2c->index($dcm->_whichND->slice("(0),"))) .= $dcm->_whichND->slice("(1),");
     my $which0 = $tdm0->_whichND->pdl;
     my $vals0  = $tdm0->_vals;
@@ -568,8 +572,8 @@ sub compile_tcm0 {
 
     ##-- step 3: create CCS::Nd
     $map->vlog('info', "compile_tcm0(): matrix: tcm0: PDL::CCS::Nd") if ($map->{verbose});
-    my $tcm0_w = zeroes(long,   2,$nnz);
-    my $tcm0_v = zeroes(double, $nnz);
+    my $tcm0_w = zeroes($map->_itype, 2,$nnz);
+    my $tcm0_v = zeroes($map->_vtype,   $nnz);
 
     my ($ci,$cdis,$di,$n,$tdm0d,$slice1);
     my $nzi = 0;
@@ -585,7 +589,7 @@ sub compile_tcm0 {
 	$nzi += $n;
       }
     }
-    my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>pdl(long,$NT,$NC),missing=>0)->dummy(0,1)->sumover;
+    my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>pdl($map->_dtype,$NT,$NC),missing=>0)->dummy(0,1)->sumover;
     $map->{tcm0} = $tcm0;
   }
 
@@ -709,7 +713,7 @@ sub compile_tw {
     $twvals    /= log(2);                           ##                  -> log p($di|$ti)
     #$tw       *= $td_pdgt;                         ##                  -> p($di|$ti) * log p($di|$ti) [ccs]
     $twvals    *= $td_pdgt->_vals;                  ##                  -> p($di|$ti) * log p($di|$ti) [dense]
-    $tw         = $tw->xchg(0,1)->sumover;          ##-- pdl: [$ti] ->  -H(Doc|T=$ti)
+    $tw         = $tw->xchg(0,1)->sumover->todense; ##-- pdl: [$ti] ->  -H(Doc|T=$ti)
     $tw        /= log($ND)/log(2);                  ##-- pdl: [$ti] ->  -H(Doc|T=$ti)/Hmax(Doc)
     $tw        += 1;                                ##-- pdl: [$ti] -> 1-H(Doc|T=$ti)/Hmax(Doc)
   }
@@ -732,7 +736,7 @@ sub compile_tw {
     $tw        /= log(2);                           ##                  -> log p($di|$ti)
     #$tw        *= $td_pdt;                          ##                  -> p($di,$ti) * log p($di|$ti) ~h($di|$ti)
     $tw        *= $td_pdgt;                         ##                  -> p($di|$ti) * log p($di|$ti) ~h($di|T=$di)
-    $tw         = $tw->xchg(0,1)->sumover;          ##-- pdl: [$ti] -> -H(Doc|T=$ti)
+    $tw         = $tw->xchg(0,1)->sumover->todense; ##-- pdl: [$ti] -> -H(Doc|T=$ti)
     $tw        /= $d_H;                             ##              -> -H(Doc|T=$ti)/H(Doc)
     $tw        += 1;                                ##              -> 1 - H(Doc|T=$ti)/H(Doc)
   }
@@ -783,6 +787,57 @@ sub logwm {
   return ($txm0+$map->{smoothf})->inplace->log->inplace->mult($map->{tw},0);
 }
 
+##----------------------------------------------
+## $map = $map->compile_types(%opts)
+##  + converts compiled piddles to target types @$map{qw(vtype itype))} [downgrade only]
+##  + %opts:
+##     label  => $label,  ##-- symbolic label (for verbose messages; default=$map->{label})
+##     upgrade => $bool,  ##-- allow upgrading types? (default=false)
+##     vtype => $vtype,   ##-- target value-type (default=$map->vtype)
+##     itype => $itype,   ##-- target index-type (default=$map->itype)
+##     refs => \@refs,    ##-- target pdl-refs to convert (default: all PDLs in values %$map)
+sub compile_types {
+  my ($map,%opts) = @_;
+  my $label = $map->labelString(%opts);
+  my $itype = $opts{itype} // $map->itype;
+  my $vtype = $opts{vtype} // $map->vtype;
+  my $upgrade = $opts{upgrade} // 0;
+  $map->vlog('info', "compile_types() [$label]: vtype=$vtype ; itype=$itype ; upgrade=$upgrade");
+
+  ##-- convert: piddles
+  my $refs = $opts{refs} // $map->object_pdlrefs();
+  foreach (@$refs) {
+    if (UNIVERSAL::isa($$_,'PDL::CCS::Nd')) {
+      $map->convert_pdl(\($$_->_whichND), $itype,$upgrade);
+      $map->convert_pdl(\($$_->_vals),    $vtype,$upgrade);
+    } else {
+      $map->convert_pdl($_, $vtype,$upgrade);
+    }
+  }
+
+  return $map;
+}
+
+## \@refs = $map->object_pdlrefs()
+## \@refs = $map->object_pdlrefs(\%obj)
+sub object_pdlrefs {
+  my ($map,$obj) = @_;
+  $obj //= $map;
+  return [
+	  map  { \$obj->{$_} }
+	  grep { ref($obj->{$_}) && (UNIVERSAL::isa($obj->{$_},'PDL') || UNIVERSAL::isa($obj->{$_},'PDL::CCS::Nd')) }
+	  keys %$obj
+	 ]
+}
+
+## \$pdl = $map->convert_pdl(\$pdl, $dst_type, $allow_upgrade=0)
+##  + converts \$pdl to target type $dst_type (downgrade only unless $allow_upgrade is true)
+sub convert_pdl {
+  my ($map,$pdlr,$type,$upgrade) = @_;
+  $$pdlr = $$pdlr->convert($type) if ($upgrade ? ($$pdlr->type != $type) : ($$pdlr->type > $type));
+  return $pdlr;
+}
+
 ##==============================================================================
 ## Methods: DEBUG: Recovery
 
@@ -825,7 +880,7 @@ sub get_tdf0 {
   return $map->{tdf0} if (defined($map->{tdf0}));
   my $tdn = $map->get_tdm0()->pdl();
   (my $tmp = $tdn->_nzvals) .= ($tdn->_nzvals >= 1);
-  return $map->{tdf0} = $tdn->xchg(0,1)->sumover->todense->long;
+  return $map->{tdf0} = $tdn->xchg(0,1)->sumover->todense->convert($map->_ftype);
 }
 
 ##----------------------------------------------
@@ -854,7 +909,7 @@ sub get_doc_wt {
   $map->{doc_wt} = [
 		    map {
 		      ($nzimin->at($_) > $nzimax->at($_)
-		       ? null->long
+		       ? null->convert($map->_itype)
 		       : $nzvals->slice($nzimin->at($_).":".$nzimax->at($_)))
 		    } $nzimin->xvals->list
 		   ];
@@ -900,7 +955,7 @@ sub get_tcm0 {
 
       my ($tmp);
       my $tdm0 = $map->get_tdm0();
-      my $d2c  = zeroes(long, $dcm->dim(0)); ##-- pdl (ND) : [$di] => $ci_local
+      my $d2c  = zeroes($map->itype, $dcm->dim(0)); ##-- pdl (ND) : [$di] => $ci_local
       ($tmp=$d2c->index($dcm->_whichND->slice("(0),"))) .= $dcm->_whichND->slice("(1),");
       my $which0 = $tdm0->_whichND->pdl;
       my $vals0  = $tdm0->_vals;
@@ -927,8 +982,8 @@ sub get_tcm0 {
       my $nnz = ($d_ptrlen * $doc_nc)->sum;
 
       ###~~~ OLD
-      my $tcm0_w = zeroes(long,2,$nnz);
-      my $tcm0_v = zeroes(double,$nnz);
+      my $tcm0_w = zeroes($map->_itype, 2,$nnz);
+      my $tcm0_v = zeroes($map->_vtype,   $nnz);
 
       my ($di,$tdm0d,$ci,$n,$slice1,$slice2);
       my $nzi = 0;
@@ -946,7 +1001,7 @@ sub get_tcm0 {
 	  $nzi += $n;
 	}
       }
-      my $tcm0_dims = pdl(long,$map->{tenum}->size,$map->{lcenum}->size);
+      my $tcm0_dims = pdl($map->_dtype,$map->{tenum}->size,$map->{lcenum}->size);
       my $tcm0 = PDL::CCS::Nd->newFromWhich($tcm0_w,$tcm0_v,dims=>$tcm0_dims,missing=>0)->dummy(0,1)->sumover;
       $map->{tcm0} = $tcm0;
     }
