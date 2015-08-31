@@ -41,7 +41,7 @@ our $verbose = 3;
 ##  ##==== NEW in Mapper::LSI
 ##  ##-- options
 ##  svdr => $svdr,                   ##-- number of reduced dimensions (default=256)
-##  catProfile => $how,              ##-- cate profiling method ('fold-in','fold-avg','average','weighted-average'...): default='average'
+##  catProfile => $how,              ##-- cate profiling method ('fold-in','fold-avg','average','weighted-average'...): default='fold-in'
 ##  xn => $xn,                       ##-- number of splits for compile-time cross-check (0 for none; default=0)#
 ##  seed => $seed,                   ##-- random seed for corpus splitting (undef (default) for none)
 ##  #conf_nofp => $conf,              ##-- confidence level for negative-evidence parameter fitting (.95)
