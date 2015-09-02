@@ -157,27 +157,7 @@ sub compile {
   $map->compile_tdm0();
 
   ##-- smooth & log-transform term-(doc|cat) matrix, compile & apply term weights
-  if ($opts{byCat}) {
-    ##-- matrix: $map->{tcm0}: ($NT,$NC) : CCS::Nd: [Term x Cat -> Freq]
-    $map->compile_tcm0();
-    $map->compile_tcm_log();
-    $map->compile_tw($map->{tcm0});
-    #$map->{tcm} = $map->{tcm} * $map->{tw};
-    $map->{tcm}->_nzvals *= $map->{tw}->index($map->{tcm}->_whichND->slice("(0),")); ##-- faster and memory-friendlier
-  } else {
-    ##-- smooth & log-transform term-doc matrix
-    $map->compile_tdm_log();
-
-    ##-- compile & apply term weights
-    if ($opts{weightByCat}) {
-      $map->compile_tcm0();
-      $map->compile_tw($map->{tcm0});
-    } else {
-      $map->compile_tw();
-    }
-    #$map->{tdm} = $map->{tdm} * $map->{tw};
-    $map->{tdm}->_nzvals *= $map->{tw}->index($map->{tdm}->_whichND->slice("(0),"));  ##-- faster and memory-friendlier
-  }
+  $map->compile_tdm(%opts);
 
   ##-- clear expensive perl signature structs (we've outgrown them)
   #@{$map->{sigs}} = qw();
@@ -513,6 +493,50 @@ sub compile_tdm0 {
   undef $tdm0_val;
   !-e $tdm0_wnd_file or CORE::unlink($tdm0_wnd_file) or $map->logwarn("compile_tdm0(): failed to unlink tempfile $tdm0_wnd_file: $!");
   !-e $tdm0_val_file or CORE::unlink($tdm0_val_file) or $map->logwarn("compile_tdm0(): failed to unlink tempfile $tdm0_val_file: $!");
+
+  return $map;
+}
+
+##----------------------------------------------
+## $map = $map->compile_tdm(%opts)
+##  + compiles $map->{tdm} from $map->{tdm0} and $map->{tw}
+##  + calls $map->compile_tw()
+##  + may call $map->compile_tcm0() etc.
+##  + %opts: byCat, weightByCat (see $map->compile())
+sub compile_tdm {
+  my ($map,%opts) = @_;
+
+  ##-- option defaults
+  $opts{byCat}       = $map->{byCat} if (!exists($opts{byCat}));
+  $opts{weightByCat} = $map->{weightByCat} if (!exists($opts{weightByCat}));
+
+  my $NT = $map->{tenum}->size;
+  my $ND = $map->{denum}->size;
+  $map->vlog('info', "compile_tdm(): matrix: tdm: (NT=$NT x ND=$ND) [Term x Doc -> WeightedVal]") if ($map->{verbose});
+
+  ##-- smooth & log-transform term-(doc|cat) matrix, compile & apply term weights
+  my ($tmp);
+  if ($opts{byCat}) {
+    ##-- matrix: $map->{tcm0}: ($NT,$NC) : CCS::Nd: [Term x Cat -> Freq]
+    $map->compile_tcm0();
+    $map->compile_tcm_log();
+    $map->compile_tw($map->{tcm0});
+    #$map->{tcm} = $map->{tcm} * $map->{tw};
+    ($tmp=$map->{tcm}->_nzvals) *= $map->{tw}->index($map->{tcm}->_whichND->slice("(0),")); ##-- faster and memory-friendlier
+  } else {
+    ##-- smooth & log-transform term-doc matrix
+    $map->compile_tdm_log();
+
+    ##-- compile & apply term weights
+    if ($opts{weightByCat}) {
+      $map->compile_tcm0();
+      $map->compile_tw($map->{tcm0});
+    } else {
+      $map->compile_tw();
+    }
+    #$map->{tdm} = $map->{tdm} * $map->{tw};
+    ($tmp=$map->{tdm}->_nzvals) *= $map->{tw}->index($map->{tdm}->_whichND->slice("(0),"));  ##-- faster and memory-friendlier
+  }
 
   return $map;
 }
