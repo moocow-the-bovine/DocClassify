@@ -16,6 +16,7 @@ use DocClassify::Document;
 use DocClassify::Document::VzXml;
 use DocClassify::Document::CabXml;
 use DocClassify::Document::CabCsv1g;
+use DocClassify::Document::DDCTabs;
 
 use DocClassify::Lemmatizer;
 use DocClassify::Lemmatizer::Raw;
@@ -24,6 +25,7 @@ use DocClassify::Lemmatizer::VzPlain;
 use DocClassify::Lemmatizer::VzSep;
 use DocClassify::Lemmatizer::VzSem;
 use DocClassify::Lemmatizer::Cab;
+use DocClassify::Lemmatizer::DDC;
 
 use DocClassify::Mapper;
 use DocClassify::Mapper::ByLemma;
@@ -42,7 +44,7 @@ use strict;
 ##==============================================================================
 ## Globals & Constants
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 our @ISA = ('DocClassify::Logger'); ##-- for convenience
 
 BEGIN {

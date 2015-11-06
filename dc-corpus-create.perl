@@ -100,10 +100,12 @@ my $dclass = $opts{docNew}{class} // 'default';
 DocClassify::Program->vlog('info', "docClass=$dclass") if ($verbose >= 2);
 my $fregex = $opts{fcNew}{inputFileMatch};
 if (!defined($fregex)) {
-  if ($dclass =~ /1g/) {
+  if ($dclass =~ /1g/i) {
     $fregex = '(?i:\.1g$)';
-  } elsif ($dclass =~ /csv/) {
+  } elsif ($dclass =~ /csv/i) {
     $fregex = '(?i:\.csv$)';
+  } elsif ($dclass =~ /tab/i) {
+    $fregex = '(?i:\.(?:tsv|tabs?)$)';
   } else {
     $fregex = '(?i:\.xml$)';
   }

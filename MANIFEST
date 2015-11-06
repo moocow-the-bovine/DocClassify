@@ -36,6 +36,7 @@ DocClassify/Corpus.pm
 DocClassify/Document.pm
 DocClassify/Document/CabCsv1g.pm
 DocClassify/Document/CabXml.pm
+DocClassify/Document/DDCTabs.pm
 DocClassify/Document/VzXml.pm
 DocClassify/Eval.pm
 DocClassify/FileChurner.pm
@@ -46,6 +47,7 @@ DocClassify/Lemmatizer/VzPlain.pm
 DocClassify/Lemmatizer/VzSem.pm
 DocClassify/Lemmatizer/VzSep.pm
 DocClassify/Lemmatizer/Cab.pm
+DocClassify/Lemmatizer/DDC.pm
 DocClassify/Logger.pm
 DocClassify/Mapper/ByLemma.pm
 DocClassify/Mapper/ByLemmaTrain.pm
