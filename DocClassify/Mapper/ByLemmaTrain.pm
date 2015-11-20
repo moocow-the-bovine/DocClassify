@@ -717,7 +717,7 @@ sub compile_tw {
     $map->vlog('info',"compile_tw(): tw=$termWeight, weightByCat=".($map->{weightByCat} ? 1 : 0).", wRaw=$wRaw, wCooked=$wCooked");
   }
 
-  my $t_f = $tdm0->xchg(0,1)->sumover;              ##-- ccs: [$ti] -> f($ti)
+  #my $t_f = $tdm0->xchg(0,1)->sumover;              ##-- ccs: [$ti] -> f($ti)  :: CLOBBERED BELOW!
   my ($tw,$tmp);
   if ($termWeight eq 'uniform') {
     $tw = ones($NT);                                ##-- identity weighting
