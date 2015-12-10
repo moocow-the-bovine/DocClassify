@@ -422,7 +422,11 @@ sub _vcos {
   ##             = 1 - (\sum_{i=1}^d (x[i]-mean(x)) * (y[i]-mean(y))) / (d * stddev(x) * stddev(y))
   ## + where:
   ##     mean(x)   := 0
-  ##     stddev(x) := sqrt( E(X^2) )
+  ##     stddev(x) := sqrt( E(X^2) ) = ||X|| = 2norm(X) = sqrt(\sum_{i=1}^d x[i]^2)
+  ## + so:
+  ##   dist(x,y) = 1 - 1/d * (\sum_{i=1}^d (x[i]-0)/stddev(x) * (y[i]-0)/stddev(y))
+  ##             = 1 - 1/d * 1/||x|| * 1/||y|| * (\sum_{i=1}^d x[i]*y[i])
+  ##             = 1 - 1/d * 1/sqrt(\sum_{i=1}^d x[i]^2) * 1/sqrt(\sum_{i=1}^d y[i]^2) * (\sum_{i=1}^d (x[i]*y[i]))
   my $d = $dr1->dim(0);
   my ($sigma1,$sigma2) = @opts{qw(sigma1 sigma2)};
   if (!defined($sigma1)) { $sigma1 = $dr1->pow(2)->average; $sigma1->inplace->sqrt; } ##-- expensive!
