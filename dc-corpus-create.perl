@@ -50,6 +50,7 @@ GetOptions(##-- common options
 	   dcOptions(),
 
 	   ##-- local options
+	   'iregex|ir=s' => \$opts{fcNew}{inputFileMatch},
 	   'union|merge|join|corpora|u|m|j!' => \$inputCorpora,
 	   'compile|c!' => \$compile,
 	  );
