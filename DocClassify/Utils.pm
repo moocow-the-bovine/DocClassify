@@ -604,7 +604,7 @@ sub tmpfile {
 }
 
 ## \@tmparray = CLASS->tmparray($template, %opts)
-##  + ties a new temporary array via $class (default='Tie::File::Indexed::JSON')
+##  + ties a new temporary array via 'DocClassify::Temp::Array'
 ##  + calls tie(my @tmparray, 'DocClassify::Temp::Array', $tmpfilename, %opts)
 sub tmparray {
   my $that  = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
@@ -627,8 +627,8 @@ sub tmparray {
 }
 
 ## \%tmphash = CLASS->tmphash($class, $template, %opts)
-##  + ties a new temporary hash via $class (default='DB_File')
-##  + calls tie(my @tmparray, $class, $tmpfilename, temp=>1, %opts)
+##  + ties a new temporary hash via $class='DocClassify::Temp::Hash'
+##  + calls tie(my @tmparray, 'DocClassify::Temp::Hash', $tmpfilename, temp=>1, %opts)
 sub tmphash {
   my $that  = UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : __PACKAGE__;
   my ($template,%opts) = @_;

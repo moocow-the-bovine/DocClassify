@@ -30,10 +30,13 @@ our $doProfile = 1;
 %opts = (%opts,
 	);
 
+##-- hack: set default options
+$opts{load}{ReadOnly} = 1;
+
 ##-- hack: set only local overrides with '-map-option OPT=VALUE'
 our $mapUser = {};
 my %dcOpts = dcOptions();
-delete @dcOpts{grep {$_ !~ /help|verbose|map-input-mode|map-option|verbose-io|mmap|log/} keys %dcOpts};
+delete @dcOpts{grep {$_ !~ /help|verbose|input-mode|map-input-mode|map-option|verbose-io|mmap|read-only|read-write|log/} keys %dcOpts};
 $_ = $mapUser foreach (grep {$_ eq $opts{mapNew}} values %dcOpts);
 
 ##-- local options
@@ -258,6 +261,7 @@ dc-mapper-query.perl - query DocClassify::Mapper objects
   -map-option OPT=VALUE  # override stored mapper option
   -map-input-mode MODE   # I/O mode for input mapfile (default=guess)
   -[no]mmap              # do/don't mmap directories (default=-nommap)
+  -ro    , -rw           # do/don't load read-only (default=-ro)
   -shell , -noshell      # do/don't run as interactive shell (default=-noshell)
 
  Mapping Target Options:
