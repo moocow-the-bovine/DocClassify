@@ -484,8 +484,8 @@ sub loadDirData {
   }
 
   ##-- load: svd
-  $map->trace("load SVD $dir/svd.* [mmap=".($opts{mmap}//0)."]") if ($opts{verboseIO});
-  $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap})
+  $map->trace("load SVD $dir/svd.* [mmap=".($opts{mmap}//0).",ro=".($opts{ReadOnly}//0)."]") if ($opts{verboseIO});
+  $map->{svd} = MUDL::SVD->loadRawFiles("$dir/svd",$opts{mmap},\%opts)
     or $map->logconfess("loadDirData(): MUDL::SVD::loadRawFiles() failed for $dir/svd.*: $!");
   $map->{xdm} = $map->{svd}{u};
   $map->{svd}{visigma_} = $map->readPdlFile("$dir/svd.visigma.pdl", %opts,class=>'PDL');

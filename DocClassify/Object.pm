@@ -668,12 +668,14 @@ sub writePdlFile {
 ##     class=>$class,
 ##     mmap =>$bool,
 ##     verboseIO=>$bool,
-##     pdlio =>$how, ##-- one of qw(raw fits); default='raw'
+##     pdlio =>$how,     ##-- one of qw(raw fits); default='raw'
+##     ReadOnly => $boo, ##-- for mmap mode
 sub readPdlFile {
   my ($that,$file,%opts) = @_;
-  $opts{mmap} //= 0;
+  $opts{mmap}  //= 0;
   $opts{pdlio} //= 'raw';
-  $that->trace("readPdlFile($file) [pdlio=$opts{pdlio},mmap=$opts{mmap}]") if ($opts{verboseIO});
+  my $ro         = (!$opts{mmap} || (exists($opts{ReadOnly}) ? $opts{ReadOnly} : (!-w "$file.hdr"))) || 0;
+  $that->trace("readPdlFile($file) [pdlio=$opts{pdlio},mmap=$opts{mmap},ro=$ro]") if ($opts{verboseIO});
   my $class = $opts{class} // 'PDL';
   my $pdl;
   if ($opts{pdlio} eq 'fits') {
@@ -699,7 +701,6 @@ sub readPdlFile {
   } else {
     ##-- read or map: raw
     return undef if (!-e "$file.hdr");
-    my $ro   = (!$opts{mmap} || (exists($opts{ReadOnly}) ? $opts{ReadOnly} : (!-w "$file.hdr"))) || 0;
     local $, = '';
     defined($pdl = $opts{mmap} ? $class->mapfraw($file,{ReadOnly=>$ro}) : $class->readfraw($file))
       or $that->logconfess("readPdlFile(): failed to ".($opts{mmap} ? 'mmap' : 'read')." pdl file '$file' via class '$class' (readonly=$ro)");
