@@ -1,2 +1,3 @@
-svntags=svn+ssh://moocow@odo.dwds.de/home/moocow/svn/private/dta/tags/classify
+svntags=svn+ssh://odo.dwds.de/home/moocow/svn/private/dta/tags/classify
 tagprefix=DocClassify
+

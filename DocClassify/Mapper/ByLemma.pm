@@ -316,6 +316,7 @@ sub kBestItems {
   else {
     ##-- general case for k-best
     my $xi = $dist->qsorti;
+    $k = $xi->nelem if ($k > $xi->nelem); ##-- avoid "slice ends out of bounds" errors
     foreach ($xi->slice("0:".($k-1))->list) {
       push(@kbest, {id=>$_, dist=>$dist->at($_), label=>$enum->{id2sym}[$_]});
     }
