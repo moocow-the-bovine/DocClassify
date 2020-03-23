@@ -44,7 +44,7 @@ use strict;
 ##==============================================================================
 ## Globals & Constants
 
-our $VERSION = '0.20';
+our $VERSION = '0.21';
 our @ISA = ('DocClassify::Logger'); ##-- for convenience
 
 BEGIN {
