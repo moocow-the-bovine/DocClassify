@@ -269,3 +269,4 @@ sub MY::postamble {
   my $inherited = shift->SUPER::postamble(@_);
   return $inherited;
 }
+
